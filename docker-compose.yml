@@ -1,0 +1,110 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: studyagent-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: studyagent
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: studyagent-backend
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/studyagent
+      NEO4J_URI: bolt://neo4j:7687
+      STORAGE_LOCAL_DIR: /app/storage
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - backend_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: studyagent-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://backend:8000
+
+  neo4j:
+    image: neo4j:5
+    container_name: studyagent-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/password
+      NEO4J_PLUGINS: '["apoc"]'
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+    profiles:
+      - full
+
+  redis:
+    image: redis:7-alpine
+    container_name: studyagent-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - full
+
+  minio:
+    image: minio/minio
+    container_name: studyagent-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    profiles:
+      - full
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  redis_data:
+  minio_data:
+  backend_storage:
