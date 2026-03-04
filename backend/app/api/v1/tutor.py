@@ -6,10 +6,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
 from app.db.repositories.session_repo import SessionRepository, TutorTurnRepository
+from app.db.repositories.notebook_repo import NotebookResourceRepository
 from app.models.session import TutorTurn, UserProfile
 from app.schemas.api import TutorTurnRequest, TutorTurnResponse
 from app.config import settings
-from app.api.deps import require_auth, check_rate_limit, verify_session_owner, get_byok_api_key
+from app.api.deps import (
+    require_auth,
+    check_rate_limit,
+    require_notebooks_enabled,
+    verify_session_owner,
+    verify_notebook_session_link,
+    get_byok_api_key,
+)
 from app.services.llm.factory import create_llm_provider
 from app.services.embedding.factory import create_embedding_provider
 from app.agents.policy_agent import PolicyAgent
@@ -115,42 +123,59 @@ async def execute_turn(
     x_llm_model_tutoring: str | None = Header(default=None, alias="X-LLM-Model-Tutoring"),
     x_llm_model_evaluation: str | None = Header(default=None, alias="X-LLM-Model-Evaluation"),
 ):
-    """
-    Execute one tutoring turn.
-    
-    This is the main endpoint for the tutoring workflow:
-    1. Receives student message
-    2. Runs the turn pipeline (policy → retrieval → tutor → evaluation)
-    3. Updates session state
-    4. Returns tutor response
-    """
+    """Legacy non-notebook tutor turn endpoint (decommissioned)."""
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail=(
+            "Legacy tutor turn path has been removed. "
+            "Use POST /api/v1/tutor/notebooks/{notebook_id}/turn instead."
+        ),
+    )
+
+
+@router.post(
+    "/notebooks/{notebook_id}/turn",
+    response_model=TutorTurnResponse,
+    dependencies=[Depends(require_notebooks_enabled)],
+)
+async def execute_notebook_turn(
+    notebook_id: UUID,
+    request: TutorTurnRequest,
+    db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(check_rate_limit),
+    byok: dict = Depends(get_byok_api_key),
+    x_llm_model_tutoring: str | None = Header(default=None, alias="X-LLM-Model-Tutoring"),
+    x_llm_model_evaluation: str | None = Header(default=None, alias="X-LLM-Model-Evaluation"),
+):
+    """Execute one tutoring turn under notebook context."""
     # Ownership check
     await verify_session_owner(request.session_id, user, db)
 
-    # Get session
     session_repo = SessionRepository(db)
+    notebook_resource_repo = NotebookResourceRepository(db)
+
     session = await session_repo.get_by_id(request.session_id)
-    
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Session {request.session_id} not found",
         )
-    
+
     if session.status != "active":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Session {request.session_id} is not active",
         )
-    
-    # Execute turn pipeline
+
+    await verify_notebook_session_link(notebook_id, request.session_id, user, db)
+    notebook_resource_ids = await notebook_resource_repo.list_active_resource_ids(notebook_id)
+
     turn_id = str(uuid4())
     reserved_credits = 0
     meter = CreditMeter(db)
 
-    # Reserve credits before executing
     if settings.CREDITS_ENABLED:
-        estimated = 2000  # conservative default estimate per turn
+        estimated = 2000
         reserved = await meter.reserve_for_turn(user.id, turn_id, estimated)
         if reserved is None:
             raise HTTPException(
@@ -176,26 +201,28 @@ async def execute_turn(
         result = await pipeline.execute_turn(
             session_id=request.session_id,
             student_message=request.message,
+            notebook_context={
+                "notebook_id": str(notebook_id),
+                "resource_ids": [str(resource_id) for resource_id in notebook_resource_ids],
+            },
         )
 
-        # Finalize credit charge based on actual usage
         if settings.CREDITS_ENABLED and not byok.get("api_key"):
             model_id = settings.LLM_MODEL_TUTORING or settings.LLM_MODEL
-            # token_count is captured by the pipeline on the turn
             prompt_tokens = getattr(result, "prompt_tokens", 0) or 0
             completion_tokens = getattr(result, "completion_tokens", 0) or 0
-            # Use estimated if actuals unavailable
             if prompt_tokens == 0 and completion_tokens == 0:
                 prompt_tokens = 800
                 completion_tokens = 400
             await meter.finalize_turn(
-                user.id, turn_id, model_id,
-                prompt_tokens, completion_tokens,
+                user.id,
+                turn_id,
+                model_id,
+                prompt_tokens,
+                completion_tokens,
                 reserved_credits,
             )
-        
-        logger.info(f"Executed turn {result.turn_id} for session {request.session_id}")
-        
+
         return TutorTurnResponse(
             turn_id=UUID(result.turn_id),
             response=result.tutor_response,
@@ -213,9 +240,8 @@ async def execute_turn(
             session_summary=result.session_summary,
         )
     except Exception as e:
-        # Release reservation on failure
         await meter.release_turn(user.id, turn_id, reserved_credits)
-        logger.error(f"Turn pipeline failed: {e}")
+        logger.error(f"Notebook turn pipeline failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Turn pipeline error: {str(e)}",

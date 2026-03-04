@@ -3,26 +3,23 @@ import { apiClient } from './client';
 import type {
   PaginatedResponse,
   Resource,
-  ResourceDetail,
-  ResourceTopicsResponse,
-  IngestionStatus,
-  ResourceKnowledgeBase,
-  KnowledgeBaseUpdateRequest,
-  Session,
-  SessionDetail,
-  SessionCreateRequest,
   TutorTurnRequest,
   TutorTurnResponse,
   Turn,
   TurnsResponse,
   UserSettings,
   UserSettingsUpdateRequest,
-  SessionSummaryResponse,
-  QuizGenerateRequest,
-  QuizGenerateResponse,
-  QuizAnswerRequest,
-  QuizAnswerResponse,
-  QuizResultsResponse,
+  Notebook,
+  NotebookCreateRequest,
+  NotebookUpdateRequest,
+  NotebookResource,
+  NotebookResourceAttachRequest,
+  NotebookSession,
+  NotebookSessionCreateRequest,
+  NotebookSessionDetail,
+  NotebookProgress,
+  NotebookArtifact,
+  NotebookArtifactGenerateRequest,
 } from '../types/api';
 
 // Query keys
@@ -35,189 +32,161 @@ export const queryKeys = {
   },
   sessions: {
     all: ['sessions'] as const,
-    list: (params?: { status?: string }) =>
-      [...queryKeys.sessions.all, 'list', params] as const,
     detail: (id: string) => [...queryKeys.sessions.all, 'detail', id] as const,
     turns: (id: string) => [...queryKeys.sessions.all, 'turns', id] as const,
-  },
-  quiz: {
-    all: ['quiz'] as const,
-    results: (quizId: string) => [...queryKeys.quiz.all, 'results', quizId] as const,
   },
   user: {
     all: ['user'] as const,
     settings: () => [...queryKeys.user.all, 'settings'] as const,
   },
+  notebooks: {
+    all: ['notebooks'] as const,
+    list: () => [...queryKeys.notebooks.all, 'list'] as const,
+    detail: (id: string) => [...queryKeys.notebooks.all, 'detail', id] as const,
+    resources: (id: string) => [...queryKeys.notebooks.all, 'resources', id] as const,
+    sessions: (id: string) => [...queryKeys.notebooks.all, 'sessions', id] as const,
+    sessionDetail: (notebookId: string, sessionId: string) =>
+      [...queryKeys.notebooks.all, 'sessions', notebookId, sessionId] as const,
+    progress: (id: string) => [...queryKeys.notebooks.all, 'progress', id] as const,
+    artifacts: (id: string, artifactType?: string) =>
+      [...queryKeys.notebooks.all, 'artifacts', id, artifactType] as const,
+  },
 };
 
-// Resource hooks
-export function useResources(params?: {
-  status?: string;
-  limit?: number;
-  offset?: number;
-}) {
+// Notebook hooks
+export function useNotebooks() {
   return useQuery({
-    queryKey: queryKeys.resources.list(params),
-    queryFn: () =>
-      apiClient.get<PaginatedResponse<Resource>>('/resources', {
-        status: params?.status,
-        limit: params?.limit?.toString(),
-        offset: params?.offset?.toString(),
-      } as Record<string, string>),
+    queryKey: queryKeys.notebooks.list(),
+    queryFn: () => apiClient.get<PaginatedResponse<Notebook>>('/notebooks'),
   });
 }
 
-export function useUploadResource() {
+export function useNotebook(notebookId: string) {
+  return useQuery({
+    queryKey: queryKeys.notebooks.detail(notebookId),
+    queryFn: () => apiClient.get<Notebook>(`/notebooks/${notebookId}`),
+    enabled: !!notebookId,
+  });
+}
+
+export function useCreateNotebook() {
   const queryClient = useQueryClient();
-  
   return useMutation({
-    mutationFn: async ({ file, topic }: { file: File; topic?: string }) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      if (topic) {
-        formData.append('topic', topic);
-      }
-      return apiClient.postForm<IngestionStatus>('/ingest/upload', formData);
-    },
+    mutationFn: (request: NotebookCreateRequest) =>
+      apiClient.post<Notebook>('/notebooks', request),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.all });
     },
   });
 }
 
-export function useResource(resourceId: string) {
-  return useQuery({
-    queryKey: queryKeys.resources.detail(resourceId),
-    queryFn: () => apiClient.get<ResourceDetail>(`/resources/${resourceId}`),
-    enabled: !!resourceId,
+export function useUpdateNotebook(notebookId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: NotebookUpdateRequest) =>
+      apiClient.patch<Notebook>(`/notebooks/${notebookId}`, request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.detail(notebookId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.list() });
+    },
   });
 }
 
-export function useRetryIngestion() {
-  const queryClient = useQueryClient();
+export function useNotebookResources(notebookId: string) {
+  return useQuery({
+    queryKey: queryKeys.notebooks.resources(notebookId),
+    queryFn: () => apiClient.get<PaginatedResponse<NotebookResource>>(`/notebooks/${notebookId}/resources`),
+    enabled: !!notebookId,
+  });
+}
 
+export function useAttachNotebookResource(notebookId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: NotebookResourceAttachRequest) =>
+      apiClient.post<NotebookResource>(`/notebooks/${notebookId}/resources`, request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.resources(notebookId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.progress(notebookId) });
+    },
+  });
+}
+
+export function useDetachNotebookResource(notebookId: string) {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (resourceId: string) =>
-      apiClient.post<IngestionStatus>(`/ingest/retry/${resourceId}`),
-    onSuccess: (_data: IngestionStatus, resourceId: string) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.resources.detail(resourceId) });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.resources.detail(resourceId), 'kb'] as const });
-    },
-  });
-}
-
-export function useDeleteResource() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (resourceId: string) =>
-      apiClient.delete<void>(`/resources/${resourceId}`),
+      apiClient.delete<void>(`/notebooks/${notebookId}/resources/${resourceId}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.resources(notebookId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.progress(notebookId) });
     },
   });
 }
 
-export function useResourceKnowledgeBase(resourceId: string) {
+export function useNotebookSessions(notebookId: string) {
   return useQuery({
-    queryKey: [...queryKeys.resources.detail(resourceId), 'kb'] as const,
-    queryFn: () => apiClient.get<ResourceKnowledgeBase>(`/resources/${resourceId}/knowledge-base`),
-    enabled: !!resourceId,
+    queryKey: queryKeys.notebooks.sessions(notebookId),
+    queryFn: () => apiClient.get<PaginatedResponse<NotebookSession>>(`/notebooks/${notebookId}/sessions`),
+    enabled: !!notebookId,
   });
 }
 
-export function useUpdateResourceKnowledgeBase(resourceId: string) {
+export function useNotebookSessionDetail(notebookId: string, sessionId: string) {
+  return useQuery({
+    queryKey: queryKeys.notebooks.sessionDetail(notebookId, sessionId),
+    queryFn: () => apiClient.get<NotebookSessionDetail>(`/notebooks/${notebookId}/sessions/${sessionId}`),
+    enabled: !!notebookId && !!sessionId,
+  });
+}
+
+export function useCreateNotebookSession(notebookId: string) {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (request: KnowledgeBaseUpdateRequest) =>
-      apiClient.patch<ResourceKnowledgeBase>(`/resources/${resourceId}/knowledge-base`, request),
+    mutationFn: (request: NotebookSessionCreateRequest) =>
+      apiClient.post<NotebookSessionDetail>(`/notebooks/${notebookId}/sessions`, request),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.resources.detail(resourceId) });
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.resources.detail(resourceId), 'kb'] as const });
-      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.sessions(notebookId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.progress(notebookId) });
     },
   });
 }
 
-export function useResourceTopics(resourceId: string) {
+export function useNotebookProgress(notebookId: string) {
   return useQuery({
-    queryKey: [...queryKeys.resources.detail(resourceId), 'topics'] as const,
-    queryFn: () => apiClient.get<ResourceTopicsResponse>(`/resources/${resourceId}/topics`),
-    enabled: !!resourceId,
+    queryKey: queryKeys.notebooks.progress(notebookId),
+    queryFn: () => apiClient.get<NotebookProgress>(`/notebooks/${notebookId}/progress`),
+    enabled: !!notebookId,
   });
 }
 
-// Session hooks
-export function useSessions(params?: { status?: string }) {
+export function useNotebookArtifacts(notebookId: string, artifactType?: string) {
   return useQuery({
-    queryKey: queryKeys.sessions.list(params),
+    queryKey: queryKeys.notebooks.artifacts(notebookId, artifactType),
     queryFn: () =>
-      apiClient.get<PaginatedResponse<Session>>('/sessions', {
-        status: params?.status,
+      apiClient.get<PaginatedResponse<NotebookArtifact>>(`/notebooks/${notebookId}/artifacts`, {
+        artifact_type: artifactType,
       } as Record<string, string>),
+    enabled: !!notebookId,
   });
 }
 
-export function useSession(id: string) {
-  return useQuery({
-    queryKey: queryKeys.sessions.detail(id),
-    queryFn: () => apiClient.get<SessionDetail>(`/sessions/${id}`),
-    enabled: !!id,
-  });
-}
-
-export function useCreateSession() {
+export function useGenerateNotebookArtifact(notebookId: string) {
   const queryClient = useQueryClient();
-  
   return useMutation({
-    mutationFn: (request: SessionCreateRequest) =>
-      apiClient.post<Session>('/sessions/resource', request),
+    mutationFn: (request: NotebookArtifactGenerateRequest) =>
+      apiClient.post<NotebookArtifact>(`/notebooks/${notebookId}/artifacts:generate`, request),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.artifacts(notebookId) });
     },
   });
 }
 
-export function useEndSession() {
+export function useSendNotebookMessage(notebookId: string) {
   const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: (sessionId: string) =>
-      apiClient.post<SessionSummaryResponse>(`/sessions/${sessionId}/end`),
-    onSuccess: (data: SessionSummaryResponse) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.sessions.detail(data.session_id),
-      });
-      queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all });
-    },
-  });
-}
-
-export function useSessionSummary(sessionId: string) {
-  return useQuery({
-    queryKey: [...queryKeys.sessions.detail(sessionId), 'summary'] as const,
-    queryFn: () => apiClient.get<SessionSummaryResponse>(`/sessions/${sessionId}/summary`),
-    enabled: !!sessionId,
-  });
-}
-
-// Tutor hooks
-export function useTurns(sessionId: string) {
-  return useQuery({
-    queryKey: queryKeys.sessions.turns(sessionId),
-    queryFn: () => apiClient.get<TurnsResponse>(`/tutor/turns/${sessionId}`),
-    enabled: !!sessionId,
-  });
-}
-
-export function useSendMessage() {
-  const queryClient = useQueryClient();
-  
   return useMutation({
     mutationFn: (request: TutorTurnRequest) =>
-      apiClient.post<TutorTurnResponse>('/tutor/turn', request),
+      apiClient.post<TutorTurnResponse>(`/tutor/notebooks/${notebookId}/turn`, request),
     onSuccess: (data: TutorTurnResponse, variables: TutorTurnRequest) => {
       queryClient.setQueryData<TurnsResponse | undefined>(
         queryKeys.sessions.turns(variables.session_id),
@@ -236,7 +205,6 @@ export function useSendMessage() {
             current_step: data.current_step,
             created_at: new Date().toISOString(),
           };
-
           return {
             session_id: existing?.session_id ?? variables.session_id,
             turns: [...priorTurns, nextTurn],
@@ -247,7 +215,34 @@ export function useSendMessage() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.sessions.detail(variables.session_id),
       });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.progress(notebookId) });
     },
+  });
+}
+
+// Resource hooks
+export function useResources(params?: {
+  status?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  return useQuery({
+    queryKey: queryKeys.resources.list(params),
+    queryFn: () =>
+      apiClient.get<PaginatedResponse<Resource>>('/resources', {
+        status: params?.status,
+        limit: params?.limit?.toString(),
+        offset: params?.offset?.toString(),
+      } as Record<string, string>),
+  });
+}
+
+// Tutor hooks
+export function useTurns(sessionId: string) {
+  return useQuery({
+    queryKey: queryKeys.sessions.turns(sessionId),
+    queryFn: () => apiClient.get<TurnsResponse>(`/tutor/turns/${sessionId}`),
+    enabled: !!sessionId,
   });
 }
 
@@ -267,28 +262,5 @@ export function useUpdateUserSettings() {
     onSuccess: (data: UserSettings) => {
       queryClient.setQueryData(queryKeys.user.settings(), data);
     },
-  });
-}
-
-// Quiz hooks
-export function useGenerateQuiz() {
-  return useMutation({
-    mutationFn: (request: QuizGenerateRequest) =>
-      apiClient.post<QuizGenerateResponse>('/quiz/generate', request),
-  });
-}
-
-export function useSubmitQuizAnswer() {
-  return useMutation({
-    mutationFn: (request: QuizAnswerRequest) =>
-      apiClient.post<QuizAnswerResponse>('/quiz/answer', request),
-  });
-}
-
-export function useQuizResults(quizId: string) {
-  return useQuery({
-    queryKey: queryKeys.quiz.results(quizId),
-    queryFn: () => apiClient.get<QuizResultsResponse>(`/quiz/${quizId}/results`),
-    enabled: !!quizId,
   });
 }

@@ -48,6 +48,8 @@ class StageContext:
     student_message: str
     focus_concepts: list[str]
     mastery_snapshot: dict[str, float]
+    notebook_id: Optional[str] = None
+    notebook_resource_ids: list[str] = field(default_factory=list)
 
 
 @dataclass

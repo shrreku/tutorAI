@@ -263,20 +263,6 @@ class TutoringHarnessV2:
             raise RuntimeError("No ready/processed resource found. Ingest a resource first.")
         return str(usable[0]["id"])
 
-    def _close_active_sessions_for_resource(self, client: httpx.Client, resource_id: str) -> None:
-        sessions_resp = client.get(self._url("/sessions"), params={"status": "active", "limit": 100})
-        sessions_resp.raise_for_status()
-        sessions = (sessions_resp.json() or {}).get("items") or []
-        for session in sessions:
-            if str(session.get("resource_id")) != str(resource_id):
-                continue
-            sid = session.get("id")
-            if not sid:
-                continue
-            end_resp = client.post(self._url(f"/sessions/{sid}/end"))
-            if end_resp.status_code not in {200, 400}:
-                end_resp.raise_for_status()
-
     def run(
         self,
         *,
@@ -314,18 +300,32 @@ class TutoringHarnessV2:
                 scenario_dir = run_dir / scenario.key
                 scenario_dir.mkdir(parents=True, exist_ok=True)
                 transcript: list[dict[str, Any]] = []
-
-                self._close_active_sessions_for_resource(client, selected_resource_id)
-
-                create_payload: dict[str, Any] = {"resource_id": selected_resource_id}
-                if selected_topics:
-                    create_payload["selected_topics"] = selected_topics
                 scenario_errors: list[str] = []
                 try:
-                    create_resp = client.post(self._url("/sessions/resource"), json=create_payload)
-                    create_resp.raise_for_status()
-                    session_payload = create_resp.json() or {}
-                    session_id = str(session_payload["id"])
+                    notebook_payload = {
+                        "title": f"Harness {scenario.key}",
+                        "goal": scenario.description,
+                    }
+                    notebook_resp = client.post(self._url("/notebooks"), json=notebook_payload)
+                    notebook_resp.raise_for_status()
+                    notebook_id = str((notebook_resp.json() or {})["id"])
+
+                    attach_resp = client.post(
+                        self._url(f"/notebooks/{notebook_id}/resources"),
+                        json={"resource_id": selected_resource_id},
+                    )
+                    attach_resp.raise_for_status()
+
+                    session_payload: dict[str, Any] = {
+                        "resource_id": selected_resource_id,
+                        "mode": "learn",
+                    }
+                    session_resp = client.post(
+                        self._url(f"/notebooks/{notebook_id}/sessions"),
+                        json=session_payload,
+                    )
+                    session_resp.raise_for_status()
+                    session_id = str(((session_resp.json() or {}).get("session") or {})["id"])
                 except httpx.ReadTimeout:
                     scenario_errors.append("session_create_timeout")
                     result = ScenarioResult(
@@ -352,7 +352,7 @@ class TutoringHarnessV2:
                 for turn in scenario.turns:
                     req = {"session_id": session_id, "message": turn.message}
                     try:
-                        turn_resp = client.post(self._url("/tutor/turn"), json=req)
+                        turn_resp = client.post(self._url(f"/tutor/notebooks/{notebook_id}/turn"), json=req)
                         turn_data = turn_resp.json() if turn_resp.headers.get("content-type", "").startswith("application/json") else {"raw": turn_resp.text}
                     except httpx.ReadTimeout:
                         scenario_errors.append("turn_request_timeout")

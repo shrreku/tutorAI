@@ -1,17 +1,16 @@
 import { useNavigate } from 'react-router-dom'
-import { BookOpen, Upload, MessageSquare, ArrowRight, Sparkles, Clock } from 'lucide-react'
-import { useResources, useSessions, useUserSettings, useUpdateUserSettings } from '../api/hooks'
+import { BookOpen, Upload, ArrowRight, Sparkles } from 'lucide-react'
+import { useNotebooks, useResources, useUserSettings, useUpdateUserSettings } from '../api/hooks'
 
 export default function HomePage() {
   const navigate = useNavigate()
+  const { data: notebooksData } = useNotebooks()
   const { data: resourcesData } = useResources()
-  const { data: sessionsData } = useSessions()
   const { data: userSettings } = useUserSettings()
   const updateUserSettings = useUpdateUserSettings()
 
+  const notebookCount = notebooksData?.items?.length ?? 0
   const resourceCount = resourcesData?.items?.length ?? 0
-  const sessionCount = sessionsData?.items?.length ?? 0
-  const activeSessions = sessionsData?.items?.filter(s => s.status === 'active') ?? []
   const showConsentPrompt = userSettings ? !userSettings.consent_preference_set : false
 
   const saveConsentPreference = async (enabled: boolean) => {
@@ -33,12 +32,12 @@ export default function HomePage() {
           </span>
         </div>
         <h1 className="font-display text-4xl md:text-5xl font-semibold tracking-tight text-foreground leading-[1.1] mb-4">
-          Turn any textbook into<br />
-          <span className="italic text-gold">conversations.</span>
+          Build course notebooks,<br />
+          <span className="italic text-gold">then learn in context.</span>
         </h1>
         <p className="text-muted-foreground text-lg max-w-xl leading-relaxed">
-          Upload source material, pick focus areas, and learn through guided dialogue.
-          One workspace for your full study loop.
+          Notebooks are now your primary learning container. Attach resources,
+          run notebook-scoped sessions, and track progress across the full course.
         </p>
       </div>
 
@@ -46,7 +45,7 @@ export default function HomePage() {
       <div className="grid md:grid-cols-3 gap-5 max-w-4xl mb-10">
         {/* Upload Card */}
         <button
-          onClick={() => navigate('/resources')}
+          onClick={() => navigate('/notebooks/new')}
           className="group relative overflow-hidden rounded-xl border border-border bg-card p-6 text-left transition-all duration-300 hover:border-gold/30 hover:shadow-lg hover:shadow-gold/5 animate-fade-up"
           style={{ animationDelay: '0.1s' }}
         >
@@ -56,20 +55,20 @@ export default function HomePage() {
               <Upload className="w-5 h-5 text-gold" />
             </div>
             <h3 className="font-display text-lg font-semibold mb-1.5 text-card-foreground">
-              Ingest Material
+              Create Notebook
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-              Add PDFs and build a grounded context for tutoring.
+              Start a course container with goals and session modes.
             </p>
             <div className="flex items-center gap-1.5 text-xs font-medium text-gold opacity-0 group-hover:opacity-100 transition-opacity">
-              Open Library <ArrowRight className="w-3 h-3" />
+              New notebook <ArrowRight className="w-3 h-3" />
             </div>
           </div>
         </button>
 
         {/* Browse Card */}
         <button
-          onClick={() => navigate('/resources')}
+          onClick={() => navigate('/notebooks')}
           className="group relative overflow-hidden rounded-xl border border-border bg-card p-6 text-left transition-all duration-300 hover:border-gold/30 hover:shadow-lg hover:shadow-gold/5 animate-fade-up"
           style={{ animationDelay: '0.2s' }}
         >
@@ -79,20 +78,20 @@ export default function HomePage() {
               <BookOpen className="w-5 h-5 text-gold" />
             </div>
             <h3 className="font-display text-lg font-semibold mb-1.5 text-card-foreground">
-              Curate Library
+              Open Notebooks
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-              Keep your study sources organized and session-ready.
+              Enter your notebook workspace and manage resources/sessions.
             </p>
             <div className="flex items-center gap-1.5 text-xs font-medium text-gold opacity-0 group-hover:opacity-100 transition-opacity">
-              {resourceCount} resource{resourceCount !== 1 ? 's' : ''} <ArrowRight className="w-3 h-3" />
+              {notebookCount} notebook{notebookCount !== 1 ? 's' : ''} <ArrowRight className="w-3 h-3" />
             </div>
           </div>
         </button>
 
         {/* Start Session Card */}
         <button
-          onClick={() => navigate('/sessions/new')}
+          onClick={() => navigate('/notebooks')}
           className="group relative overflow-hidden rounded-xl border border-gold/20 bg-gradient-to-br from-gold/[0.08] to-card p-6 text-left transition-all duration-300 hover:border-gold/40 hover:shadow-lg hover:shadow-gold/10 animate-fade-up"
           style={{ animationDelay: '0.3s' }}
         >
@@ -102,13 +101,13 @@ export default function HomePage() {
               <Sparkles className="w-5 h-5 text-gold" />
             </div>
             <h3 className="font-display text-lg font-semibold mb-1.5 text-card-foreground">
-              Start Dialogue
+              Notebook Study
             </h3>
             <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-              Launch a guided conversation with your AI tutor.
+              Launch notebook-scoped tutoring with mode-aware sessions.
             </p>
             <div className="flex items-center gap-1.5 text-xs font-medium text-gold">
-              New Session <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
+              Open notebooks <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
             </div>
           </div>
         </button>
@@ -142,60 +141,20 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Active Sessions */}
-      {activeSessions.length > 0 && (
-        <div className="max-w-4xl animate-fade-up" style={{ animationDelay: '0.4s' }}>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-xl font-semibold text-foreground">
-              Active Conversations
-            </h2>
-            <button
-              onClick={() => navigate('/sessions')}
-              className="text-xs font-medium text-gold hover:text-gold/80 flex items-center gap-1 transition-colors"
-            >
-              View all <ArrowRight className="w-3 h-3" />
-            </button>
-          </div>
-          <div className="space-y-2">
-            {activeSessions.slice(0, 3).map((session) => (
-              <button
-                key={session.id}
-                onClick={() => navigate(`/sessions/${session.id}`)}
-                className="w-full flex items-center gap-4 p-4 rounded-lg border border-border bg-card hover:border-gold/20 hover:bg-card/80 transition-all group text-left"
-              >
-                <div className="w-9 h-9 rounded-lg bg-gold/10 border border-gold/15 flex items-center justify-center flex-shrink-0">
-                  <MessageSquare className="w-4 h-4 text-gold" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-card-foreground truncate">
-                    Conversation
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    <Clock className="w-3 h-3 inline mr-1" />
-                    {new Date(session.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-                <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Stats Footer */}
       <div className="mt-auto pt-8 max-w-4xl animate-fade-up" style={{ animationDelay: '0.5s' }}>
         <div className="flex gap-8 border-t border-border/50 pt-6">
           <div>
+            <p className="text-2xl font-display font-semibold text-foreground">{notebookCount}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Notebooks</p>
+          </div>
+          <div>
             <p className="text-2xl font-display font-semibold text-foreground">{resourceCount}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Library files</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Attached resources</p>
           </div>
           <div>
-            <p className="text-2xl font-display font-semibold text-foreground">{sessionCount}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Total sessions</p>
-          </div>
-          <div>
-            <p className="text-2xl font-display font-semibold text-foreground">{activeSessions.length}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Live now</p>
+            <p className="text-2xl font-display font-semibold text-foreground">{resourceCount}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Library resources</p>
           </div>
         </div>
       </div>

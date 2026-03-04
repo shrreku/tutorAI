@@ -156,6 +156,8 @@ async def retrieve_knowledge(
     objective_title: str | None = None,
     objective_description: str | None = None,
     policy_output: Any | None = None,
+    notebook_id: str | None = None,
+    notebook_resource_ids: list[str] | None = None,
     lf: Any,
 ) -> list[RetrievedChunk]:
     """Retrieve knowledge chunks driven by policy context, not raw student text.
@@ -165,6 +167,12 @@ async def retrieve_knowledge(
     as a supplementary signal when it contains meaningful content.
     """
     pedagogy_roles = _roles_for_step(step_type)
+    if notebook_id and notebook_resource_ids:
+        session_resource_id = str(session.resource_id)
+        if session_resource_id not in set(notebook_resource_ids):
+            raise ValueError(
+                f"Session resource {session_resource_id} is outside notebook scope {notebook_id}"
+            )
     recent_chunk_ids = [
         str(cid)
         for cid in (plan.get("recent_evidence_chunk_ids") or [])

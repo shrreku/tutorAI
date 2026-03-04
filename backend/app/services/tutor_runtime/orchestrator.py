@@ -373,6 +373,7 @@ class TurnPipeline:
         self,
         session_id: uuid.UUID,
         student_message: str,
+        notebook_context: dict | None = None,
     ) -> TurnResult:
         turn_id = str(uuid.uuid4())
         turn_start = _time.time()
@@ -388,7 +389,11 @@ class TurnPipeline:
 
         if not lf:
             return await self._execute_turn_core(
-                session_id, student_message, turn_id, turn_start
+                session_id,
+                student_message,
+                turn_id,
+                turn_start,
+                notebook_context=notebook_context,
             )
 
         detailed_tracing = is_detailed_tracing_enabled()
@@ -417,6 +422,7 @@ class TurnPipeline:
                     student_message,
                     turn_id,
                     turn_start,
+                    notebook_context=notebook_context,
                     lf=lf if detailed_tracing else None,
                 )
 
@@ -472,6 +478,7 @@ class TurnPipeline:
         student_message: str,
         turn_id: str,
         turn_start: float,
+        notebook_context: dict | None = None,
         lf=None,
     ) -> TurnResult:
         if lf is None:
@@ -492,12 +499,22 @@ class TurnPipeline:
             if not session.plan_state or "objective_queue" not in session.plan_state:
                 raise ValueError(
                     f"Session {session_id} has no curriculum plan. "
-                    "Ensure the session was created via the /sessions/resource endpoint."
+                    "Ensure the session was created via the /notebooks/{notebook_id}/sessions endpoint."
                 )
         finally:
             self._close_optional_span(load_span_ctx)
 
         plan = _normalize_runtime_plan_state(session.plan_state)
+        notebook_resource_ids = [
+            str(resource_id)
+            for resource_id in ((notebook_context or {}).get("resource_ids") or [])
+            if resource_id
+        ]
+        if notebook_context:
+            plan["notebook_context"] = {
+                "notebook_id": notebook_context.get("notebook_id"),
+                "resource_ids": notebook_resource_ids,
+            }
         obj_idx = plan.get("current_objective_index", 0)
         objective_queue = plan.get("objective_queue", [])
 
@@ -541,6 +558,7 @@ class TurnPipeline:
                 student_message,
                 turn_id,
                 turn_start,
+                notebook_context,
                 lf,
             )
         finally:
@@ -561,6 +579,7 @@ class TurnPipeline:
         student_message: str,
         turn_id: str,
         turn_start: float,
+        notebook_context: dict | None,
         lf,
     ) -> TurnResult:
         roadmap = _get_step_roadmap(current_obj)
@@ -619,6 +638,12 @@ class TurnPipeline:
                 student_message=student_message,
                 focus_concepts=focus_concepts,
                 mastery_snapshot=mastery_snap,
+                notebook_id=(notebook_context or {}).get("notebook_id"),
+                notebook_resource_ids=[
+                    str(resource_id)
+                    for resource_id in ((notebook_context or {}).get("resource_ids") or [])
+                    if resource_id
+                ],
             )
 
             policy_stage = await _run_policy_stage_handoff(

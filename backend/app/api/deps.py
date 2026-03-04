@@ -96,6 +96,15 @@ async def get_current_user(
     return user
 
 
+def require_notebooks_enabled() -> None:
+    """Gate notebook-centric endpoints behind rollout feature flag."""
+    if not settings.FEATURE_NOTEBOOKS_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notebook features are currently disabled",
+        )
+
+
 async def require_auth(
     user: UserProfile = Depends(get_current_user),
 ) -> UserProfile:
@@ -149,6 +158,43 @@ async def verify_session_owner(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     if session.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+
+async def verify_notebook_owner(
+    notebook_id: uuid.UUID,
+    user: UserProfile,
+    db: AsyncSession,
+):
+    """Return notebook if *user* owns it, otherwise raise 403/404."""
+    from app.db.repositories.notebook_repo import NotebookRepository
+
+    notebook_repo = NotebookRepository(db)
+    notebook = await notebook_repo.get_by_id(notebook_id)
+    if notebook is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notebook not found")
+    if notebook.student_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    return notebook
+
+
+async def verify_notebook_session_link(
+    notebook_id: uuid.UUID,
+    session_id: uuid.UUID,
+    user: UserProfile,
+    db: AsyncSession,
+):
+    """Return notebook-session link if notebook is owned and link exists."""
+    from app.db.repositories.notebook_repo import NotebookSessionRepository
+
+    await verify_notebook_owner(notebook_id, user, db)
+    notebook_session_repo = NotebookSessionRepository(db)
+    link = await notebook_session_repo.get_by_pair(notebook_id, session_id)
+    if link is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notebook session mapping not found",
+        )
+    return link
 
 
 # ---------------------------------------------------------------------------

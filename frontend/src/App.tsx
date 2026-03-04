@@ -6,14 +6,15 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import HomePage from './pages/HomePage';
-import ResourcesPage from './pages/ResourcesPage';
-import ResourceKnowledgeBasePage from './pages/ResourceKnowledgeBasePage';
-import SessionsPage from './pages/SessionsPage';
-import NewSessionPage from './pages/NewSessionPage';
-import TutoringPage from './pages/TutoringPage';
-import QuizPage from './pages/QuizPage';
 import BillingPage from './pages/BillingPage';
 import SettingsPage from './pages/SettingsPage';
+import NotebooksPage from './pages/NotebooksPage';
+import NotebookCreatePage from './pages/NotebookCreatePage';
+import NotebookDetailPage from './pages/NotebookDetailPage';
+import NotebookStudyPage from './pages/NotebookStudyPage';
+import NotebookResourcesPage from './pages/NotebookResourcesPage';
+import NotebookSessionsPage from './pages/NotebookSessionsPage';
+import NotebookProgressArtifactsPage from './pages/NotebookProgressArtifactsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +40,8 @@ function GuestOnly({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  const notebooksEnabled = import.meta.env.VITE_FEATURE_NOTEBOOKS_ENABLED !== 'false';
+
   return (
     <QueryClientProvider client={queryClient}>
       <Routes>
@@ -50,12 +53,19 @@ function App() {
         {/* ── Authenticated app routes ──────────────── */}
         <Route element={<RequireAuth><MainLayout /></RequireAuth>}>
           <Route path="/" element={<HomePage />} />
-          <Route path="/resources" element={<ResourcesPage />} />
-          <Route path="/resources/:id" element={<ResourceKnowledgeBasePage />} />
-          <Route path="/sessions" element={<SessionsPage />} />
-          <Route path="/sessions/new" element={<NewSessionPage />} />
-          <Route path="/sessions/:id" element={<TutoringPage />} />
-          <Route path="/sessions/:sessionId/quiz" element={<QuizPage />} />
+          {notebooksEnabled && <Route path="/notebooks" element={<NotebooksPage />} />}
+          {notebooksEnabled && <Route path="/notebooks/new" element={<NotebookCreatePage />} />}
+          {notebooksEnabled && <Route path="/notebooks/:notebookId" element={<NotebookDetailPage />} />}
+          {notebooksEnabled && <Route path="/notebooks/:notebookId/study" element={<NotebookStudyPage />} />}
+          {notebooksEnabled && <Route path="/notebooks/:notebookId/resources" element={<NotebookResourcesPage />} />}
+          {notebooksEnabled && <Route path="/notebooks/:notebookId/sessions" element={<NotebookSessionsPage />} />}
+          {notebooksEnabled && <Route path="/notebooks/:notebookId/progress" element={<NotebookProgressArtifactsPage />} />}
+          <Route path="/resources" element={<Navigate to="/notebooks" replace />} />
+          <Route path="/resources/:id" element={<Navigate to="/notebooks" replace />} />
+          <Route path="/sessions" element={<Navigate to="/notebooks" replace />} />
+          <Route path="/sessions/new" element={<Navigate to="/notebooks" replace />} />
+          <Route path="/sessions/:id" element={<Navigate to="/notebooks" replace />} />
+          <Route path="/sessions/:sessionId/quiz" element={<Navigate to="/notebooks" replace />} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>

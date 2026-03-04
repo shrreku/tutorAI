@@ -6,13 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.db.repositories.session_repo import SessionRepository, UserProfileRepository
+from app.db.repositories.session_repo import SessionRepository
 from app.models.session import UserSession, UserProfile
-from app.agents.curriculum_agent import CurriculumAgent
-from app.services.llm.factory import create_llm_provider
-from app.services.tutor.session_service import SessionService
-from app.config import settings
-from app.api.deps import require_auth, check_rate_limit, verify_session_owner, get_byok_api_key
+from app.api.deps import require_auth, verify_session_owner
 from app.schemas.api import (
     SessionCreate,
     SessionResponse,
@@ -74,54 +70,14 @@ async def create_session(
     db: AsyncSession = Depends(get_db),
     user: UserProfile = Depends(require_auth),
 ):
-    """Create a new tutoring session bound to a resource.
-
-    This eagerly generates the curriculum plan so the student sees
-    an overview of what the session will cover before the first turn.
-    """
-    curriculum_llm = create_llm_provider(settings, task="curriculum")
-    curriculum_agent = CurriculumAgent(curriculum_llm, db)
-    session_service = SessionService(db, curriculum_agent)
-    user_repo = UserProfileRepository(db)
-    global_consent, _ = await user_repo.get_global_consent(user)
-
-    effective_consent = (
-        request.consent_training
-        if request.consent_training is not None
-        else global_consent
+    """Legacy resource-first session creation endpoint (decommissioned)."""
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail=(
+            "Resource-first session creation has been removed. "
+            "Use POST /api/v1/notebooks/{notebook_id}/sessions instead."
+        ),
     )
-
-    try:
-        session = await session_service.create_session(
-            resource_id=request.resource_id,
-            user_id=user.id,
-            topic=request.topic,
-            selected_topics=request.selected_topics,
-            consent_training=effective_consent,
-        )
-    except ValueError as e:
-        msg = str(e)
-        if "not found" in msg:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=msg,
-            )
-        if "not ready" in msg:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=msg,
-            )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=msg,
-        )
-    except Exception as e:
-        logger.error(f"Curriculum generation failed during session creation: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create session: {str(e)}",
-        )
-    return _session_response(session)
 
 
 @router.get("/{session_id}", response_model=SessionDetailResponse)

@@ -159,6 +159,103 @@ export interface SessionCreateRequest {
   consent_training?: boolean | null;
 }
 
+// Notebook types
+export interface Notebook {
+  id: string;
+  student_id: string;
+  title: string;
+  goal: string | null;
+  target_date: string | null;
+  status: string;
+  settings_json: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotebookCreateRequest {
+  title: string;
+  goal?: string;
+  target_date?: string;
+  settings_json?: Record<string, unknown>;
+}
+
+export interface NotebookUpdateRequest {
+  title?: string;
+  goal?: string;
+  target_date?: string;
+  status?: string;
+  settings_json?: Record<string, unknown>;
+}
+
+export interface NotebookResource {
+  id: string;
+  notebook_id: string;
+  resource_id: string;
+  role: string;
+  is_active: boolean;
+  added_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotebookResourceAttachRequest {
+  resource_id: string;
+  role?: string;
+  is_active?: boolean;
+}
+
+export interface NotebookSession {
+  id: string;
+  notebook_id: string;
+  session_id: string;
+  mode: string;
+  started_at: string;
+  ended_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotebookSessionCreateRequest {
+  resource_id: string;
+  mode?: 'learn' | 'doubt' | 'practice' | 'revision';
+  topic?: string;
+  selected_topics?: string[];
+  consent_training?: boolean | null;
+}
+
+export interface NotebookSessionDetail {
+  notebook_session: NotebookSession;
+  session: Session;
+}
+
+export interface NotebookProgress {
+  notebook_id: string;
+  mastery_snapshot: Record<string, number>;
+  objective_progress_snapshot: Record<string, unknown>;
+  weak_concepts_snapshot: string[];
+  sessions_count: number;
+  completed_sessions_count: number;
+  updated_at: string | null;
+}
+
+export interface NotebookArtifact {
+  id: string;
+  notebook_id: string;
+  artifact_type: string;
+  payload_json: Record<string, unknown>;
+  source_session_ids: string[];
+  source_resource_ids: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotebookArtifactGenerateRequest {
+  artifact_type: 'notes' | 'flashcards' | 'quiz' | 'revision_plan';
+  source_session_ids?: string[];
+  source_resource_ids?: string[];
+  options?: Record<string, unknown>;
+}
+
 export interface UserSettings {
   consent_training_global: boolean;
   consent_preference_set: boolean;

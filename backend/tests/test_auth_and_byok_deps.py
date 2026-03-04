@@ -85,3 +85,13 @@ def test_check_auth_rate_limit_noop_when_disabled(monkeypatch):
     request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.9"))
     asyncio.run(deps_module.check_auth_rate_limit(request))
     asyncio.run(deps_module.check_auth_rate_limit(request))
+
+
+def test_require_notebooks_enabled_raises_when_disabled(monkeypatch):
+    monkeypatch.setattr(settings, "FEATURE_NOTEBOOKS_ENABLED", False, raising=False)
+
+    with pytest.raises(HTTPException) as exc:
+        deps_module.require_notebooks_enabled()
+
+    assert exc.value.status_code == 404
+    assert "disabled" in str(exc.value.detail)

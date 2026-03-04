@@ -126,6 +126,7 @@ class Settings(BaseSettings):
     FEATURE_UPLOADS_ENABLED: bool = True
     FEATURE_ENRICHMENT_ENABLED: bool = True
     FEATURE_OCR_ENABLED: bool = True
+    FEATURE_NOTEBOOKS_ENABLED: bool = True
 
     # Credits system (student research defaults)
     CREDITS_ENABLED: bool = False

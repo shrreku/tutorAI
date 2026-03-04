@@ -194,6 +194,147 @@ class ResourceKnowledgeBaseResponse(BaseModel):
     latest_job: Optional[IngestionStatusResponse] = None
 
 
+# Notebook API schemas
+class NotebookCreate(BaseModel):
+    """Request to create a notebook."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=256)
+    goal: Optional[str] = None
+    target_date: Optional[datetime] = None
+    settings_json: Optional[Dict[str, Any]] = None
+
+
+class NotebookUpdate(BaseModel):
+    """Partial update for notebook metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: Optional[str] = Field(default=None, min_length=1, max_length=256)
+    goal: Optional[str] = None
+    target_date: Optional[datetime] = None
+    status: Optional[str] = None
+    settings_json: Optional[Dict[str, Any]] = None
+
+
+class NotebookResponse(BaseModel):
+    """Notebook response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    student_id: UUID
+    title: str
+    goal: Optional[str] = None
+    target_date: Optional[datetime] = None
+    status: str
+    settings_json: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class NotebookResourceAttachRequest(BaseModel):
+    """Request to attach resource to notebook."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    resource_id: UUID
+    role: str = "supplemental"
+    is_active: bool = True
+
+
+class NotebookResourceResponse(BaseModel):
+    """Notebook-resource link response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    notebook_id: UUID
+    resource_id: UUID
+    role: str
+    is_active: bool
+    added_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
+class NotebookSessionCreateRequest(BaseModel):
+    """Request to create a notebook-scoped tutoring session."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    resource_id: UUID
+    topic: Optional[str] = None
+    selected_topics: Optional[List[str]] = None
+    mode: str = "learn"
+    consent_training: Optional[bool] = Field(default=None)
+
+
+class NotebookSessionResponse(BaseModel):
+    """Notebook-session mapping response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    notebook_id: UUID
+    session_id: UUID
+    mode: str
+    started_at: datetime
+    ended_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class NotebookSessionDetailResponse(BaseModel):
+    """Notebook session detail with nested session metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    notebook_session: NotebookSessionResponse
+    session: "SessionResponse"
+
+
+class NotebookProgressResponse(BaseModel):
+    """Notebook-level progress summary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    notebook_id: UUID
+    mastery_snapshot: Dict[str, float] = Field(default_factory=dict)
+    objective_progress_snapshot: Dict[str, Any] = Field(default_factory=dict)
+    weak_concepts_snapshot: List[str] = Field(default_factory=list)
+    sessions_count: int = 0
+    completed_sessions_count: int = 0
+    updated_at: Optional[datetime] = None
+
+
+class NotebookArtifactGenerateRequest(BaseModel):
+    """Request payload for generating a notebook artifact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_type: str = Field(min_length=1)
+    source_session_ids: List[UUID] = Field(default_factory=list)
+    source_resource_ids: List[UUID] = Field(default_factory=list)
+    options: Dict[str, Any] = Field(default_factory=dict)
+
+
+class NotebookArtifactResponse(BaseModel):
+    """Notebook artifact response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    notebook_id: UUID
+    artifact_type: str
+    payload_json: Dict[str, Any]
+    source_session_ids: List[str] = Field(default_factory=list)
+    source_resource_ids: List[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
 # Session API schemas
 class SessionCreate(BaseModel):
     """Request to create a session."""
@@ -337,6 +478,9 @@ class SessionSummaryResponse(BaseModel):
     concepts_to_revisit: List[str] = Field(default_factory=list)
     objectives: List[Dict[str, Any]] = Field(default_factory=list)
     mastery_snapshot: Dict[str, float] = Field(default_factory=dict)
+
+
+NotebookSessionDetailResponse.model_rebuild()
 
 
 # ── Quiz schemas ───────────────────────────────────────────────────────

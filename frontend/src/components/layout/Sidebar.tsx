@@ -1,20 +1,20 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Home, BookOpen, MessageSquare, Plus, Sparkles, SlidersHorizontal, CreditCard, LogOut } from 'lucide-react';
+import { Home, Plus, Sparkles, SlidersHorizontal, CreditCard, LogOut, NotebookPen } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../hooks/useAuth';
-
-const navItems = [
-  { href: '/', label: 'Studio', icon: Home },
-  { href: '/resources', label: 'Library', icon: BookOpen },
-  { href: '/sessions', label: 'Conversations', icon: MessageSquare },
-  { href: '/billing', label: 'Billing', icon: CreditCard },
-  { href: '/settings', label: 'Settings', icon: SlidersHorizontal },
-];
 
 export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const notebooksEnabled = import.meta.env.VITE_FEATURE_NOTEBOOKS_ENABLED !== 'false';
+
+  const navItems = [
+    { href: '/', label: 'Studio', icon: Home },
+    ...(notebooksEnabled ? [{ href: '/notebooks', label: 'Notebooks', icon: NotebookPen }] : []),
+    { href: '/billing', label: 'Billing', icon: CreditCard },
+    { href: '/settings', label: 'Settings', icon: SlidersHorizontal },
+  ];
 
   const isActive = (href: string) => {
     if (href === '/') return location.pathname === '/';
@@ -59,11 +59,11 @@ export function Sidebar() {
 
       <div className="px-3 mb-4">
         <Link
-          to="/sessions/new"
+          to="/notebooks/new"
           className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-lg bg-gold/10 border border-gold/20 text-gold hover:bg-gold/20 hover:border-gold/30 transition-all text-sm font-medium"
         >
           <Plus className="w-4 h-4" />
-          New Session
+          New Notebook
         </Link>
       </div>
 
