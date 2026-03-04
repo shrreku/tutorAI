@@ -1,7 +1,16 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tutorbook",
-  "compatibility_date": "2025-09-27",
+  "compatibility_date": "2026-03-04",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "tutorbook.me",
+      "zone_name": "tutorbook.me",
+      "custom_domain": true
+    }
+  ],
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"
