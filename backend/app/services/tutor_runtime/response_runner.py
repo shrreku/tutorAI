@@ -60,7 +60,7 @@ async def generate_response(
     if low_evidence:
         append_trace_event(
             plan,
-            "low_evidence_note",
+            "guard_override",
             build_guard_override_metadata(
                 guard_name="low_evidence_response_guard",
                 decision_requested="grounded_response",
@@ -69,8 +69,14 @@ async def generate_response(
                 details={"evidence_count": len(evidence_chunk_ids)},
             ),
         )
-        # Do NOT return a canned response — let the tutor LLM generate
-        # using curriculum context, objective, and pedagogical knowledge.
+        return TutorOutput(
+            response_text=(
+                "I want to keep this accurate. I don’t have enough grounded evidence "
+                "from your uploaded material for this turn. Could you share more context "
+                "or ask me to focus on a specific section so I can continue safely?"
+            ),
+            evidence_chunk_ids=None,
+        )
 
     gen_meta = {
         "objective_id": current_obj.get("objective_id"),

@@ -1,3 +1,4 @@
+import logging
 import uuid
 from typing import Optional
 
@@ -5,9 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
 from app.models.session import TutorTurn, UserSession
+from app.agents.summary_agent import SummaryAgent, SummaryState
 from app.services.tutor_runtime.state_loader import next_turn_index
 from app.services.tutor_runtime.step_state import get_step_index
 from app.services.tutor_runtime.types import TurnResult
+
+logger = logging.getLogger(__name__)
 
 
 def _serialize_policy_output(
@@ -169,23 +173,102 @@ async def persist_turn(
                 raise
 
 
-async def handle_session_complete(db: AsyncSession, session: UserSession, turn_id: str) -> TurnResult:
-    """Finalize session state and return completion result payload."""
+async def handle_session_complete(
+    db: AsyncSession,
+    session: UserSession,
+    turn_id: str,
+    *,
+    llm_provider=None,
+) -> TurnResult:
+    """Finalize session state and return completion result with LLM-generated summary."""
     session.status = "completed"
     await db.commit()
     plan = session.plan_state or {}
+    mastery = dict(session.mastery) if session.mastery else {}
+    objective_queue = plan.get("objective_queue", [])
+    objective_progress = plan.get("objective_progress", {})
+
+    # Build initial mastery (all zeros) for delta computation
+    initial_mastery = {c: 0.0 for c in mastery}
+
+    # Generate LLM summary
+    summary_state = SummaryState(
+        objectives=objective_queue,
+        objective_progress=objective_progress,
+        mastery=mastery,
+        initial_mastery=initial_mastery,
+        turn_count=plan.get("turn_count", 0),
+        topic=plan.get("active_topic"),
+    )
+
+    summary_agent = SummaryAgent(llm_provider)
+    try:
+        summary_output = await summary_agent.run(summary_state)
+        summary_text = summary_output.summary_text
+        summary_data = {
+            "summary_text": summary_output.summary_text,
+            "concepts_strong": summary_output.concepts_strong,
+            "concepts_developing": summary_output.concepts_developing,
+            "concepts_to_revisit": summary_output.concepts_to_revisit,
+            "objectives": [
+                {
+                    "objective_id": obj.get("objective_id", ""),
+                    "title": obj.get("title", ""),
+                    "primary_concepts": obj.get("concept_scope", {}).get("primary", []),
+                    "progress": objective_progress.get(obj.get("objective_id", ""), {}),
+                }
+                for obj in objective_queue
+            ],
+            "mastery_snapshot": mastery,
+            "turn_count": plan.get("turn_count", 0),
+            "topic": plan.get("active_topic"),
+        }
+    except Exception as e:
+        logger.warning(f"Summary generation failed, using fallback: {e}")
+        summary_text = (
+            "Great work completing this session! "
+            "You've worked through all the learning objectives. "
+            "Check the session report below for a detailed breakdown of your progress."
+        )
+        summary_data = {
+            "summary_text": summary_text,
+            "concepts_strong": [c for c, v in mastery.items() if v >= 0.5],
+            "concepts_developing": [c for c, v in mastery.items() if 0.15 <= v < 0.5],
+            "concepts_to_revisit": [c for c, v in mastery.items() if 0 < v < 0.15],
+            "objectives": [
+                {
+                    "objective_id": obj.get("objective_id", ""),
+                    "title": obj.get("title", ""),
+                    "primary_concepts": obj.get("concept_scope", {}).get("primary", []),
+                    "progress": objective_progress.get(obj.get("objective_id", ""), {}),
+                }
+                for obj in objective_queue
+            ],
+            "mastery_snapshot": mastery,
+            "turn_count": plan.get("turn_count", 0),
+            "topic": plan.get("active_topic"),
+        }
+
+    # Store summary in plan_state for later retrieval
+    plan["session_summary"] = summary_data
+    session.plan_state = plan
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(session, "plan_state")
+    await db.commit()
+
     return TurnResult(
         turn_id=turn_id,
-        tutor_response="Congratulations! You've completed all the learning objectives for this session. Great work!",
+        tutor_response=summary_text,
         tutor_question=None,
         action="summarize",
         current_step="complete",
         current_step_index=get_step_index(plan),
         concept="",
         focus_concepts=[],
-        mastery=dict(session.mastery) if session.mastery else {},
+        mastery=mastery,
         mastery_delta={},
         objective_progress={},
         session_complete=True,
         awaiting_evaluation=False,
+        session_summary=summary_data,
     )

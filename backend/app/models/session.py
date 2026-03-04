@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional, List, TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import String, Text, Integer, Float, ForeignKey, Index, UniqueConstraint, DateTime, func
+from sqlalchemy import String, Text, Integer, Float, Boolean, ForeignKey, Index, UniqueConstraint, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -17,6 +17,7 @@ class UserProfile(Base, UUIDMixin, TimestampMixin):
     external_id: Mapped[Optional[str]] = mapped_column(String(256), nullable=True, unique=True)
     display_name: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     email: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    password_hash: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     global_mastery: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     preferences: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
@@ -45,6 +46,10 @@ class UserSession(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    consent_training: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False,
+        doc="Explicit user opt-in for training-data usage",
+    )
     plan_state: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     mastery: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     token_usage: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)

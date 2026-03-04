@@ -41,6 +41,11 @@ export interface TopicBundle {
   primary_concepts: string[];
 }
 
+export interface TopicBundleEditable extends TopicBundle {
+  support_concepts: string[];
+  prereq_topic_ids: string[];
+}
+
 // Ingestion types
 export interface IngestionStatus {
   job_id: string;
@@ -51,6 +56,82 @@ export interface IngestionStatus {
   error_message: string | null;
   started_at: string | null;
   completed_at: string | null;
+}
+
+export interface KnowledgeBaseConcept {
+  concept_id: string;
+  teach_count: number;
+  mention_count: number;
+  importance_score: number | null;
+  concept_type: string | null;
+  bloom_level: string | null;
+  topo_order: number | null;
+}
+
+export interface KnowledgeBaseEdge {
+  source_concept_id: string;
+  target_concept_id: string;
+  relation_type: string;
+  assoc_weight: number | null;
+  confidence: number | null;
+}
+
+export interface ResourceKnowledgeBase {
+  resource_id: string;
+  resource_name: string;
+  topic: string | null;
+  status: string;
+  chunk_count: number;
+  concept_count: number;
+  graph_edge_count: number;
+  concepts: KnowledgeBaseConcept[];
+  edges: KnowledgeBaseEdge[];
+  topic_bundles: TopicBundleEditable[];
+  latest_job: IngestionStatus | null;
+}
+
+export interface KnowledgeBaseConceptOverride {
+  concept_id: string;
+  importance_score?: number | null;
+  concept_type?: string | null;
+  bloom_level?: string | null;
+  topo_order?: number | null;
+}
+
+export interface KnowledgeBaseTopicBundleUpdate {
+  topic_id: string;
+  topic_name: string;
+  primary_concepts: string[];
+  support_concepts: string[];
+  prereq_topic_ids: string[];
+}
+
+export interface KnowledgeBaseEdgeUpdate {
+  source_concept_id: string;
+  target_concept_id: string;
+  relation_type: string;
+  assoc_weight?: number | null;
+  confidence?: number | null;
+}
+
+export interface KnowledgeBaseConceptRename {
+  from_concept_id: string;
+  to_concept_id: string;
+}
+
+export interface KnowledgeBaseGraphOps {
+  add_concepts: string[];
+  remove_concepts: string[];
+  rename_concepts: KnowledgeBaseConceptRename[];
+  add_edges: KnowledgeBaseEdgeUpdate[];
+  remove_edges: KnowledgeBaseEdgeUpdate[];
+}
+
+export interface KnowledgeBaseUpdateRequest {
+  topic?: string | null;
+  concept_overrides: KnowledgeBaseConceptOverride[];
+  graph_ops?: KnowledgeBaseGraphOps;
+  topic_bundles?: KnowledgeBaseTopicBundleUpdate[];
 }
 
 // Session types
@@ -75,6 +156,18 @@ export interface SessionCreateRequest {
   resource_id: string;
   topic?: string;
   selected_topics?: string[];
+  consent_training?: boolean | null;
+}
+
+export interface UserSettings {
+  consent_training_global: boolean;
+  consent_preference_set: boolean;
+  byok_api_key_set?: boolean;
+  byok_api_base_url?: string;
+}
+
+export interface UserSettingsUpdateRequest {
+  consent_training_global?: boolean;
 }
 
 // Tutor types
@@ -97,6 +190,43 @@ export interface TutorTurnResponse {
   evaluation: EvaluationResult | null;
   session_complete: boolean;
   awaiting_evaluation: boolean;
+  session_summary: SessionSummary | null;
+}
+
+export interface SessionSummary {
+  summary_text: string;
+  concepts_strong: string[];
+  concepts_developing: string[];
+  concepts_to_revisit: string[];
+  objectives: SessionObjectiveSummary[];
+  mastery_snapshot: Record<string, number>;
+  turn_count: number;
+  topic: string | null;
+}
+
+export interface SessionObjectiveSummary {
+  objective_id: string;
+  title: string;
+  primary_concepts: string[];
+  progress: {
+    attempts?: number;
+    correct?: number;
+    steps_completed?: number;
+    steps_skipped?: number;
+  };
+}
+
+export interface SessionSummaryResponse {
+  session_id: string;
+  status: string;
+  topic: string | null;
+  turn_count: number;
+  summary_text: string | null;
+  concepts_strong: string[];
+  concepts_developing: string[];
+  concepts_to_revisit: string[];
+  objectives: SessionObjectiveSummary[];
+  mastery_snapshot: Record<string, number>;
 }
 
 export interface EvaluationResult {
@@ -154,4 +284,67 @@ export interface HealthResponse {
   status: string;
   service: string;
   timestamp?: string;
+}
+
+// Quiz types
+export interface QuizQuestion {
+  question_id: string;
+  question_text: string;
+  question_type: string;
+  options: string[];
+  concept: string;
+  difficulty: string;
+}
+
+export interface QuizGenerateRequest {
+  session_id: string;
+  num_questions?: number;
+}
+
+export interface QuizGenerateResponse {
+  quiz_id: string;
+  session_id: string;
+  topic: string | null;
+  quiz_focus: string;
+  questions: QuizQuestion[];
+  total_questions: number;
+}
+
+export interface QuizAnswerRequest {
+  quiz_id: string;
+  question_id: string;
+  answer: string;
+}
+
+export interface QuizAnswerResponse {
+  question_id: string;
+  is_correct: boolean;
+  score: number;
+  feedback: string;
+  correct_answer: string;
+  explanation: string;
+}
+
+export interface QuizResultsResponse {
+  quiz_id: string;
+  session_id: string;
+  total_questions: number;
+  answered: number;
+  correct: number;
+  score_percent: number;
+  per_question: QuizPerQuestion[];
+  concept_scores: Record<string, number>;
+  summary: string;
+}
+
+export interface QuizPerQuestion {
+  question_id: string;
+  question_text: string;
+  concept: string;
+  answered: boolean;
+  student_answer: string | null;
+  is_correct: boolean | null;
+  score: number;
+  correct_answer: string;
+  explanation: string;
 }

@@ -264,7 +264,9 @@ class IngestionPipeline:
                 metrics=metrics,
             )
 
-            await self.db.commit()
+            commit = getattr(self.db, "commit", None)
+            if callable(commit):
+                await commit()
             
             logger.info(f"Pipeline completed successfully for resource {resource_id}")
             return metrics
@@ -296,7 +298,9 @@ class IngestionPipeline:
                     metrics=metrics,
                 )
 
-            await self.db.commit()
+            commit = getattr(self.db, "commit", None)
+            if callable(commit):
+                await commit()
             
             raise
     

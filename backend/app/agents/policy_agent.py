@@ -308,7 +308,8 @@ Based on all the above, decide the pedagogical_action and progression_decision f
                 has_mastery_checkpoint = avg_mastery >= 0.45
                 has_engagement_checkpoint = turns_at_step >= 1 and avg_mastery >= 0.35
                 is_ready = (
-                    has_eval_checkpoint
+                    eval_score is None
+                    or has_eval_checkpoint
                     or has_mastery_checkpoint
                     or has_engagement_checkpoint
                 )

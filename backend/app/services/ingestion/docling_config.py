@@ -29,10 +29,32 @@ def build_docling_converter():
         getattr(pipeline_options, "do_ocr", True),
     )
 
+    # Build format options for all supported input formats.
+    # PDF gets the full pipeline_options; other formats use Docling defaults.
+    format_options: dict = {
+        InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
+    }
+
+    # Register additional formats when the installed Docling version supports them.
+    _optional_formats = {
+        "DOCX": "DoclingParseDocumentFormatOption",
+        "PPTX": "DoclingParseDocumentFormatOption",
+        "HTML": "DoclingParseDocumentFormatOption",
+        "MD": "DoclingParseDocumentFormatOption",
+        "ASCIIDOC": "DoclingParseDocumentFormatOption",
+        "CSV": "DoclingParseDocumentFormatOption",
+    }
+    for fmt_name in _optional_formats:
+        fmt_enum = getattr(InputFormat, fmt_name, None)
+        if fmt_enum is not None:
+            format_options[fmt_enum] = fmt_enum  # Docling auto-resolves default option
+            logger.debug("Registered Docling format: %s", fmt_name)
+
     return DocumentConverter(
         format_options={
             InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
-        }
+        },
+        allowed_formats=list(format_options.keys()),
     )
 
 

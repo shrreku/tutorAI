@@ -19,6 +19,12 @@ class IngestionJob(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
+    owner_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("user_profile.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,

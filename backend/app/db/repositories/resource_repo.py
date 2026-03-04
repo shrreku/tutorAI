@@ -1,5 +1,6 @@
 from typing import Optional, List
 from uuid import UUID
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,26 +27,38 @@ class ResourceRepository(BaseRepository[Resource]):
     async def list_resources(
         self,
         status: Optional[str] = None,
+        owner_user_id: Optional[UUID] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> List[Resource]:
         """List resources with optional status filter."""
         query = select(Resource).limit(limit).offset(offset)
+        if owner_user_id is not None:
+            query = query.where(Resource.owner_user_id == owner_user_id)
         if status:
             query = query.where(Resource.status == status)
         query = query.order_by(Resource.created_at.desc())
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def get_resource_detail(self, resource_id: UUID) -> Optional[Resource]:
+    async def get_resource_detail(
+        self,
+        resource_id: UUID,
+        owner_user_id: Optional[UUID] = None,
+    ) -> Optional[Resource]:
         """Get resource with topic bundles and concept stats loaded."""
-        result = await self.db.execute(
+        query = (
             select(Resource)
             .where(Resource.id == resource_id)
             .options(
                 selectinload(Resource.topic_bundles),
                 selectinload(Resource.concept_stats),
             )
+        )
+        if owner_user_id is not None:
+            query = query.where(Resource.owner_user_id == owner_user_id)
+        result = await self.db.execute(
+            query
         )
         return result.scalar_one_or_none()
 
@@ -64,3 +77,23 @@ class ResourceRepository(BaseRepository[Resource]):
         if error_message:
             kwargs["error_message"] = error_message
         return await self.update(resource_id, **kwargs)
+
+    async def count_uploads_since(
+        self, user_id: UUID, delta: timedelta
+    ) -> int:
+        """Count resources uploaded by *user_id* in the last *delta* period.
+
+        This is used for per-user daily upload quota enforcement.
+        Note: Resource currently has no ``user_id`` column; we use the
+        ingestion_job → resource link via session or simply count by
+        uploaded_at window.  When an ``uploaded_by`` column is added, switch
+        to filtering by it.
+        """
+        cutoff = datetime.now(timezone.utc) - delta
+        result = await self.db.execute(
+            select(func.count())
+            .select_from(Resource)
+            .where(Resource.owner_user_id == user_id)
+            .where(Resource.uploaded_at >= cutoff)
+        )
+        return result.scalar_one()

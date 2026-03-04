@@ -2,7 +2,6 @@
 import argparse
 import base64
 import json
-import ssl
 import urllib.request
 from pathlib import Path
 
@@ -23,6 +22,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("session_id")
     parser.add_argument("--limit", type=int, default=25)
+    parser.add_argument(
+        "--insecure",
+        action="store_true",
+        help="Disable TLS certificate verification (for local debugging only)",
+    )
     args = parser.parse_args()
 
     env = read_env()
@@ -31,12 +35,17 @@ def main() -> None:
     base_url = env.get("LANGFUSE_BASE_URL", "https://cloud.langfuse.com").rstrip("/")
 
     auth = base64.b64encode(f"{pk}:{sk}".encode()).decode()
-    ssl_ctx = ssl._create_unverified_context()
+    context = None
+    if args.insecure:
+        import ssl
+
+        context = ssl._create_unverified_context()
+
     list_req = urllib.request.Request(
         f"{base_url}/api/public/traces?limit={args.limit}",
         headers={"Authorization": f"Basic {auth}"},
     )
-    with urllib.request.urlopen(list_req, timeout=30, context=ssl_ctx) as response:
+    with urllib.request.urlopen(list_req, timeout=30, context=context) as response:
         traces = json.loads(response.read()).get("data", [])
 
     matching = []
@@ -66,7 +75,7 @@ def main() -> None:
         f"{base_url}/api/public/traces/{trace_id}",
         headers={"Authorization": f"Basic {auth}"},
     )
-    with urllib.request.urlopen(detail_req, timeout=30, context=ssl_ctx) as response:
+    with urllib.request.urlopen(detail_req, timeout=30, context=context) as response:
         detail = json.loads(response.read())
 
     observations = detail.get("observations") or []

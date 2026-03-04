@@ -32,6 +32,8 @@ class TurnResult:
     delegation_reason: Optional[str] = None
     delegation_outcome: Optional[str] = None
     telemetry_contract: dict[str, Any] = field(default_factory=dict)
+    # Session summary data (populated on session_complete)
+    session_summary: Optional[dict[str, Any]] = None
 
 
 @dataclass

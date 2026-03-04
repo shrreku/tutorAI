@@ -26,9 +26,31 @@ logging.getLogger("asyncio").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
+def _validate_auth_config() -> None:
+    """Fail fast when auth is enabled with an unsafe JWT signing key."""
+    if not settings.AUTH_ENABLED or not settings.AUTH_ENFORCE_STRONG_SECRET:
+        return
+
+    secret = (settings.AUTH_SECRET_KEY or "").strip()
+    lowered = secret.lower()
+    weak_markers = (
+        "your-secret-key",
+        "change-in-production",
+        "changeme",
+        "replace-me",
+    )
+
+    if len(secret) < settings.AUTH_SECRET_MIN_LENGTH or any(marker in lowered for marker in weak_markers):
+        raise RuntimeError(
+            "AUTH_SECRET_KEY is weak or placeholder while AUTH_ENABLED=true. "
+            "Set a high-entropy secret (>=32 chars)."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting StudyAgent API...")
+    _validate_auth_config()
     # Initialise Langfuse singleton (reads env vars, runs auth_check)
     lf = init_langfuse()
     logger.info(f"Langfuse enabled: {lf is not None}")
@@ -49,24 +71,51 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
+# CORS middleware — allow local dev and production frontend origins
+_allowed_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+# In production, add your deployed frontend URL via environment variable
+import os as _os
+_prod_origin = _os.getenv("CORS_ALLOWED_ORIGIN")
+if _prod_origin:
+    _allowed_origins.append(_prod_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
+import time
+
+
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
-    """Attach X-Request-Id to all requests for tracing."""
+    """Attach X-Request-Id and measure latency for observability."""
     request_id = request.headers.get("X-Request-Id", str(uuid.uuid4()))
     request.state.request_id = request_id
-    
+    start = time.perf_counter()
+
     response = await call_next(request)
+
+    latency_ms = int((time.perf_counter() - start) * 1000)
     response.headers["X-Request-Id"] = request_id
+    response.headers["X-Response-Time-Ms"] = str(latency_ms)
+
+    # Structured log line for aggregation / dashboards
+    logger.info(
+        "request_complete path=%s method=%s status=%s latency_ms=%d request_id=%s",
+        request.url.path,
+        request.method,
+        response.status_code,
+        latency_ms,
+        request_id,
+    )
     return response
 
 

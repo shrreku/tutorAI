@@ -45,6 +45,24 @@ RELATIONSHIP_PROPERTIES = {
     "RELATED_TO": {"directed": False, "dir_forward": 0.50, "prereq": False},
 }
 
+DISPLAY_RELATION_WHITELIST = {
+    "REQUIRES",
+    "ENABLES",
+    "DERIVES_FROM",
+    "PART_OF",
+    "IS_A",
+    "APPLIES_TO",
+}
+
+SOURCE_CONFIDENCE_FLOORS = {
+    "ontology_relation": 0.58,
+    "semantic": 0.62,
+    "prereq_hint": 0.55,
+    "cooccurrence": 0.82,
+}
+
+MAX_INCIDENT_EDGES_PER_CONCEPT = 4
+
 
 def _score_ontology_relation(relation: dict) -> tuple[float, dict]:
     """Compute confidence from relation confidence + evidence richness."""
@@ -66,6 +84,91 @@ def _score_ontology_relation(relation: dict) -> tuple[float, dict]:
         "evidence_fields": evidence_bits,
     }
     return scored_confidence, score_detail
+
+
+def _edge_priority(edge_data: dict) -> float:
+    confidence = float(edge_data.get("confidence", 0.0) or 0.0)
+    assoc_weight = float(edge_data.get("assoc_weight", 0.0) or 0.0)
+    relation_type = str(edge_data.get("relation_type", "RELATED_TO")).upper().strip()
+    source_type = str(edge_data.get("source_type", "semantic"))
+
+    relation_bonus = 0.1 if relation_type in {"REQUIRES", "DERIVES_FROM", "IS_A"} else 0.0
+    source_bonus = 0.08 if source_type in {"ontology_relation", "prereq_hint"} else 0.0
+    return confidence + (assoc_weight * 0.08) + relation_bonus + source_bonus
+
+
+def _curate_edge_map(edge_map: dict[tuple[str, str], dict], admitted_concepts: set[str]) -> tuple[dict[tuple[str, str], dict], dict]:
+    """
+    Curate edges for readability and pedagogical utility.
+
+    Strategy:
+    1) Keep only high-signal relation types.
+    2) Apply source-aware confidence floors.
+    3) Limit node degree to prevent hairball graphs.
+    4) Rescue isolated concepts with their best remaining edge.
+    """
+    filtered: list[tuple[tuple[str, str], dict]] = []
+    removed_by_relation = 0
+    removed_by_confidence = 0
+
+    for edge_key, edge_data in edge_map.items():
+        relation_type = str(edge_data.get("relation_type", "RELATED_TO")).upper().strip()
+        source_type = str(edge_data.get("source_type", "semantic"))
+        confidence = float(edge_data.get("confidence", 0.0) or 0.0)
+
+        if relation_type not in DISPLAY_RELATION_WHITELIST:
+            removed_by_relation += 1
+            continue
+
+        min_confidence = SOURCE_CONFIDENCE_FLOORS.get(source_type, 0.6)
+        if confidence < min_confidence:
+            removed_by_confidence += 1
+            continue
+
+        filtered.append((edge_key, edge_data))
+
+    filtered.sort(key=lambda item: _edge_priority(item[1]), reverse=True)
+
+    degree: dict[str, int] = defaultdict(int)
+    curated: dict[tuple[str, str], dict] = {}
+    removed_by_density = 0
+
+    for edge_key, edge_data in filtered:
+        source = edge_data["source"]
+        target = edge_data["target"]
+        if degree[source] >= MAX_INCIDENT_EDGES_PER_CONCEPT or degree[target] >= MAX_INCIDENT_EDGES_PER_CONCEPT:
+            removed_by_density += 1
+            continue
+        curated[edge_key] = edge_data
+        degree[source] += 1
+        degree[target] += 1
+
+    rescued = 0
+    for concept_id in admitted_concepts:
+        if degree[concept_id] > 0:
+            continue
+        for edge_key, edge_data in filtered:
+            if edge_key in curated:
+                continue
+            if edge_data["source"] != concept_id and edge_data["target"] != concept_id:
+                continue
+            source = edge_data["source"]
+            target = edge_data["target"]
+            if degree[source] >= MAX_INCIDENT_EDGES_PER_CONCEPT + 1 or degree[target] >= MAX_INCIDENT_EDGES_PER_CONCEPT + 1:
+                continue
+            curated[edge_key] = edge_data
+            degree[source] += 1
+            degree[target] += 1
+            rescued += 1
+            break
+
+    metrics = {
+        "removed_by_relation": removed_by_relation,
+        "removed_by_confidence": removed_by_confidence,
+        "removed_by_density": removed_by_density,
+        "rescued_isolated": rescued,
+    }
+    return curated, metrics
 
 
 class ConceptGraphBuilder:
@@ -336,6 +439,8 @@ class ConceptGraphBuilder:
         # ============================================================
         # PHASE 4: Enforce DAG on prerequisite edges (before DB insert)
         # ============================================================
+        edge_map, curation_metrics = _curate_edge_map(edge_map, admitted_concepts)
+
         prereq_rel_types = {"REQUIRES", "ENABLES", "DERIVES_FROM"}
         cycles_broken = enforce_dag_on_map(edge_map, prereq_rel_types, logger=logger)
         
@@ -366,7 +471,7 @@ class ConceptGraphBuilder:
         logger.info(
             f"Created {len(edges)} graph edges for resource {resource_id} "
             f"(semantic: {semantic_edge_count}, cooccurrence: {cooccurrence_edge_count}, "
-            f"cycles_broken: {cycles_broken})"
+            f"cycles_broken: {cycles_broken}, curation: {curation_metrics})"
         )
         
         return {
@@ -376,6 +481,7 @@ class ConceptGraphBuilder:
             "ontology_edges_seeded": ontology_edges_seeded,
             "ontology_edges_boosted": ontology_edges_boosted,
             "cycles_broken": cycles_broken,
+            "curation": curation_metrics,
             "topo_order": topo_order,
         }
     

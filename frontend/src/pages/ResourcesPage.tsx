@@ -1,13 +1,16 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, FileText, CheckCircle, Clock, XCircle, AlertCircle, Loader2, Sparkles, Plus } from 'lucide-react';
-import { useResources, useUploadResource } from '../api/hooks';
+import { Upload, FileText, CheckCircle, Clock, XCircle, AlertCircle, Loader2, Sparkles, Plus, RotateCcw, Trash2, Settings2 } from 'lucide-react';
+import { useResources, useUploadResource, useRetryIngestion, useDeleteResource } from '../api/hooks';
 
 export default function ResourcesPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { data, isLoading, error } = useResources();
   const uploadMutation = useUploadResource();
+  const retryMutation = useRetryIngestion();
+  const deleteMutation = useDeleteResource();
+  const [actionResourceId, setActionResourceId] = useState<string | null>(null);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -26,6 +29,27 @@ export default function ResourcesPage() {
     processing: { icon: Clock, color: 'text-gold', bg: 'bg-gold/10 border-gold/20' },
     failed: { icon: XCircle, color: 'text-red-400', bg: 'bg-red-400/10 border-red-400/20' },
     pending: { icon: AlertCircle, color: 'text-muted-foreground', bg: 'bg-secondary border-border' },
+  };
+
+  const handleRetry = async (resourceId: string) => {
+    setActionResourceId(resourceId);
+    try {
+      await retryMutation.mutateAsync(resourceId);
+    } finally {
+      setActionResourceId(null);
+    }
+  };
+
+  const handleDelete = async (resourceId: string, filename: string) => {
+    const confirmed = window.confirm(`Delete resource "${filename}" and its knowledge base data? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setActionResourceId(resourceId);
+    try {
+      await deleteMutation.mutateAsync(resourceId);
+    } finally {
+      setActionResourceId(null);
+    }
   };
 
   if (isLoading) {
@@ -93,6 +117,18 @@ export default function ResourcesPage() {
         </div>
       )}
 
+      {retryMutation.isError && (
+        <div className="mb-6 p-3 rounded-lg border border-destructive/30 bg-destructive/10 text-sm text-destructive animate-fade-up">
+          Retry failed. Please try again.
+        </div>
+      )}
+
+      {deleteMutation.isError && (
+        <div className="mb-6 p-3 rounded-lg border border-destructive/30 bg-destructive/10 text-sm text-destructive animate-fade-up">
+          Delete failed. Please try again.
+        </div>
+      )}
+
       {/* Content */}
       {data?.items.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center animate-fade-up">
@@ -117,6 +153,8 @@ export default function ResourcesPage() {
             const config = statusConfig[resource.status] || statusConfig.pending;
             const StatusIcon = config.icon;
             const isReady = resource.status === 'ready' || resource.status === 'completed';
+            const isFailed = resource.status === 'failed';
+            const isActingOnThis = actionResourceId === resource.id;
 
             return (
               <div
@@ -158,6 +196,34 @@ export default function ResourcesPage() {
                       Study
                     </button>
                   )}
+                </div>
+
+                <div className="mt-4 flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => navigate(`/resources/${resource.id}`)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                  >
+                    <Settings2 className="w-3.5 h-3.5" />
+                    Manage KB
+                  </button>
+
+                  <button
+                    onClick={() => handleRetry(resource.id)}
+                    disabled={!isFailed || isActingOnThis}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-gold hover:bg-gold/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <RotateCcw className={`w-3.5 h-3.5 ${isActingOnThis && retryMutation.isPending ? 'animate-spin' : ''}`} />
+                    Retry
+                  </button>
+
+                  <button
+                    onClick={() => handleDelete(resource.id, resource.filename)}
+                    disabled={isActingOnThis}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-red-400 hover:bg-red-400/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete
+                  </button>
                 </div>
               </div>
             );

@@ -16,6 +16,7 @@ from app.models.session import UserProfile, UserSession, TutorTurn
 from app.models.ingestion import IngestionJob
 from app.models.feedback import SessionFeedbackEntry
 from app.models.auth import ApiKey
+from app.models.credits import CreditAccount, CreditGrant, CreditLedgerEntry, ModelMultiplier
 
 __all__ = [
     "Base",
@@ -39,4 +40,8 @@ __all__ = [
     "IngestionJob",
     "SessionFeedbackEntry",
     "ApiKey",
+    "CreditAccount",
+    "CreditGrant",
+    "CreditLedgerEntry",
+    "ModelMultiplier",
 ]

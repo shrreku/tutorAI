@@ -54,13 +54,16 @@ class Settings(BaseSettings):
     INGESTION_DOCLING_CHART_EXTRACTION: Optional[bool] = None
     
     # Authentication
-    AUTH_ENABLED: bool = False
+    AUTH_ENABLED: bool = True
     AUTH_SECRET_KEY: str = "your-secret-key-change-in-production"
     AUTH_ALGORITHM: str = "HS256"
     AUTH_TOKEN_EXPIRE_MINUTES: int = 1440
+    AUTH_SECRET_MIN_LENGTH: int = 32
+    AUTH_ENFORCE_STRONG_SECRET: bool = True
+    ADMIN_EXTERNAL_IDS: str = ""
     
     # Rate Limiting
-    RATE_LIMIT_ENABLED: bool = False
+    RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_REQUESTS_PER_MINUTE: int = 60
     
     # Storage Configuration
@@ -95,6 +98,48 @@ class Settings(BaseSettings):
     # When enabled, the tutoring turn endpoint will accept model overrides via
     # headers (e.g. X-LLM-Model-Tutoring). Keep disabled in production.
     ALLOW_LLM_MODEL_OVERRIDE_HEADERS: bool = False
+
+    # --- Hosting / Production ---
+
+    # BYOK (Bring Your Own Key): when enabled, users must supply LLM keys per
+    # session/request.  Server-side LLM_API_KEY is used as fallback when BYOK
+    # is disabled or when no user key is provided.
+    BYOK_ENABLED: bool = False
+    BYOK_ALLOW_PRIVATE_BASE_URLS: bool = False
+    BYOK_REQUIRE_HTTPS: bool = True
+
+    # Public auth endpoint abuse controls
+    AUTH_RATE_LIMIT_REQUESTS_PER_MINUTE: int = 20
+
+    # Upload quotas & abuse controls
+    UPLOAD_MAX_FILE_SIZE_MB: int = 50
+    UPLOAD_ALLOWED_EXTENSIONS: str = ".pdf,.docx,.pptx,.md,.html,.txt,.csv"
+    UPLOAD_MAX_FILES_PER_USER_PER_DAY: int = 10
+    INGESTION_MAX_CONCURRENT_JOBS: int = 3
+
+    # Durable ingestion queue (requires REDIS_URL)
+    INGESTION_QUEUE_ENABLED: bool = True
+    INGESTION_WORKER_CONCURRENCY: int = 2
+    INGESTION_WORKER_MAX_RETRIES: int = 3
+
+    # Kill switches
+    FEATURE_UPLOADS_ENABLED: bool = True
+    FEATURE_ENRICHMENT_ENABLED: bool = True
+    FEATURE_OCR_ENABLED: bool = True
+
+    # Credits system (student research defaults)
+    CREDITS_ENABLED: bool = False
+    CREDITS_DEFAULT_MONTHLY_GRANT: int = 100000
+    CREDITS_INPUT_TOKEN_MULTIPLIER: float = 1.0
+    CREDITS_OUTPUT_TOKEN_MULTIPLIER: float = 1.5
+    CREDITS_OCR_SURCHARGE: int = 250
+    CREDITS_WEB_SEARCH_SURCHARGE: int = 100
+
+    # Quota / abuse controls
+    CREDITS_DAILY_LIMIT: int = 20000          # hard daily cap per user
+    CREDITS_MONTHLY_LIMIT: int = 100000       # hard monthly cap per user
+    CREDITS_SOFT_LIMIT_PCT: float = 0.8       # warn at 80% of monthly limit
+    CREDITS_TURN_MAX_COST: int = 5000         # reject turns estimated above this
     
     model_config = {
         "env_file": ".env",

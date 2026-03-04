@@ -331,6 +331,7 @@ class TurnPipeline:
         policy_metadata: dict,
         telemetry_contract: dict,
         session_complete: bool,
+        session_summary: dict | None = None,
     ) -> TurnResult:
         result_focus_concepts = plan.get("focus_concepts") or []
         return TurnResult(
@@ -365,6 +366,7 @@ class TurnPipeline:
             delegation_reason=policy_metadata.get("delegation_reason"),
             delegation_outcome=policy_metadata.get("delegation_outcome"),
             telemetry_contract=telemetry_contract,
+            session_summary=session_summary,
         )
 
     async def execute_turn(
@@ -500,7 +502,10 @@ class TurnPipeline:
         objective_queue = plan.get("objective_queue", [])
 
         if obj_idx >= len(objective_queue):
-            return await _handle_session_complete(self.db, session, turn_id)
+            return await _handle_session_complete(
+                self.db, session, turn_id,
+                llm_provider=self.tutor.llm,
+            )
 
         current_obj = objective_queue[obj_idx]
         step_idx = _get_step_index(plan)
@@ -775,8 +780,49 @@ class TurnPipeline:
         session.plan_state = plan
         flag_modified(session, "plan_state")
         flag_modified(session, "mastery")
+
+        # Generate session summary when completing
+        session_summary_data = None
         if session_complete:
             session.status = "completed"
+            try:
+                from app.agents.summary_agent import SummaryAgent, SummaryState
+                mastery_dict = dict(session.mastery) if session.mastery else {}
+                summary_state = SummaryState(
+                    objectives=objective_queue,
+                    objective_progress=plan.get("objective_progress", {}),
+                    mastery=mastery_dict,
+                    initial_mastery={c: 0.0 for c in mastery_dict},
+                    turn_count=plan.get("turn_count", 0),
+                    topic=plan.get("active_topic"),
+                )
+                summary_agent = SummaryAgent(self.tutor.llm)
+                summary_output = await summary_agent.run(summary_state)
+                session_summary_data = {
+                    "summary_text": summary_output.summary_text,
+                    "concepts_strong": summary_output.concepts_strong,
+                    "concepts_developing": summary_output.concepts_developing,
+                    "concepts_to_revisit": summary_output.concepts_to_revisit,
+                    "objectives": [
+                        {
+                            "objective_id": obj.get("objective_id", ""),
+                            "title": obj.get("title", ""),
+                            "primary_concepts": obj.get("concept_scope", {}).get("primary", []),
+                            "progress": plan.get("objective_progress", {}).get(obj.get("objective_id", ""), {}),
+                        }
+                        for obj in objective_queue
+                    ],
+                    "mastery_snapshot": mastery_dict,
+                    "turn_count": plan.get("turn_count", 0),
+                    "topic": plan.get("active_topic"),
+                }
+                plan["session_summary"] = session_summary_data
+                session.plan_state = plan
+                flag_modified(session, "plan_state")
+            except Exception as e:
+                import logging as _logging
+                _logging.getLogger(__name__).warning(f"Summary generation failed in orchestrator: {e}")
+
         await self.db.commit()
 
         result_obj = self._resolve_result_objective(plan, objective_queue, current_obj)
@@ -797,4 +843,5 @@ class TurnPipeline:
             policy_metadata=policy_metadata,
             telemetry_contract=telemetry_contract,
             session_complete=session_complete,
+            session_summary=session_summary_data,
         )

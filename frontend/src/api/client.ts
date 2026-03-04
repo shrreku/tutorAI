@@ -1,5 +1,41 @@
 const API_BASE_URL = '/api/v1';
 
+type HeaderOptions = {
+  includeAuth?: boolean;
+  includeByok?: boolean;
+  includeJsonContentType?: boolean;
+};
+
+// ---------------------------------------------------------------------------
+// Auth header injection — reads JWT from localStorage
+// ---------------------------------------------------------------------------
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  try {
+    const token = localStorage.getItem('auth_token');
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  } catch {
+    // localStorage unavailable
+  }
+  return headers;
+}
+
+// ---------------------------------------------------------------------------
+// BYOK header injection — reads from localStorage (never persisted server-side)
+// ---------------------------------------------------------------------------
+function getByokHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  try {
+    const key = localStorage.getItem('byok_api_key');
+    const baseUrl = localStorage.getItem('byok_api_base_url');
+    if (key) headers['X-LLM-Api-Key'] = key;
+    if (baseUrl) headers['X-LLM-Api-Base-Url'] = baseUrl;
+  } catch {
+    // localStorage unavailable (SSR, private mode, etc.)
+  }
+  return headers;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -10,6 +46,20 @@ export class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+function buildHeaders(options: HeaderOptions = {}): Record<string, string> {
+  const {
+    includeAuth = true,
+    includeByok = true,
+    includeJsonContentType = true,
+  } = options;
+
+  return {
+    ...(includeJsonContentType ? { 'Content-Type': 'application/json' } : {}),
+    ...(includeAuth ? getAuthHeaders() : {}),
+    ...(includeByok ? getByokHeaders() : {}),
+  };
 }
 
 function normalizeErrorData(errorData: unknown, fallbackStatusText: string) {
@@ -74,9 +124,7 @@ export const apiClient = {
     
     const response = await fetch(url.toString(), {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: buildHeaders(),
     });
     
     return handleResponse<T>(response);
@@ -85,18 +133,27 @@ export const apiClient = {
   async post<T>(path: string, body?: unknown): Promise<T> {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: buildHeaders(),
       body: body ? JSON.stringify(body) : undefined,
     });
     
+    return handleResponse<T>(response);
+  },
+
+  async patch<T>(path: string, body?: unknown): Promise<T> {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'PATCH',
+      headers: buildHeaders(),
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
     return handleResponse<T>(response);
   },
   
   async postForm<T>(path: string, formData: FormData): Promise<T> {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'POST',
+      headers: buildHeaders({ includeJsonContentType: false }),
       body: formData,
     });
     
@@ -106,11 +163,19 @@ export const apiClient = {
   async delete<T>(path: string): Promise<T> {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: buildHeaders(),
     });
     
+    return handleResponse<T>(response);
+  },
+
+  async postPublic<T>(path: string, body?: unknown): Promise<T> {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'POST',
+      headers: buildHeaders({ includeAuth: false, includeByok: false }),
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
     return handleResponse<T>(response);
   },
 };

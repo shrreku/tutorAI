@@ -132,6 +132,28 @@ def apply_progression(
                 ),
             )
 
+        if (
+            decision == ProgressionDecision.ADVANCE_OBJECTIVE
+            and roadmap
+            and old_step_idx < len(roadmap) - 1
+        ):
+            decision = ProgressionDecision.ADVANCE_STEP
+            guard_names.append("objective_readiness_not_met")
+            append_trace_event(
+                plan,
+                "guard_override",
+                build_guard_override_metadata(
+                    guard_name="objective_readiness_not_met",
+                    decision_requested=ProgressionDecision.ADVANCE_OBJECTIVE.name,
+                    decision_applied=decision.name,
+                    reason="remaining_required_steps",
+                    details={
+                        "from_step_index": old_step_idx,
+                        "last_step_index": len(roadmap) - 1,
+                    },
+                ),
+            )
+
         if decision == ProgressionDecision.ADVANCE_STEP:
             plan["ad_hoc_count"] = 0
             plan["turns_at_step"] = 0

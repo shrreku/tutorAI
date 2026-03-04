@@ -1,14 +1,15 @@
 import logging
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
 from app.db.repositories.session_repo import SessionRepository, TutorTurnRepository
-from app.models.session import TutorTurn
+from app.models.session import TutorTurn, UserProfile
 from app.schemas.api import TutorTurnRequest, TutorTurnResponse
 from app.config import settings
+from app.api.deps import require_auth, check_rate_limit, verify_session_owner, get_byok_api_key
 from app.services.llm.factory import create_llm_provider
 from app.services.embedding.factory import create_embedding_provider
 from app.agents.policy_agent import PolicyAgent
@@ -17,6 +18,7 @@ from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.safety_critic import SafetyCritic
 from app.services.retrieval.service import RetrievalService
 from app.services.tutor_runtime.orchestrator import TurnPipeline
+from app.services.credits.meter import CreditMeter
 
 logger = logging.getLogger(__name__)
 
@@ -52,28 +54,38 @@ def get_turn_pipeline(
     *,
     tutoring_model_override: str | None = None,
     evaluation_model_override: str | None = None,
+    byok_api_key: str | None = None,
+    byok_api_base_url: str | None = None,
 ) -> TurnPipeline:
-    """Create turn pipeline with all dependencies."""
+    """Create turn pipeline with all dependencies.  Supports BYOK."""
     global _DEFAULT_TUTORING_LLM
     global _DEFAULT_EVALUATION_LLM
     global _DEFAULT_EMBEDDING_PROVIDER
 
-    if tutoring_model_override:
+    # When a BYOK key is provided we always create fresh, non-cached providers
+    # to avoid leaking one user's key to another.
+    use_byok = bool(byok_api_key)
+
+    if tutoring_model_override or use_byok:
         tutoring_llm = create_llm_provider(
             settings,
             task="tutoring",
             model_override=tutoring_model_override,
+            byok_api_key=byok_api_key,
+            byok_api_base_url=byok_api_base_url,
         )
     else:
         if _DEFAULT_TUTORING_LLM is None:
             _DEFAULT_TUTORING_LLM = create_llm_provider(settings, task="tutoring")
         tutoring_llm = _DEFAULT_TUTORING_LLM
 
-    if evaluation_model_override:
+    if evaluation_model_override or use_byok:
         eval_llm = create_llm_provider(
             settings,
             task="evaluation",
             model_override=evaluation_model_override,
+            byok_api_key=byok_api_key,
+            byok_api_base_url=byok_api_base_url,
         )
     else:
         if _DEFAULT_EVALUATION_LLM is None:
@@ -98,6 +110,8 @@ def get_turn_pipeline(
 async def execute_turn(
     request: TutorTurnRequest,
     db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(check_rate_limit),
+    byok: dict = Depends(get_byok_api_key),
     x_llm_model_tutoring: str | None = Header(default=None, alias="X-LLM-Model-Tutoring"),
     x_llm_model_evaluation: str | None = Header(default=None, alias="X-LLM-Model-Evaluation"),
 ):
@@ -110,6 +124,9 @@ async def execute_turn(
     3. Updates session state
     4. Returns tutor response
     """
+    # Ownership check
+    await verify_session_owner(request.session_id, user, db)
+
     # Get session
     session_repo = SessionRepository(db)
     session = await session_repo.get_by_id(request.session_id)
@@ -127,6 +144,21 @@ async def execute_turn(
         )
     
     # Execute turn pipeline
+    turn_id = str(uuid4())
+    reserved_credits = 0
+    meter = CreditMeter(db)
+
+    # Reserve credits before executing
+    if settings.CREDITS_ENABLED:
+        estimated = 2000  # conservative default estimate per turn
+        reserved = await meter.reserve_for_turn(user.id, turn_id, estimated)
+        if reserved is None:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="Insufficient credits. Check your balance in Settings.",
+            )
+        reserved_credits = reserved
+
     try:
         tutoring_override = None
         evaluation_override = None
@@ -138,11 +170,29 @@ async def execute_turn(
             db,
             tutoring_model_override=tutoring_override,
             evaluation_model_override=evaluation_override,
+            byok_api_key=byok.get("api_key"),
+            byok_api_base_url=byok.get("api_base_url"),
         )
         result = await pipeline.execute_turn(
             session_id=request.session_id,
             student_message=request.message,
         )
+
+        # Finalize credit charge based on actual usage
+        if settings.CREDITS_ENABLED and not byok.get("api_key"):
+            model_id = settings.LLM_MODEL_TUTORING or settings.LLM_MODEL
+            # token_count is captured by the pipeline on the turn
+            prompt_tokens = getattr(result, "prompt_tokens", 0) or 0
+            completion_tokens = getattr(result, "completion_tokens", 0) or 0
+            # Use estimated if actuals unavailable
+            if prompt_tokens == 0 and completion_tokens == 0:
+                prompt_tokens = 800
+                completion_tokens = 400
+            await meter.finalize_turn(
+                user.id, turn_id, model_id,
+                prompt_tokens, completion_tokens,
+                reserved_credits,
+            )
         
         logger.info(f"Executed turn {result.turn_id} for session {request.session_id}")
         
@@ -160,8 +210,11 @@ async def execute_turn(
             session_complete=result.session_complete,
             focus_concepts=result.focus_concepts,
             awaiting_evaluation=result.awaiting_evaluation,
+            session_summary=result.session_summary,
         )
     except Exception as e:
+        # Release reservation on failure
+        await meter.release_turn(user.id, turn_id, reserved_credits)
         logger.error(f"Turn pipeline failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -174,8 +227,10 @@ async def get_turns(
     session_id: UUID,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(require_auth),
 ):
     """Get all turns for a session."""
+    await verify_session_owner(session_id, user, db)
     session_repo = SessionRepository(db)
     session = await session_repo.get_by_id(session_id)
     

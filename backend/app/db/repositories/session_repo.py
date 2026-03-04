@@ -23,6 +23,13 @@ class UserProfileRepository(BaseRepository[UserProfile]):
         )
         return result.scalar_one_or_none()
 
+    async def get_by_external_id(self, external_id: str) -> Optional[UserProfile]:
+        """Get user by external identity (JWT subject)."""
+        result = await self.db.execute(
+            select(UserProfile).where(UserProfile.external_id == external_id)
+        )
+        return result.scalar_one_or_none()
+
     async def get_or_create_default(self) -> UserProfile:
         """Get or create a default user for unauthenticated access."""
         default_email = "default@studyagent.local"
@@ -31,8 +38,34 @@ class UserProfileRepository(BaseRepository[UserProfile]):
             user = UserProfile(
                 display_name="Default User",
                 email=default_email,
+                preferences={"consent_training_global": False},
             )
             user = await self.create(user)
+        return user
+
+    async def get_global_consent(self, user: UserProfile) -> tuple[bool, bool]:
+        """Return (consent_value, preference_set)."""
+        preferences = user.preferences or {}
+        if "consent_training_global" not in preferences:
+            return False, False
+        return bool(preferences.get("consent_training_global")), True
+
+    async def update_settings(
+        self,
+        user: UserProfile,
+        *,
+        consent_training_global: bool | None = None,
+    ) -> UserProfile:
+        """Update mutable user settings stored in preferences JSON."""
+        preferences = dict(user.preferences or {})
+
+        if consent_training_global is not None:
+            preferences["consent_training_global"] = bool(consent_training_global)
+
+        user.preferences = preferences
+        self.db.add(user)
+        await self.db.commit()
+        await self.db.refresh(user)
         return user
 
 

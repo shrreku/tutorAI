@@ -1,23 +1,40 @@
-import { Link, useLocation } from 'react-router-dom';
-import { Home, BookOpen, MessageSquare, Plus, Sparkles } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Home, BookOpen, MessageSquare, Plus, Sparkles, SlidersHorizontal, CreditCard, LogOut } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useAuth } from '../../hooks/useAuth';
 
 const navItems = [
-  { href: '/', label: 'Home', icon: Home },
-  { href: '/resources', label: 'Resources', icon: BookOpen },
-  { href: '/sessions', label: 'Sessions', icon: MessageSquare },
+  { href: '/', label: 'Studio', icon: Home },
+  { href: '/resources', label: 'Library', icon: BookOpen },
+  { href: '/sessions', label: 'Conversations', icon: MessageSquare },
+  { href: '/billing', label: 'Billing', icon: CreditCard },
+  { href: '/settings', label: 'Settings', icon: SlidersHorizontal },
 ];
 
 export function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   const isActive = (href: string) => {
     if (href === '/') return location.pathname === '/';
     return location.pathname.startsWith(href);
   };
 
+  const handleLogout = () => {
+    logout();
+    navigate('/landing', { replace: true });
+  };
+
+  const initials = (user?.display_name || user?.email || 'S')
+    .split(' ')
+    .map(w => w[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
   return (
-    <aside className="w-64 flex flex-col bg-sidebar border-r border-border/50 grain">
+    <aside className="w-72 flex flex-col bg-sidebar border-r border-border/50 grain">
       <div className="p-6 pb-4">
         <Link to="/" className="flex items-center gap-2.5 group">
           <div className="w-8 h-8 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center group-hover:bg-gold/20 transition-colors">
@@ -28,10 +45,16 @@ export function Sidebar() {
               StudyAgent
             </h1>
             <p className="text-[10px] uppercase tracking-[0.2em] text-sidebar-foreground/50 mt-0.5">
-              AI Tutor
+              Learning Studio
             </p>
           </div>
         </Link>
+      </div>
+
+      <div className="px-6 mb-4">
+        <p className="text-xs text-sidebar-foreground/70 leading-relaxed">
+          Turn any textbook into conversations.
+        </p>
       </div>
 
       <div className="px-3 mb-4">
@@ -65,12 +88,23 @@ export function Sidebar() {
       <div className="p-4 mt-auto border-t border-border/30">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-gold/10 border border-gold/20 flex items-center justify-center">
-            <span className="text-xs font-medium text-gold">S</span>
+            <span className="text-xs font-medium text-gold">{initials}</span>
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-medium text-foreground truncate">Student</p>
-            <p className="text-[11px] text-sidebar-foreground truncate">Active</p>
+            <p className="text-xs font-medium text-foreground truncate">
+              {user?.display_name || 'Student'}
+            </p>
+            <p className="text-[11px] text-sidebar-foreground truncate">
+              {user?.email || 'In session'}
+            </p>
           </div>
+          <button
+            onClick={handleLogout}
+            title="Sign out"
+            className="shrink-0 p-1.5 rounded-md text-sidebar-foreground/50 hover:text-foreground hover:bg-white/[0.06] transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </aside>

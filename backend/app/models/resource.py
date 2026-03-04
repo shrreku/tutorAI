@@ -5,6 +5,7 @@ from typing import Optional, List, TYPE_CHECKING
 from sqlalchemy import String, Text, Integer, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import ForeignKey
 
 from app.models.base import Base, UUIDMixin, TimestampMixin
 
@@ -27,6 +28,12 @@ class Resource(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "resource"
 
     filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    owner_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("user_profile.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     topic: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     status: Mapped[str] = mapped_column(
         String(32),

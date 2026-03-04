@@ -54,6 +54,7 @@ class SessionService:
         user_id: Optional[uuid.UUID] = None,
         topic: Optional[str] = None,
         selected_topics: Optional[list[str]] = None,
+        consent_training: bool = False,
     ) -> UserSession:
         """
         Create a new tutoring session.
@@ -160,6 +161,7 @@ class SessionService:
             user_id=user.id,
             resource_id=resource_id,
             status="active",
+            consent_training=consent_training,
             mastery=initial_mastery,
             plan_state=plan_state,
         )

@@ -171,6 +171,7 @@ CREATE TABLE IF NOT EXISTS user_profile (
     external_id VARCHAR(256) UNIQUE,
     display_name VARCHAR(256),
     email VARCHAR(512),
+    password_hash VARCHAR(256),
     global_mastery JSONB,
     preferences JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,

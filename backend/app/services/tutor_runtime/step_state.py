@@ -114,16 +114,12 @@ def build_step_status(
 
 def get_max_turns_for_step(roadmap: list[dict], step_idx: int, default: int = 5) -> int:
     """Return configured max_turns for the active roadmap step.
-
-    Applies a minimum floor of 3 turns so the policy always has room
-    for multi-turn Socratic interaction regardless of curriculum config.
     """
-    floor = 3
     if 0 <= step_idx < len(roadmap):
         step = roadmap[step_idx] or {}
         value = step.get("max_turns", default)
         if isinstance(value, int) and value >= 1:
-            return max(value, floor)
+            return value
     return default
 
 

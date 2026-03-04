@@ -38,14 +38,47 @@ ENV/
 .idea/
 *.swp
 *.swo
+.windsurf/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Environment variables
+# Environment variables — NEVER commit real .env files
 .env
-.env.local
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Runtime storage and uploads
+storage/
+backend/storage/
+uploads/
+*.pdf
+
+# Docker volumes and runtime
+docker-data/
+postgres-data/
+redis-data/
+minio-data/
+
+# Logs
+*.log
+logs/
 
 # Node
 node_modules/
+
+# Build outputs
+frontend/dist/
+backend/__pycache__/
+
+# Secrets and credentials
+*.pem
+*.key
+*.p12
+*.pfx
+credentials/
+secrets/
