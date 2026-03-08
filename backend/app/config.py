@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSION: int = 384
     EMBEDDING_API_BASE_URL: Optional[str] = None
     EMBEDDING_API_KEY: Optional[str] = None
+    EMBEDDING_PREWARM_ENABLED: bool = True
 
     # Ingestion: Docling configuration
     INGESTION_DOCLING_PROFILE: str = "balanced"  # balanced | fast | high_fidelity
@@ -121,6 +122,7 @@ class Settings(BaseSettings):
     INGESTION_QUEUE_ENABLED: bool = True
     INGESTION_WORKER_CONCURRENCY: int = 2
     INGESTION_WORKER_MAX_RETRIES: int = 3
+    INGESTION_PREWARM_ENABLED: bool = True
 
     # Kill switches
     FEATURE_UPLOADS_ENABLED: bool = True

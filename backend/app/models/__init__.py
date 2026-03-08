@@ -1,6 +1,7 @@
 # Models module
 from app.models.base import Base, UUIDMixin, TimestampMixin
 from app.models.resource import Resource
+from app.models.resource_artifact import ResourceArtifactState
 from app.models.chunk import Chunk, ChunkConcept, Formula
 from app.models.knowledge_base import (
     ResourceConceptStats,
@@ -30,6 +31,7 @@ __all__ = [
     "UUIDMixin",
     "TimestampMixin",
     "Resource",
+    "ResourceArtifactState",
     "Chunk",
     "ChunkConcept",
     "Formula",

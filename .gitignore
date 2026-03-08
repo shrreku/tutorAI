@@ -1,9 +1,5 @@
-# Exclude specified directories
-docs/
-notes/
-tickets/
+# Generated artifacts and local-only dirs
 artifacts/
-evals/
 env/
 
 # Python
@@ -58,7 +54,6 @@ backend/.env.*
 storage/
 backend/storage/
 uploads/
-*.pdf
 
 # Docker volumes and runtime
 docker-data/
@@ -84,3 +79,8 @@ backend/__pycache__/
 *.pfx
 credentials/
 secrets/
+
+docs/
+tickets/
+evals/
+notes/

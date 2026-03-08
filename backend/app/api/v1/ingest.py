@@ -11,6 +11,7 @@ from app.db.repositories.resource_repo import ResourceRepository
 from app.db.repositories.ingestion_repo import IngestionJobRepository
 from app.models.resource import Resource
 from app.models.ingestion import IngestionJob
+from app.models.resource import default_resource_capabilities
 from app.models.session import UserProfile
 from app.schemas.api import IngestionStatusResponse, ResourceResponse
 from app.services.storage.factory import create_storage_provider
@@ -103,6 +104,8 @@ async def upload_resource(
         owner_user_id=user.id,
         topic=topic,
         status="processing",
+        processing_profile="core_only",
+        capabilities_json=default_resource_capabilities(),
         file_path_or_uri=file_path,
         uploaded_at=datetime.utcnow(),
     )
@@ -114,6 +117,10 @@ async def upload_resource(
         resource_id=resource.id,
         owner_user_id=user.id,
         status="pending",
+        job_kind="core_ingest",
+        requested_capability="study_ready",
+        scope_type="resource",
+        scope_key=str(resource.id),
         progress_percent=0,
     )
     job = await job_repo.create(job)
@@ -134,6 +141,10 @@ async def upload_resource(
         job_id=job.id,
         resource_id=resource.id,
         status=job.status,
+        job_kind=job.job_kind,
+        requested_capability=job.requested_capability,
+        scope_type=job.scope_type,
+        scope_key=job.scope_key,
         current_stage=job.current_stage,
         progress_percent=job.progress_percent,
         error_message=job.error_message,
@@ -168,6 +179,10 @@ async def get_ingestion_status(
         job_id=job.id,
         resource_id=job.resource_id,
         status=job.status,
+        job_kind=job.job_kind,
+        requested_capability=job.requested_capability,
+        scope_type=job.scope_type,
+        scope_key=job.scope_key,
         current_stage=job.current_stage,
         progress_percent=job.progress_percent,
         error_message=job.error_message,
@@ -224,6 +239,10 @@ async def retry_ingestion(
         resource_id=resource.id,
         owner_user_id=user.id,
         status="pending",
+        job_kind="core_ingest",
+        requested_capability="study_ready",
+        scope_type="resource",
+        scope_key=str(resource.id),
         progress_percent=0,
     )
     job = await job_repo.create(job)
@@ -242,6 +261,10 @@ async def retry_ingestion(
         job_id=job.id,
         resource_id=job.resource_id,
         status=job.status,
+        job_kind=job.job_kind,
+        requested_capability=job.requested_capability,
+        scope_type=job.scope_type,
+        scope_key=job.scope_key,
         current_stage=job.current_stage,
         progress_percent=job.progress_percent,
         error_message=job.error_message,

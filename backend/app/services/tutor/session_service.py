@@ -55,6 +55,7 @@ class SessionService:
         topic: Optional[str] = None,
         selected_topics: Optional[list[str]] = None,
         consent_training: bool = False,
+        resume_existing: bool = True,
     ) -> UserSession:
         """
         Create a new tutoring session.
@@ -82,10 +83,14 @@ class SessionService:
             user = await self._get_or_create_default_user()
         
         # Check for existing active session
-        existing = await self._get_active_session(user.id, resource_id)
+        existing = None
+        if resume_existing:
+            existing = await self._get_active_session(user.id, resource_id)
         if existing:
             existing_version = (existing.plan_state or {}).get("version")
             if existing_version in (None, 3):
+                await self.db.refresh(existing)
+                setattr(existing, "_reused_existing", True)
                 return existing
 
             # Track E cutover is v3-only. Retire legacy active sessions so new
@@ -171,6 +176,7 @@ class SessionService:
         await self.db.refresh(session)
         
         logger.info(f"Created session {session.id} for resource {resource_id}")
+        setattr(session, "_reused_existing", False)
         return session
     
     async def get_session(self, session_id: uuid.UUID) -> Optional[UserSession]:
@@ -235,6 +241,7 @@ class SessionService:
             .where(UserSession.user_id == user_id)
             .where(UserSession.resource_id == resource_id)
             .where(UserSession.status == "active")
+            .order_by(UserSession.created_at.desc())
         )
         return result.scalar_one_or_none()
     

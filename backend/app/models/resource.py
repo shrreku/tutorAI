@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional, List, TYPE_CHECKING
 
 from sqlalchemy import String, Text, Integer, DateTime, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import ForeignKey
 
@@ -11,6 +11,7 @@ from app.models.base import Base, UUIDMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.chunk import Chunk
+    from app.models.resource_artifact import ResourceArtifactState
     from app.models.knowledge_base import (
         ResourceConceptStats,
         ResourceConceptEvidence,
@@ -21,6 +22,51 @@ if TYPE_CHECKING:
         ResourceLearningObjective,
         ResourcePrereqHint,
     )
+
+
+def default_resource_capabilities() -> dict:
+    return {
+        "study_ready": False,
+        "vector_search_ready": False,
+        "basic_tutoring_ready": False,
+        "can_search": False,
+        "can_answer_doubts": False,
+        "can_generate_basic_practice": False,
+        "can_tutor_basic": False,
+        "can_start_learn_session": False,
+        "can_start_practice_session": False,
+        "can_start_revision_session": False,
+        "resource_profile_ready": False,
+        "has_resource_profile": False,
+        "topic_prepare_ready": False,
+        "concepts_ready": False,
+        "has_concepts": False,
+        "has_topic_bundles": False,
+        "has_prereq_graph": False,
+        "graph_ready": False,
+        "has_curriculum_artifacts": False,
+        "curriculum_ready": False,
+        "is_graph_synced": False,
+        "neo4j_synced": False,
+    }
+
+
+def study_ready_capabilities(existing: Optional[dict] = None) -> dict:
+    capabilities = default_resource_capabilities()
+    if existing:
+        capabilities.update(existing)
+    capabilities.update(
+        {
+            "study_ready": True,
+            "vector_search_ready": True,
+            "basic_tutoring_ready": True,
+            "can_search": True,
+            "can_answer_doubts": True,
+            "can_generate_basic_practice": True,
+            "can_tutor_basic": True,
+        }
+    )
+    return capabilities
 
 
 class Resource(Base, UUIDMixin, TimestampMixin):
@@ -50,7 +96,29 @@ class Resource(Base, UUIDMixin, TimestampMixin):
         DateTime(timezone=True),
         nullable=True,
     )
+    study_ready_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    tutoring_ready_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    curriculum_ready_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    graph_ready_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     pipeline_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    processing_profile: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, default="core_only")
+    capabilities_json: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        nullable=True,
+        default=default_resource_capabilities,
+    )
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationships
@@ -96,6 +164,11 @@ class Resource(Base, UUIDMixin, TimestampMixin):
     )
     prereq_hints: Mapped[List["ResourcePrereqHint"]] = relationship(
         "ResourcePrereqHint",
+        back_populates="resource",
+        cascade="all, delete-orphan",
+    )
+    artifact_states: Mapped[List["ResourceArtifactState"]] = relationship(
+        "ResourceArtifactState",
         back_populates="resource",
         cascade="all, delete-orphan",
     )

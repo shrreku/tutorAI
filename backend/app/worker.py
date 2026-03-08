@@ -29,8 +29,11 @@ if __name__ == "__main__":
 
 from app.config import settings
 from app.db.database import async_session_factory
+from app.models.resource import Resource
 from app.services.ingestion.queue import (
+    enqueue_ingestion_job,
     dequeue_ingestion_job,
+    queued_job_ids,
     send_to_dlq,
 )
 from app.services.ingestion.pipeline import IngestionPipeline
@@ -51,6 +54,71 @@ _shutdown = asyncio.Event()
 def _handle_signal(*_):
     logger.info("Shutdown signal received – finishing current job…")
     _shutdown.set()
+
+
+async def reconcile_orphaned_jobs() -> dict[str, int]:
+    """Recover queue/database drift after worker restarts.
+
+    Pending jobs can be left in Postgres if the API committed the job row but the
+    queue push never completed, or if Redis state was lost during a restart.
+    Running jobs cannot be resumed safely because the ingestion pipeline may have
+    performed partial writes before the worker died, so they are marked failed and
+    must be retried explicitly.
+    """
+    queued_ids = await queued_job_ids()
+    requeued_pending = 0
+    failed_running = 0
+
+    async with async_session_factory() as db:
+        job_repo = IngestionJobRepository(db)
+        active_jobs = await job_repo.get_active_jobs()
+        if not active_jobs:
+            return {"requeued_pending": 0, "failed_running": 0}
+
+        now = datetime.now(timezone.utc)
+        for job in active_jobs:
+            job_id = str(job.id)
+
+            if job.status == "pending":
+                if job_id in queued_ids:
+                    continue
+                await enqueue_ingestion_job(str(job.resource_id), job_id)
+                queued_ids.add(job_id)
+                requeued_pending += 1
+                continue
+
+            interruption_stage = job.current_stage or "worker_pickup"
+            interruption_message = (
+                "Marked failed after worker restart while ingestion was in progress. "
+                "Retry the ingestion job to continue processing."
+            )
+            job.status = "failed"
+            job.current_stage = "failed"
+            job.error_stage = interruption_stage
+            job.error_message = interruption_message
+            if job.started_at is None:
+                job.started_at = now
+            job.completed_at = now
+
+            resource = await db.get(Resource, job.resource_id)
+            if resource is not None:
+                resource.status = "failed"
+                resource.error_message = interruption_message
+
+            failed_running += 1
+
+        await db.commit()
+
+    if requeued_pending or failed_running:
+        logger.info(
+            "Recovered ingestion worker state: requeued_pending=%s failed_running=%s",
+            requeued_pending,
+            failed_running,
+        )
+    return {
+        "requeued_pending": requeued_pending,
+        "failed_running": failed_running,
+    }
 
 
 async def process_job(payload: dict, attempt: int = 1) -> bool:
@@ -75,6 +143,11 @@ async def process_job(payload: dict, attempt: int = 1) -> bool:
                 job.current_stage = "worker_pickup"
                 if job.started_at is None:
                     job.started_at = datetime.now(timezone.utc)
+                await db.commit()
+
+            if job:
+                job.current_stage = "initializing_models"
+                job.progress_percent = max(job.progress_percent or 0, 2)
                 await db.commit()
 
             llm_provider = create_llm_provider(settings)
@@ -135,6 +208,18 @@ async def worker_loop():
         f"Ingestion worker started (concurrency={concurrency}, "
         f"max_retries={settings.INGESTION_WORKER_MAX_RETRIES})"
     )
+
+    try:
+        await reconcile_orphaned_jobs()
+    except Exception:
+        logger.exception("Failed to reconcile ingestion jobs during worker startup")
+
+    if settings.INGESTION_PREWARM_ENABLED:
+        try:
+            await asyncio.to_thread(create_embedding_provider, settings)
+            logger.info("Embedding provider prewarmed during worker startup")
+        except Exception as exc:
+            logger.warning("Worker embedding prewarm failed: %s", exc)
 
     semaphore = asyncio.Semaphore(concurrency)
 

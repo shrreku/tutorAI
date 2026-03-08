@@ -3,6 +3,8 @@ from app.schemas.agent_output import ProgressionDecision
 
 GUARD_PRECEDENCE = {
     "safety_block": 1,
+    "redirect_in_progress": 2,
+    "evaluation_readiness_not_met": 2,
     "schema_contract": 2,
     "objective_readiness_not_met": 3,
     "objective_success_criteria_not_met": 3,
@@ -17,9 +19,14 @@ def enforce_ad_hoc_budget(
     *,
     ad_hoc_count: int,
     max_ad_hoc: int,
+    allow_force: bool = True,
 ) -> tuple[ProgressionDecision, bool]:
     """Force ADVANCE_STEP when ad-hoc budget is exhausted."""
-    if decision == ProgressionDecision.INSERT_AD_HOC and ad_hoc_count >= max_ad_hoc:
+    if (
+        allow_force
+        and decision == ProgressionDecision.INSERT_AD_HOC
+        and ad_hoc_count >= max_ad_hoc
+    ):
         return ProgressionDecision.ADVANCE_STEP, True
     return decision, False
 
@@ -29,9 +36,12 @@ def enforce_step_turn_limit(
     *,
     turns_at_step: int,
     max_turns_at_step: int,
+    allow_force: bool = True,
 ) -> tuple[ProgressionDecision, bool]:
     """Force ADVANCE_STEP when a step reaches max_turns."""
     if (
+        allow_force
+        and
         decision in (ProgressionDecision.CONTINUE_STEP, ProgressionDecision.INSERT_AD_HOC)
         and (turns_at_step + 1) >= max_turns_at_step
     ):

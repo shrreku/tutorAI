@@ -92,7 +92,6 @@ async def run_retrieval_stage(
         retrieved_chunks = await retrieve_knowledge(
             retriever,
             stage_ctx.session,
-            stage_ctx.plan,
             stage_ctx.student_message,
             target_concepts,
             current_step.get("type") or stage_ctx.plan.get("effective_step_type"),
@@ -100,8 +99,6 @@ async def run_retrieval_stage(
             objective_title=stage_ctx.current_objective.get("title"),
             objective_description=stage_ctx.current_objective.get("description"),
             policy_output=policy_output,
-            notebook_id=stage_ctx.notebook_id,
-            notebook_resource_ids=stage_ctx.notebook_resource_ids,
             lf=lf,
         )
     evidence_chunk_ids = [

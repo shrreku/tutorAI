@@ -10,7 +10,6 @@ env:
   IMAGE_PREFIX: ${{ github.repository }}
 
 jobs:
-  # ── Build & push images ─────────────────────────────────────────
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
@@ -25,9 +24,6 @@ jobs:
           - context: backend
             dockerfile: backend/Dockerfile.worker
             image_suffix: worker
-          - context: frontend
-            dockerfile: frontend/Dockerfile
-            image_suffix: frontend
     steps:
       - uses: actions/checkout@v4
       - uses: docker/login-action@v3
@@ -44,62 +40,103 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image_suffix }}:${{ github.sha }}
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.image_suffix }}:latest
 
-  # ── Deploy to staging ───────────────────────────────────────────
   deploy-staging:
     runs-on: ubuntu-latest
     needs: build-and-push
     if: github.ref == 'refs/heads/main'
     environment: staging
     steps:
-      - name: Run staging migrations
+      - uses: actions/checkout@v4
+      - name: Deploy staging backend via SSH
+        uses: appleboy/ssh-action@v1.2.0
         env:
-          STAGING_MIGRATE_WEBHOOK_URL: ${{ secrets.STAGING_MIGRATE_WEBHOOK_URL }}
-        run: |
-          test -n "$STAGING_MIGRATE_WEBHOOK_URL"
-          curl -fsSL -X POST "$STAGING_MIGRATE_WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -d '{"sha":"${{ github.sha }}","ref":"${{ github.ref_name }}"}'
-      - name: Deploy staging release
-        env:
-          STAGING_DEPLOY_WEBHOOK_URL: ${{ secrets.STAGING_DEPLOY_WEBHOOK_URL }}
-        run: |
-          test -n "$STAGING_DEPLOY_WEBHOOK_URL"
-          curl -fsSL -X POST "$STAGING_DEPLOY_WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -d '{"sha":"${{ github.sha }}","ref":"${{ github.ref_name }}"}'
+          APP_IMAGE_TAG: ${{ github.sha }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_PREFIX: ${{ github.repository }}
+          DEPLOY_PATH: ${{ secrets.STAGING_DEPLOY_PATH }}
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          envs: APP_IMAGE_TAG,GHCR_USERNAME,GHCR_TOKEN,IMAGE_PREFIX,DEPLOY_PATH
+          script: |
+            set -e
+            cd "$DEPLOY_PATH"
+            git fetch --all --tags --prune
+            git checkout "$APP_IMAGE_TAG"
+            chmod +x scripts/deploy_remote.sh
+            ./scripts/deploy_remote.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Staging smoke test
         env:
-          STAGING_HEALTHCHECK_URL: ${{ secrets.STAGING_HEALTHCHECK_URL }}
-        run: |
-          test -n "$STAGING_HEALTHCHECK_URL"
-          curl -fsS "$STAGING_HEALTHCHECK_URL/api/v1/health/ready"
+          SMOKE_TEST_BASE_URL: ${{ secrets.STAGING_HEALTHCHECK_URL }}
+          SMOKE_TEST_EMAIL: ${{ secrets.STAGING_SMOKE_TEST_EMAIL }}
+          SMOKE_TEST_PASSWORD: ${{ secrets.STAGING_SMOKE_TEST_PASSWORD }}
+        run: python3 scripts/deploy_smoke_test.py
 
-  # ── Deploy to production (tag only) ─────────────────────────────
-  deploy-production:
+  deploy-production-backend:
     runs-on: ubuntu-latest
     needs: build-and-push
     if: startsWith(github.ref, 'refs/tags/v')
     environment: production
     steps:
-      - name: Run production migrations
+      - uses: actions/checkout@v4
+      - name: Deploy production backend via SSH
+        uses: appleboy/ssh-action@v1.2.0
         env:
-          PRODUCTION_MIGRATE_WEBHOOK_URL: ${{ secrets.PRODUCTION_MIGRATE_WEBHOOK_URL }}
-        run: |
-          test -n "$PRODUCTION_MIGRATE_WEBHOOK_URL"
-          curl -fsSL -X POST "$PRODUCTION_MIGRATE_WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -d '{"sha":"${{ github.sha }}","tag":"${{ github.ref_name }}"}'
-      - name: Deploy production release
-        env:
-          PRODUCTION_DEPLOY_WEBHOOK_URL: ${{ secrets.PRODUCTION_DEPLOY_WEBHOOK_URL }}
-        run: |
-          test -n "$PRODUCTION_DEPLOY_WEBHOOK_URL"
-          curl -fsSL -X POST "$PRODUCTION_DEPLOY_WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -d '{"sha":"${{ github.sha }}","tag":"${{ github.ref_name }}"}'
+          APP_IMAGE_TAG: ${{ github.sha }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_PREFIX: ${{ github.repository }}
+          DEPLOY_PATH: ${{ secrets.PRODUCTION_DEPLOY_PATH }}
+        with:
+          host: ${{ secrets.PRODUCTION_SSH_HOST }}
+          username: ${{ secrets.PRODUCTION_SSH_USER }}
+          key: ${{ secrets.PRODUCTION_SSH_KEY }}
+          envs: APP_IMAGE_TAG,GHCR_USERNAME,GHCR_TOKEN,IMAGE_PREFIX,DEPLOY_PATH
+          script: |
+            set -e
+            cd "$DEPLOY_PATH"
+            git fetch --all --tags --prune
+            git checkout "$APP_IMAGE_TAG"
+            chmod +x scripts/deploy_remote.sh
+            ./scripts/deploy_remote.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Production smoke test
         env:
-          PRODUCTION_HEALTHCHECK_URL: ${{ secrets.PRODUCTION_HEALTHCHECK_URL }}
-        run: |
-          test -n "$PRODUCTION_HEALTHCHECK_URL"
-          curl -fsS "$PRODUCTION_HEALTHCHECK_URL/api/v1/health/ready"
+          SMOKE_TEST_BASE_URL: ${{ secrets.PRODUCTION_HEALTHCHECK_URL }}
+          SMOKE_TEST_EMAIL: ${{ secrets.PRODUCTION_SMOKE_TEST_EMAIL }}
+          SMOKE_TEST_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_TEST_PASSWORD }}
+        run: python3 scripts/deploy_smoke_test.py
+
+  deploy-production-frontend:
+    runs-on: ubuntu-latest
+    needs: deploy-production-backend
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend for production
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: ${{ secrets.PRODUCTION_FRONTEND_API_BASE_URL }}
+        run: npm run build
+      - name: Deploy frontend to Cloudflare
+        working-directory: frontend
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --config wrangler.jsonc

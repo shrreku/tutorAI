@@ -1,125 +1,103 @@
 # StudyAgent
 
-AI-powered tutoring system that ingests educational PDFs into a searchable knowledge base and runs agentic tutoring workflows.
+StudyAgent is an agentic tutoring system for notebook-scoped study sessions over ingested course material. It ingests PDFs and notes into a retrieval-backed knowledge base, plans learning objectives, and runs turn-by-turn tutoring with evaluation, mastery tracking, summaries, and notebook progress.
 
-## Features
-
-- **Grounded Tutoring**: Responses grounded in ingested resource content
-- **Adaptive Instruction**: Adapts explanations, examples, and pacing to the learner
-- **Objective-based Learning**: Teaches via learning objectives with concept scopes
-- **Multi-concept Scope**: Each turn can involve primary, support, and prerequisite concepts
-
-## Tech Stack
+## Stack
 
 | Layer | Technology |
-|-------|------------|
-| Backend | FastAPI, Python 3.11+, SQLAlchemy 2.0 |
-| Database | PostgreSQL + pgvector |
-| Frontend | React 18, TypeScript, Vite, TailwindCSS, shadcn/ui |
-| AI/ML | OpenAI-compatible LLM API, sentence-transformers embeddings |
-| Optional | Neo4j, Redis, MinIO |
+| --- | --- |
+| Backend | FastAPI, SQLAlchemy 2, Alembic |
+| Data | PostgreSQL + pgvector, optional Redis, optional Neo4j |
+| Frontend | React 18, TypeScript, Vite |
+| ML | OpenAI-compatible LLMs, local sentence-transformer embeddings |
 
-## Quick Start
+## Environment Contract
 
-### Prerequisites
+- Backend/API reads root `.env` or `backend/.env` values via `backend/app/config.py`.
+- Frontend runtime uses `VITE_API_BASE_URL`.
+- Frontend dev proxy uses `VITE_API_PROXY_TARGET`.
+- Local Docker Compose is a development environment; production images are built from `backend/Dockerfile`, `backend/Dockerfile.worker`, and `frontend/Dockerfile`.
 
-- Docker & Docker Compose
-- Python 3.11+
-- Node.js 18+ (20 recommended)
+## Local Run Matrix
 
-### 1. Start Infrastructure
+### 1. Docker Compose development
 
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
-### 2. Setup Backend
+- Frontend: `http://localhost:3000`
+- API docs: `http://localhost:8000/docs`
+- Liveness: `http://localhost:8000/api/v1/health/live`
+- Readiness: `http://localhost:8000/api/v1/health/ready`
+
+### 2. Local backend without Docker
 
 ```bash
+cp .env.example .env
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-# Copy and configure environment
-cp ../.env.example ../.env
-# Edit .env with your LLM API key
-
-# Run migrations
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
 alembic upgrade head
-
-# Start API server
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 3. Setup Frontend
+### 3. Local frontend without Docker
 
 ```bash
 cd frontend
-npm install
-npm run dev
+npm ci
+VITE_API_BASE_URL=/api/v1 VITE_API_PROXY_TARGET=http://localhost:8000 npm run dev
 ```
 
-### 4. Access the Application
+### 4. Hosted split deployment
 
-- Frontend: http://localhost:3000
-- API Docs: http://localhost:8000/docs
-- Health Check: http://localhost:8000/api/v1/health
+- Frontend build-time env: `VITE_API_BASE_URL=https://api.example.com/api/v1`
+- Backend env: `DATABASE_URL`, `LLM_API_KEY` or BYOK-only config, `REDIS_URL` when queue mode is enabled
+- Worker env: same backend storage/database/queue settings
 
-## Project Structure
+## API Contract
 
-```
-tutorAI/
-├── backend/
-│   ├── app/
-│   │   ├── api/v1/          # API endpoints
-│   │   ├── models/          # SQLAlchemy models
-│   │   ├── schemas/         # Pydantic schemas
-│   │   ├── services/        # Business logic
-│   │   ├── agents/          # AI agents
-│   │   ├── utils/           # Utilities
-│   │   └── db/              # Database layer
-│   ├── alembic/             # Migrations
-│   └── tests/               # Backend tests
-├── frontend/
-│   └── src/
-│       ├── api/             # API client
-│       ├── components/      # React components
-│       ├── hooks/           # React Query hooks
-│       ├── pages/           # Page components
-│       ├── stores/          # Zustand stores
-│       ├── types/           # TypeScript types
-│       └── utils/           # Utilities
-├── docker/                  # Docker configurations
-├── docs/                    # Specifications
-└── tickets/                 # Implementation tickets
-```
+Canonical notebook tutoring flow:
 
-## API Endpoints
+1. `POST /api/v1/auth/register` or `POST /api/v1/auth/login`
+2. `POST /api/v1/ingest/upload`
+3. `POST /api/v1/notebooks`
+4. `POST /api/v1/notebooks/{notebook_id}/resources`
+5. `POST /api/v1/notebooks/{notebook_id}/sessions`
+6. `POST /api/v1/tutor/notebooks/{notebook_id}/turn`
+7. `POST /api/v1/sessions/{session_id}/end`
 
-### Ingestion
-- `POST /api/v1/ingest/upload` - Upload resource and start ingestion
-- `GET /api/v1/ingest/status/{job_id}` - Get ingestion progress
+Deprecated legacy routes intentionally return `410 Gone`:
 
-### Sessions
-- `POST /api/v1/sessions/resource` - Create session bound to a resource
-- `GET /api/v1/sessions/{session_id}` - Inspect session
+- `POST /api/v1/sessions/resource`
+- `POST /api/v1/tutor/turn`
 
-### Tutoring
-- `POST /api/v1/tutor/turn` - Execute one tutoring turn
+## BYOK Policy
+
+StudyAgent supports optional BYOK headers on tutoring and notebook-session creation:
+
+- `X-LLM-Api-Key`
+- `X-LLM-Api-Base-Url`
+
+If BYOK is omitted, the server uses `LLM_API_KEY` when configured. Keys are never persisted, logged, or traced.
+
+## Quality Bar
+
+Before deployment:
+
+- backend tests must pass
+- frontend lint, tests, and build must pass
+- Docker images must build cleanly
+- deploy smoke tests must pass `/health/live`, `/health/ready`, and the authenticated flow when smoke credentials are configured
 
 ## Documentation
 
-See `/docs/REBUILD-*.md` for detailed specifications:
-- Architecture Overview
-- Data Model and Storage
-- Ingestion and Knowledge Base
-- Tutoring Workflows and Agents
-- Multi-Concept Objectives and Planning
-- Runbook (Local Dev, Deploy, Ops)
-- RL Training and Environment
-- Frontend and API Contract
-- Testing and Evaluation
+- Release audit: `docs/RELEASE-READINESS-AUDIT-2026-03-08.md`
+- Remediation tracker: `tickets/TICKETS-RELEASE-READINESS-REMEDIATION.md`
+- Deploy webhook contract: `docs/DEPLOY-WEBHOOK-OPS.md`
+- Hosting rollout plan: `docs/HOSTING-ROLL-OUT-PLAN.md`
 
 ## License
 

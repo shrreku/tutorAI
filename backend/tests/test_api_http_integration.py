@@ -23,6 +23,7 @@ async def _dummy_db_dep():
 
 
 def _build_client():
+    settings.AUTH_ENFORCE_STRONG_SECRET = False
     app.dependency_overrides[get_db] = _dummy_db_dep
     return TestClient(app)
 

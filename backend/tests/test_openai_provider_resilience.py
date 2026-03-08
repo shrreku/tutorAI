@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import BaseModel
 
+from app.services.ingestion.enrichment_schemas import EnrichmentResponseSchema
 from app.services.llm.openai_provider import OpenAICompatibleProvider
 
 
@@ -113,3 +114,113 @@ def test_generate_json_sanitizes_none_message_content_before_call():
     assert result.value == "ok"
     call = provider.client.chat.completions.create.calls[0]
     assert isinstance(call["messages"][0]["content"], str)
+
+
+def test_generate_json_repairs_invalid_backslash_escape():
+        provider = _provider_with_stub([_response_with_content('{"value":"Fourier\\law"}')])
+
+        result = asyncio.run(
+                provider.generate_json(
+                        messages=[{"role": "user", "content": "return json"}],
+                        schema=_JsonSchema,
+                        trace_name="policy_decide",
+                )
+        )
+
+        assert result.value == "Fourier\\law"
+
+
+def test_generate_json_coerces_enrichment_alias_fields():
+    provider = _provider_with_stub(
+        [
+            _response_with_content(
+                """
+                {
+                    "concepts_taught": [
+                        {
+                            "concept_name": "heat flux",
+                            "concept_type": "property",
+                            "bloom_level": "understand",
+                            "importance": "core"
+                        }
+                    ],
+                    "semantic_relationships": [
+                        {
+                            "source_concept": "heat flux",
+                            "target_concept": "temperature gradient",
+                            "type": "PROPERTY_OF",
+                            "confidence": 0.7
+                        }
+                    ]
+                }
+                """
+            )
+        ]
+    )
+
+    result = asyncio.run(
+        provider.generate_json(
+            messages=[{"role": "user", "content": "return json"}],
+            schema=EnrichmentResponseSchema,
+            trace_name="ingestion_enrichment",
+        )
+    )
+
+    assert result.concepts_taught[0].name == "heat flux"
+    assert result.semantic_relationships[0].source == "heat flux"
+    assert result.semantic_relationships[0].target == "temperature gradient"
+    assert result.semantic_relationships[0].relation_type == "RELATED_TO"
+
+
+def test_generate_json_coerces_has_property_relationship_alias():
+    provider = _provider_with_stub(
+        [
+            _response_with_content(
+                """
+                {
+                  "concepts_taught": [{"name": "conduction", "concept_type": "process", "bloom_level": "understand", "importance": "core"}],
+                  "semantic_relationships": [
+                    {
+                      "source": "conduction",
+                      "target": "temperature gradient",
+                      "relation_type": "HAS_PROPERTY",
+                      "confidence": 0.8
+                    }
+                  ]
+                }
+                """
+            )
+        ]
+    )
+
+    result = asyncio.run(
+        provider.generate_json(
+            messages=[{"role": "user", "content": "return json"}],
+            schema=EnrichmentResponseSchema,
+            trace_name="ingestion_enrichment",
+        )
+    )
+
+    assert result.semantic_relationships[0].relation_type == "RELATED_TO"
+
+
+def test_generate_json_repairs_unterminated_json_tail():
+    provider = _provider_with_stub(
+        [
+            _response_with_content(
+                '{"concepts_taught":[{"name":"fourier\'s law","concept_type":"law","bloom_level":"understand","importance":"core"}],'
+                '"semantic_relationships":[{"source":"fourier\'s law","target":"thermal conductivity","relation_type":"RELATED_TO","evidence":"temperature'
+            )
+        ]
+    )
+
+    result = asyncio.run(
+        provider.generate_json(
+            messages=[{"role": "user", "content": "return json"}],
+            schema=EnrichmentResponseSchema,
+            trace_name="ingestion_enrichment",
+        )
+    )
+
+    assert result.concepts_taught[0].name == "fourier's law"
+    assert result.semantic_relationships == []

@@ -30,6 +30,14 @@ class IngestionJob(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         default="pending",
     )
+    job_kind: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="core_ingest",
+    )
+    requested_capability: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    scope_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    scope_key: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     current_stage: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     stages_completed: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     progress_percent: Mapped[int] = mapped_column(Integer, default=0)

@@ -41,8 +41,10 @@ def create_llm_provider(
     api_key = byok_api_key or config.LLM_API_KEY
     base_url = byok_api_base_url or config.LLM_API_BASE_URL
 
-    if config.BYOK_ENABLED and not byok_api_key and not config.LLM_API_KEY:
-        logger.warning("BYOK is enabled but no API key was provided (user or server).")
+    if not api_key:
+        raise ValueError(
+            "No LLM API key is configured. Provide BYOK credentials or set LLM_API_KEY."
+        )
 
     return OpenAICompatibleProvider(
         api_key=api_key,

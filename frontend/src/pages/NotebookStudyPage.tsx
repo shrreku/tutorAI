@@ -51,6 +51,7 @@ export default function NotebookStudyPage() {
     const detail = await createNotebookSession.mutateAsync({
       resource_id: firstResourceId,
       mode,
+      resume_existing: false,
     });
     setSearchParams({ sessionId: detail.session.id });
   };

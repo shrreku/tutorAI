@@ -1,9 +1,12 @@
-from fastapi import APIRouter
-from pydantic import BaseModel
 from datetime import datetime, timezone
 from typing import Optional
 
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy import text
+
 from app.config import settings
+from app.db.database import async_session_factory
 
 
 router = APIRouter(tags=["health"])
@@ -15,6 +18,7 @@ class HealthResponse(BaseModel):
     timestamp: datetime
     queue_depth: Optional[int] = None
     dlq_depth: Optional[int] = None
+    dependencies: Optional[dict[str, str]] = None
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -25,16 +29,66 @@ async def health_check():
 
 @router.get("/health/ready", response_model=HealthResponse)
 async def readiness_check():
-    """Readiness check - verifies the service is ready to accept traffic."""
-    extra = {}
+    """Readiness check for serving traffic with required dependencies."""
+    dependencies = {"database": "unknown"}
+
+    try:
+        async with async_session_factory() as db:
+            await db.execute(text("SELECT 1"))
+        dependencies["database"] = "ready"
+    except Exception as exc:
+        dependencies["database"] = "unavailable"
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "status": "not_ready",
+                "service": "studyagent-api",
+                "dependencies": dependencies,
+                "reason": f"database check failed: {exc}",
+            },
+        ) from exc
+
+    extra = {"dependencies": dependencies}
     if settings.INGESTION_QUEUE_ENABLED and settings.REDIS_URL:
         try:
-            from app.services.ingestion.queue import queue_depth, dlq_depth
+            from app.services.ingestion.queue import dlq_depth, get_redis, queue_depth
+
+            redis = await get_redis()
+            await redis.ping()
+            dependencies["redis"] = "ready"
             extra["queue_depth"] = await queue_depth()
             extra["dlq_depth"] = await dlq_depth()
-        except Exception:
-            pass
-    return HealthResponse(status="ready", service="studyagent-api", timestamp=datetime.now(timezone.utc), **extra)
+        except Exception as exc:
+            dependencies["redis"] = "unavailable"
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "status": "not_ready",
+                    "service": "studyagent-api",
+                    "dependencies": dependencies,
+                    "reason": f"redis check failed: {exc}",
+                },
+            ) from exc
+    elif settings.INGESTION_QUEUE_ENABLED:
+        dependencies["redis"] = "required_but_unconfigured"
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "status": "not_ready",
+                "service": "studyagent-api",
+                "dependencies": dependencies,
+                "reason": "queue mode is enabled but REDIS_URL is not configured",
+            },
+        )
+    else:
+        dependencies["redis"] = "optional_disabled"
+
+    return HealthResponse(
+        status="ready",
+        service="studyagent-api",
+        timestamp=datetime.now(timezone.utc),
+        **extra,
+    )
 
 
 @router.get("/health/live", response_model=HealthResponse)

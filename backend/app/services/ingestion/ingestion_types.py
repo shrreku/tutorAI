@@ -2,6 +2,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
+from app.services.token_counting import approximate_token_count
+
 
 def token_len(text: str) -> int:
     """Estimate token count for text."""
@@ -10,9 +12,8 @@ def token_len(text: str) -> int:
 
         encoding = tiktoken.get_encoding("cl100k_base")
         return len(encoding.encode(text or ""))
-    except ImportError:
-        # Fallback: rough estimate (1 token ~= 0.75 words)
-        return int(len((text or "").split()) * 1.33)
+    except Exception:
+        return approximate_token_count(text or "")
 
 
 @dataclass

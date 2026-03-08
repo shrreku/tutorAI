@@ -54,6 +54,7 @@ from app.services.tutor_runtime.evaluation_runner import (
     evaluate_response as _evaluate_response,
 )
 from app.services.tutor_runtime.persistence import (
+    clear_transient_runtime_flags as _clear_transient_runtime_flags,
     handle_session_complete as _handle_session_complete,
     persist_turn as _persist_turn,
 )
@@ -731,6 +732,13 @@ class TurnPipeline:
                 plan,
                 policy_output,
                 current_obj,
+                evaluation_result=evaluation_result,
+                progression_context={
+                    "student_intent": policy_metadata.get("student_intent")
+                    or getattr(policy_output, "student_intent", None),
+                    "safety_blocked": bool(degraded_mode),
+                    "allow_fluid_objective_progression": False,
+                },
                 lf=lf,
                 max_ad_hoc_default=self.MAX_AD_HOC_STEPS,
             )
@@ -810,6 +818,7 @@ class TurnPipeline:
         session_summary_data = None
         if session_complete:
             session.status = "completed"
+            _clear_transient_runtime_flags(plan)
             try:
                 from app.agents.summary_agent import SummaryAgent, SummaryState
                 mastery_dict = dict(session.mastery) if session.mastery else {}

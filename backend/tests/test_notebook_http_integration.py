@@ -176,3 +176,221 @@ def test_http_legacy_tutor_turn_endpoint_gone_when_notebooks_enabled(monkeypatch
     assert response.status_code == 410
     assert "removed" in response.json()["detail"]
     app.dependency_overrides.clear()
+
+
+def test_http_notebook_session_creation_returns_preparation_summary(monkeypatch):
+    user_id = uuid4()
+    notebook_id = uuid4()
+    resource_id = uuid4()
+    session_id = uuid4()
+
+    async def _fake_user():
+        return SimpleNamespace(id=user_id)
+
+    async def _fake_owner(*_args, **_kwargs):
+        return SimpleNamespace(id=notebook_id)
+
+    class _NotebookResourceRepo:
+        def __init__(self, _db):
+            pass
+
+        async def get_by_pair(self, _notebook_id, _resource_id):
+            return SimpleNamespace(notebook_id=notebook_id, resource_id=resource_id)
+
+    class _NotebookSessionRepo:
+        def __init__(self, _db):
+            pass
+
+        async def get_by_pair(self, _notebook_id, _session_id):
+            return None
+
+        async def create(self, notebook_session):
+            notebook_session.id = uuid4()
+            notebook_session.started_at = "2026-03-08T00:00:00Z"
+            notebook_session.ended_at = None
+            notebook_session.created_at = "2026-03-08T00:00:00Z"
+            notebook_session.updated_at = "2026-03-08T00:00:00Z"
+            return notebook_session
+
+    class _UserRepo:
+        def __init__(self, _db):
+            pass
+
+        async def get_global_consent(self, _user):
+            return (False, None)
+
+    class _PreparationService:
+        def __init__(self, _db):
+            pass
+
+        async def prepare_session_context(self, *, notebook_id, request, user_id):
+            assert notebook_id
+            assert request.resource_id == resource_id
+            assert user_id
+            return {
+                "scope_type": "selected_resources",
+                "scope_resource_ids": [str(resource_id)],
+                "required_capabilities": ["can_answer_doubts", "has_resource_profile"],
+                "artifacts_created": 1,
+                "resource_profiles_ready": True,
+                "session_brief_artifact_id": str(uuid4()),
+            }
+
+    class _CurriculumPreparationService:
+        def __init__(self, _db, **_kwargs):
+            pass
+
+        async def ensure_curriculum_ready(self, _resource_id):
+            assert _resource_id == resource_id
+            return {
+                "prepared": True,
+                "concepts_admitted": 4,
+                "topic_bundles": 2,
+            }
+
+    class _SessionService:
+        def __init__(self, _db, _curriculum_agent):
+            pass
+
+        async def create_session(self, **_kwargs):
+            return SimpleNamespace(
+                id=session_id,
+                user_id=user_id,
+                resource_id=resource_id,
+                status="active",
+                consent_training=False,
+                mastery=None,
+                plan_state={},
+                created_at="2026-03-08T00:00:00Z",
+            )
+
+    monkeypatch.setattr(notebooks_module, "NotebookResourceRepository", _NotebookResourceRepo)
+    monkeypatch.setattr(notebooks_module, "NotebookSessionRepository", _NotebookSessionRepo)
+    monkeypatch.setattr(notebooks_module, "UserProfileRepository", _UserRepo)
+    monkeypatch.setattr(notebooks_module, "NotebookPreparationService", _PreparationService)
+    monkeypatch.setattr(notebooks_module, "CurriculumPreparationService", _CurriculumPreparationService)
+    monkeypatch.setattr(notebooks_module, "SessionService", _SessionService)
+    monkeypatch.setattr(notebooks_module, "CurriculumAgent", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(notebooks_module, "create_embedding_provider", lambda *_args, **_kwargs: SimpleNamespace(embed=lambda *_a, **_k: []))
+    monkeypatch.setattr(notebooks_module, "create_llm_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(notebooks_module, "create_llm_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(notebooks_module, "verify_notebook_owner", _fake_owner)
+    monkeypatch.setattr(notebooks_module, "emit_notebook_event", lambda *_args, **_kwargs: None)
+    app.dependency_overrides[notebooks_module.require_auth] = _fake_user
+    app.dependency_overrides[notebooks_module.get_byok_api_key] = lambda: {"api_key": None, "api_base_url": None}
+
+    with _build_client() as client:
+        response = client.post(
+            f"/api/v1/notebooks/{notebook_id}/sessions",
+            json={
+                "resource_id": str(resource_id),
+                "mode": "learn",
+                "selected_resource_ids": [str(resource_id)],
+            },
+        )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["preparation_summary"]["scope_type"] == "selected_resources"
+    assert payload["preparation_summary"]["artifacts_created"] == 1
+    assert payload["preparation_summary"]["curriculum_preparation"]["prepared"] is True
+
+    app.dependency_overrides.clear()
+
+
+def test_http_notebook_doubt_session_skips_curriculum_preparation(monkeypatch):
+    user_id = uuid4()
+    notebook_id = uuid4()
+    resource_id = uuid4()
+    session_id = uuid4()
+    calls = {"curriculum": 0}
+
+    async def _fake_user():
+        return SimpleNamespace(id=user_id)
+
+    async def _fake_owner(*_args, **_kwargs):
+        return SimpleNamespace(id=notebook_id)
+
+    class _NotebookResourceRepo:
+        def __init__(self, _db):
+            pass
+
+        async def get_by_pair(self, _notebook_id, _resource_id):
+            return SimpleNamespace(notebook_id=notebook_id, resource_id=resource_id)
+
+    class _NotebookSessionRepo:
+        def __init__(self, _db):
+            pass
+
+        async def get_by_pair(self, _notebook_id, _session_id):
+            return None
+
+        async def create(self, notebook_session):
+            notebook_session.id = uuid4()
+            notebook_session.started_at = "2026-03-08T00:00:00Z"
+            notebook_session.ended_at = None
+            notebook_session.created_at = "2026-03-08T00:00:00Z"
+            notebook_session.updated_at = "2026-03-08T00:00:00Z"
+            return notebook_session
+
+    class _UserRepo:
+        def __init__(self, _db):
+            pass
+
+        async def get_global_consent(self, _user):
+            return (False, None)
+
+    class _PreparationService:
+        def __init__(self, _db):
+            pass
+
+        async def prepare_session_context(self, **_kwargs):
+            return {"scope_type": "single_resource", "scope_resource_ids": [str(resource_id)]}
+
+    class _CurriculumPreparationService:
+        def __init__(self, _db, **_kwargs):
+            pass
+
+        async def ensure_curriculum_ready(self, _resource_id):
+            calls["curriculum"] += 1
+            return {"prepared": True}
+
+    class _SessionService:
+        def __init__(self, _db, _curriculum_agent):
+            pass
+
+        async def create_session(self, **_kwargs):
+            return SimpleNamespace(
+                id=session_id,
+                user_id=user_id,
+                resource_id=resource_id,
+                status="active",
+                consent_training=False,
+                mastery=None,
+                plan_state={},
+                created_at="2026-03-08T00:00:00Z",
+            )
+
+    monkeypatch.setattr(notebooks_module, "NotebookResourceRepository", _NotebookResourceRepo)
+    monkeypatch.setattr(notebooks_module, "NotebookSessionRepository", _NotebookSessionRepo)
+    monkeypatch.setattr(notebooks_module, "UserProfileRepository", _UserRepo)
+    monkeypatch.setattr(notebooks_module, "NotebookPreparationService", _PreparationService)
+    monkeypatch.setattr(notebooks_module, "CurriculumPreparationService", _CurriculumPreparationService)
+    monkeypatch.setattr(notebooks_module, "SessionService", _SessionService)
+    monkeypatch.setattr(notebooks_module, "CurriculumAgent", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(notebooks_module, "verify_notebook_owner", _fake_owner)
+    monkeypatch.setattr(notebooks_module, "create_embedding_provider", lambda *_args, **_kwargs: SimpleNamespace(embed=lambda *_a, **_k: []))
+    monkeypatch.setattr(notebooks_module, "create_llm_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    app.dependency_overrides[notebooks_module.require_auth] = _fake_user
+    app.dependency_overrides[notebooks_module.get_byok_api_key] = lambda: {"api_key": None, "api_base_url": None}
+
+    with _build_client() as client:
+        response = client.post(
+            f"/api/v1/notebooks/{notebook_id}/sessions",
+            json={"resource_id": str(resource_id), "mode": "doubt"},
+        )
+
+    assert response.status_code == 201
+    assert calls["curriculum"] == 0
+
+    app.dependency_overrides.clear()

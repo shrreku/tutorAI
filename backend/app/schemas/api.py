@@ -52,8 +52,30 @@ class ResourceResponse(BaseModel):
     filename: str
     topic: Optional[str]
     status: str
+    lifecycle_status: Optional[str] = None
+    processing_profile: Optional[str] = None
+    capabilities: Dict[str, bool] = Field(default_factory=dict)
     uploaded_at: datetime
     processed_at: Optional[datetime]
+
+
+class ResourceArtifactResponse(BaseModel):
+    """Internal preparation artifact metadata for a resource."""
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    resource_id: Optional[UUID] = None
+    notebook_id: Optional[UUID] = None
+    scope_type: str
+    scope_key: str
+    artifact_kind: str
+    status: str
+    version: str
+    payload_json: Optional[Dict[str, Any]] = None
+    source_chunk_ids: Optional[List[str]] = None
+    content_hash: Optional[str] = None
+    generated_at: datetime
+    error_message: Optional[str] = None
 
 
 class ResourceDetailResponse(ResourceResponse):
@@ -63,6 +85,7 @@ class ResourceDetailResponse(ResourceResponse):
     chunk_count: int = 0
     concept_count: int = 0
     topic_bundles: List[Dict[str, Any]] = Field(default_factory=list)
+    artifacts: List[ResourceArtifactResponse] = Field(default_factory=list)
 
 
 # Ingestion API schemas
@@ -73,6 +96,10 @@ class IngestionStatusResponse(BaseModel):
     job_id: UUID
     resource_id: UUID
     status: str
+    job_kind: str = "core_ingest"
+    requested_capability: Optional[str] = None
+    scope_type: Optional[str] = None
+    scope_key: Optional[str] = None
     current_stage: Optional[str]
     progress_percent: int
     error_message: Optional[str]
@@ -265,10 +292,16 @@ class NotebookSessionCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     resource_id: UUID
+    selected_resource_ids: List[UUID] = Field(default_factory=list)
+    notebook_wide: bool = False
     topic: Optional[str] = None
     selected_topics: Optional[List[str]] = None
     mode: str = "learn"
     consent_training: Optional[bool] = Field(default=None)
+    resume_existing: bool = Field(
+        default=True,
+        description="Resume the latest active session for this resource when available.",
+    )
 
 
 class NotebookSessionResponse(BaseModel):
@@ -293,6 +326,8 @@ class NotebookSessionDetailResponse(BaseModel):
 
     notebook_session: NotebookSessionResponse
     session: "SessionResponse"
+    reused_existing: bool = False
+    preparation_summary: Dict[str, Any] = Field(default_factory=dict)
 
 
 class NotebookProgressResponse(BaseModel):

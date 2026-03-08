@@ -156,3 +156,40 @@ def test_session_service_retires_legacy_active_session(monkeypatch):
     assert legacy_session.status == "completed"
     assert session.plan_state["version"] == 3
     assert db.commit_count == 2
+
+
+def test_session_service_can_force_new_session_without_resuming(monkeypatch):
+    active_session = SimpleNamespace(
+        id=uuid.uuid4(),
+        status="active",
+        plan_state={"version": 3},
+    )
+
+    async def _get_resource(self, resource_id):
+        return SimpleNamespace(id=resource_id, topic="heat", status="ready")
+
+    async def _get_or_create_default_user(self):
+        return SimpleNamespace(id=uuid.uuid4())
+
+    async def _get_active_session(self, user_id, resource_id):
+        return active_session
+
+    async def _get_concepts(self, resource_id):
+        return ["conduction"]
+
+    monkeypatch.setattr(SessionService, "_get_resource", _get_resource)
+    monkeypatch.setattr(SessionService, "_get_or_create_default_user", _get_or_create_default_user)
+    monkeypatch.setattr(SessionService, "_get_active_session", _get_active_session)
+    monkeypatch.setattr(SessionService, "_get_concepts", _get_concepts)
+
+    db = _DbStub()
+    service = SessionService(db, _CurriculumStub())
+    session = asyncio.run(
+        service.create_session(
+            resource_id=uuid.uuid4(),
+            resume_existing=False,
+        )
+    )
+
+    assert session is not active_session
+    assert session.plan_state["version"] == 3

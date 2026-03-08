@@ -7,6 +7,7 @@ from pydantic import BaseModel, ValidationError
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from app.services.llm.base import BaseLLMProvider
 from app.config import settings
+from app.services.token_counting import approximate_token_count
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
@@ -264,6 +265,15 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 result = schema.model_validate(data)
                 return result
             except json.JSONDecodeError as e:
+                repaired = self._repair_json_from_decode_error(content, e)
+                if repaired != content:
+                    try:
+                        data = json.loads(repaired)
+                        data = self._coerce_data(data, schema)
+                        result = schema.model_validate(data)
+                        return result
+                    except (json.JSONDecodeError, ValidationError):
+                        pass
                 logger.warning(f"JSON parse failed for {schema.__name__} at position {e.pos}: {e.msg}")
                 logger.warning(f"Extracted content: {content[:300]}")
                 raise ValueError(f"Failed to generate valid JSON: {e}")
@@ -298,24 +308,58 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         text = re.sub(r',\s*([}\]])', r'\1', text)
         # Remove control characters EXCEPT newline (\n), tab (\t), carriage return (\r)
         text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+        # Escape stray backslashes that would otherwise make JSON invalid.
+        text = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', text)
         
         # Handle truncated JSON - try to close unclosed brackets
         text = self._repair_truncated_json(text)
         
         return text.strip()
+
+    def _repair_json_from_decode_error(self, text: str, error: json.JSONDecodeError) -> str:
+        """Attempt targeted repair using the JSON parser failure position."""
+        truncated_messages = {
+            "Unterminated string starting at",
+            "Expecting value",
+            "Expecting ',' delimiter",
+        }
+        if error.msg not in truncated_messages:
+            return text
+
+        candidate_positions = [error.pos]
+        scan_start = min(error.pos, len(text) - 1)
+        for idx in range(scan_start, -1, -1):
+            if text[idx] in {',', '{', '['}:
+                candidate_positions.append(idx)
+
+        for pos in candidate_positions:
+            truncated = text[:pos].rstrip().rstrip(',')
+            if not truncated:
+                continue
+            repaired = self._repair_truncated_json(truncated)
+            try:
+                json.loads(repaired)
+                return repaired
+            except json.JSONDecodeError:
+                continue
+
+        return text
     
     def _repair_truncated_json(self, text: str) -> str:
         """Attempt to repair truncated JSON by closing unclosed brackets."""
-        # Count brackets
-        open_braces = text.count('{') - text.count('}')
-        open_brackets = text.count('[') - text.count(']')
-        
-        if open_braces <= 0 and open_brackets <= 0:
-            return text
-        
+        import re
+
         # Remove incomplete trailing content after last complete value
         # Find last valid position
         text = text.rstrip()
+
+        if not text:
+            return text
+
+        # If the response was cut off inside a string, close it before sealing braces.
+        unescaped_quote_count = len(re.findall(r'(?<!\\)"', text))
+        if unescaped_quote_count % 2 == 1:
+            text += '"'
         
         # Remove trailing incomplete string or value
         if text and text[-1] not in '{}[],"0123456789nulltruefalse':
@@ -331,6 +375,9 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             )
             if last_complete > 0:
                 text = text[:last_complete + 1]
+
+        # Remove dangling key/value separators before closing structures.
+        text = re.sub(r'[:,]\s*$', '', text)
         
         # Remove trailing comma if present
         text = text.rstrip().rstrip(',')
@@ -355,6 +402,62 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         """
         if not isinstance(data, dict):
             return data
+
+        # --- EnrichmentResponseSchema: normalize concept and relationship keys ---
+        concepts_taught = data.get("concepts_taught")
+        if isinstance(concepts_taught, list):
+            normalized_concepts = []
+            for item in concepts_taught:
+                if isinstance(item, dict):
+                    normalized_item = dict(item)
+                    if "name" not in normalized_item:
+                        concept_name = (
+                            normalized_item.pop("concept_name", None)
+                            or normalized_item.pop("concept", None)
+                        )
+                        if concept_name:
+                            normalized_item["name"] = concept_name
+                    normalized_concepts.append(normalized_item)
+                else:
+                    normalized_concepts.append(item)
+            data["concepts_taught"] = normalized_concepts
+
+        semantic_relationships = data.get("semantic_relationships")
+        if isinstance(semantic_relationships, list):
+            relation_aliases = {
+                "property_of": "RELATED_TO",
+                "has_property": "RELATED_TO",
+                "depends_on": "REQUIRES",
+                "depends": "REQUIRES",
+                "applies": "APPLIES_TO",
+                "derived_from": "DERIVES_FROM",
+                "derived": "DERIVES_FROM",
+                "partof": "PART_OF",
+                "type_of": "IS_A",
+            }
+            normalized_relationships = []
+            for item in semantic_relationships:
+                if not isinstance(item, dict):
+                    normalized_relationships.append(item)
+                    continue
+                normalized_item = dict(item)
+                if "source" not in normalized_item and normalized_item.get("source_concept"):
+                    normalized_item["source"] = normalized_item.pop("source_concept")
+                if "target" not in normalized_item and normalized_item.get("target_concept"):
+                    normalized_item["target"] = normalized_item.pop("target_concept")
+                relation_type = (
+                    normalized_item.get("relation_type")
+                    or normalized_item.pop("type", None)
+                    or normalized_item.pop("relationship_type", None)
+                )
+                if isinstance(relation_type, str):
+                    normalized_key = relation_type.strip().lower().replace("-", "_").replace(" ", "_")
+                    normalized_item["relation_type"] = relation_aliases.get(
+                        normalized_key,
+                        relation_type.strip().upper(),
+                    )
+                normalized_relationships.append(normalized_item)
+            data["semantic_relationships"] = normalized_relationships
         
         # --- EvaluatorOutput: concept_deltas list → dict ---
         if "concept_deltas" in data and isinstance(data["concept_deltas"], list):
@@ -499,5 +602,4 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             encoding = tiktoken.encoding_for_model(self._model)
             return len(encoding.encode(text))
         except Exception:
-            # Fallback: rough estimate
-            return len(text.split()) * 4 // 3
+            return approximate_token_count(text)

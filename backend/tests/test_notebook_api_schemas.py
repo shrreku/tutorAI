@@ -40,6 +40,8 @@ def test_notebook_session_create_defaults_mode():
     payload = NotebookSessionCreateRequest(resource_id="123e4567-e89b-12d3-a456-426614174000")
 
     assert payload.mode == "learn"
+    assert payload.selected_resource_ids == []
+    assert payload.notebook_wide is False
 
 
 def test_notebook_progress_response_defaults():

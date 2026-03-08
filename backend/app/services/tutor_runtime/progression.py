@@ -26,6 +26,8 @@ def apply_progression(
     policy_output,
     current_obj: dict,
     *,
+    evaluation_result=None,
+    progression_context: Optional[dict] = None,
     lf,
     max_ad_hoc_default: int,
 ) -> tuple[bool, dict, Optional[str]]:
@@ -74,13 +76,29 @@ def apply_progression(
         prog_span = prog_span_ctx.__enter__()
 
     try:
+        progression_context = progression_context or {}
         decision = policy_output.progression_decision
+        evaluator_ready = (
+            getattr(evaluation_result, "ready_to_advance", None)
+            if evaluation_result is not None
+            else None
+        )
+        student_intent = (
+            progression_context.get("student_intent")
+            or getattr(policy_output, "student_intent", None)
+        )
+        safety_blocked = bool(progression_context.get("safety_blocked", False))
+        redirect_active = safety_blocked or student_intent == "off_topic"
+        allow_fluid_objective_progression = bool(
+            progression_context.get("allow_fluid_objective_progression", False)
+        ) or student_intent == "move_on"
 
         pre_guard_decision_name = decision.name
         decision, forced_by_ad_hoc_budget = enforce_ad_hoc_budget(
             decision,
             ad_hoc_count=ad_hoc_count,
             max_ad_hoc=max_ad_hoc,
+            allow_force=not redirect_active,
         )
         if forced_by_ad_hoc_budget:
             logger.info(
@@ -109,6 +127,11 @@ def apply_progression(
             decision,
             turns_at_step=turns_at_step,
             max_turns_at_step=max_turns_at_step,
+            allow_force=(
+                not redirect_active
+                and evaluator_ready is not False
+                and requested_decision != ProgressionDecision.INSERT_AD_HOC
+            ),
         )
         if forced_by_turn_limit:
             logger.info(
@@ -131,6 +154,63 @@ def apply_progression(
                     },
                 ),
             )
+
+        if (
+            redirect_active
+            and decision in (
+                ProgressionDecision.ADVANCE_STEP,
+                ProgressionDecision.ADVANCE_OBJECTIVE,
+            )
+        ):
+            fallback_decision = (
+                ProgressionDecision.INSERT_AD_HOC
+                if requested_decision == ProgressionDecision.INSERT_AD_HOC
+                else ProgressionDecision.CONTINUE_STEP
+            )
+            guard_names.append("redirect_in_progress")
+            append_trace_event(
+                plan,
+                "guard_override",
+                build_guard_override_metadata(
+                    guard_name="redirect_in_progress",
+                    decision_requested=decision.name,
+                    decision_applied=fallback_decision.name,
+                    reason="safety_or_off_topic_redirect_active",
+                    details={
+                        "student_intent": student_intent,
+                        "safety_blocked": safety_blocked,
+                    },
+                ),
+            )
+            decision = fallback_decision
+
+        if (
+            evaluator_ready is False
+            and decision in (
+                ProgressionDecision.ADVANCE_STEP,
+                ProgressionDecision.ADVANCE_OBJECTIVE,
+            )
+        ):
+            fallback_decision = (
+                ProgressionDecision.INSERT_AD_HOC
+                if requested_decision == ProgressionDecision.INSERT_AD_HOC
+                else ProgressionDecision.CONTINUE_STEP
+            )
+            guard_names.append("evaluation_readiness_not_met")
+            append_trace_event(
+                plan,
+                "guard_override",
+                build_guard_override_metadata(
+                    guard_name="evaluation_readiness_not_met",
+                    decision_requested=decision.name,
+                    decision_applied=fallback_decision.name,
+                    reason="evaluator_ready_to_advance_false",
+                    details={
+                        "student_intent": student_intent,
+                    },
+                ),
+            )
+            decision = fallback_decision
 
         if (
             decision == ProgressionDecision.ADVANCE_OBJECTIVE
@@ -166,26 +246,45 @@ def apply_progression(
             new_step = old_step_idx + 1
 
             if new_step >= len(roadmap):
-                # Roadmap complete — advance to next objective.
-                # Success criteria are advisory; the policy drove the ADVANCE_STEP.
                 success = check_success_criteria(
                     plan.get("objective_progress", {}).get(obj_id, {}),
                     current_obj.get("success_criteria", {}),
                     session.mastery,
                     current_obj.get("concept_scope", {}).get("primary", []),
                 )
-                if not success:
-                    logger.info(
-                        f"[progression] Objective {obj_id} advancing despite unmet "
-                        f"success criteria (policy-driven fluid progression)"
+                if not success and not allow_fluid_objective_progression:
+                    decision = ProgressionDecision.CONTINUE_STEP
+                    progress["steps_completed"] = max(
+                        0,
+                        int(progress.get("steps_completed", 0)) - 1,
                     )
-                plan["current_objective_index"] = old_obj_idx + 1
-                plan["current_step_index"] = 0
-                plan["step_status"] = {}
-                transition = f"objective:{old_obj_idx}→{old_obj_idx + 1} (completed)"
-                if plan["current_objective_index"] >= len(objective_queue):
-                    session_complete = True
-                    transition += " [session_complete]"
+                    plan["turns_at_step"] = int(plan.get("turns_at_step", 0)) + 1
+                    transition = f"step:{old_step_idx} (objective hold)"
+                    guard_names.append("objective_success_criteria_not_met")
+                    append_trace_event(
+                        plan,
+                        "guard_override",
+                        build_guard_override_metadata(
+                            guard_name="objective_success_criteria_not_met",
+                            decision_requested=ProgressionDecision.ADVANCE_STEP.name,
+                            decision_applied=decision.name,
+                            reason="objective_success_criteria_not_met",
+                            details={"objective_id": obj_id},
+                        ),
+                    )
+                else:
+                    if not success:
+                        logger.info(
+                            "[progression] Objective %s advancing with explicit fluid progression",
+                            obj_id,
+                        )
+                    plan["current_objective_index"] = old_obj_idx + 1
+                    plan["current_step_index"] = 0
+                    plan["step_status"] = {}
+                    transition = f"objective:{old_obj_idx}→{old_obj_idx + 1} (completed)"
+                    if plan["current_objective_index"] >= len(objective_queue):
+                        session_complete = True
+                        transition += " [session_complete]"
             else:
                 plan["current_step_index"] = new_step
                 transition = f"step:{old_step_idx}→{new_step}"
@@ -234,46 +333,51 @@ def apply_progression(
         elif decision == ProgressionDecision.ADVANCE_OBJECTIVE:
             plan["ad_hoc_count"] = 0
             plan["turns_at_step"] = 0
-            # Trust the policy's decision to advance the objective.
-            # Success criteria are advisory — logged for observability.
             success = check_success_criteria(
                 plan.get("objective_progress", {}).get(obj_id, {}),
                 current_obj.get("success_criteria", {}),
                 session.mastery,
                 current_obj.get("concept_scope", {}).get("primary", []),
             )
-            if not success:
-                logger.info(
-                    f"[progression] Policy advancing objective {obj_id} despite "
-                    f"unmet success criteria (fluid progression)"
-                )
+            if not success and not allow_fluid_objective_progression:
+                decision = ProgressionDecision.CONTINUE_STEP
+                plan["turns_at_step"] = int(plan.get("turns_at_step", 0)) + 1
+                transition = f"step:{old_step_idx} (objective hold)"
+                guard_names.append("objective_success_criteria_not_met")
                 append_trace_event(
                     plan,
-                    "advisory_note",
+                    "guard_override",
+                    build_guard_override_metadata(
+                        guard_name="objective_success_criteria_not_met",
+                        decision_requested=ProgressionDecision.ADVANCE_OBJECTIVE.name,
+                        decision_applied=decision.name,
+                        reason="objective_success_criteria_not_met",
+                        details={"objective_id": obj_id},
+                    ),
+                )
+            else:
+                if not success:
+                    logger.info(
+                        "[progression] Policy advancing objective %s with explicit fluid progression",
+                        obj_id,
+                    )
+                plan["current_objective_index"] = old_obj_idx + 1
+                plan["current_step_index"] = 0
+                plan["step_status"] = {}
+                transition = f"objective:{old_obj_idx}→{old_obj_idx + 1} (advance)"
+                append_trace_event(
+                    plan,
+                    "objective_advanced",
                     {
-                        "note": "objective_advanced_without_success_criteria",
-                        "objective_id": obj_id,
-                        "objective_index": old_obj_idx,
+                        "from_objective_index": old_obj_idx,
+                        "to_objective_index": old_obj_idx + 1,
                     },
                 )
-            plan["current_objective_index"] = old_obj_idx + 1
-            plan["current_step_index"] = 0
-            plan["step_status"] = {}
-            transition = f"objective:{old_obj_idx}→{old_obj_idx + 1} (advance)"
-            append_trace_event(
-                plan,
-                "objective_advanced",
-                {
-                    "from_objective_index": old_obj_idx,
-                    "to_objective_index": old_obj_idx + 1,
-                },
-            )
-            if plan["current_objective_index"] >= len(objective_queue):
-                session_complete = True
-                transition += " [session_complete]"
+                if plan["current_objective_index"] >= len(objective_queue):
+                    session_complete = True
+                    transition += " [session_complete]"
 
         elif decision in (ProgressionDecision.CONTINUE_STEP, ProgressionDecision.INSERT_AD_HOC):
-            plan["turns_at_step"] = int(plan.get("turns_at_step", 0)) + 1
             if decision == ProgressionDecision.INSERT_AD_HOC:
                 plan["ad_hoc_count"] = ad_hoc_count + 1
                 plan["last_ad_hoc_type"] = getattr(policy_output, "ad_hoc_step_type", None)
@@ -291,6 +395,8 @@ def apply_progression(
                     f"/{max_ad_hoc}, stay)"
                 )
             else:
+                if not redirect_active:
+                    plan["turns_at_step"] = int(plan.get("turns_at_step", 0)) + 1
                 plan["last_ad_hoc_type"] = None
                 transition = f"step:{old_step_idx} (continue)"
 

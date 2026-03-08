@@ -43,6 +43,23 @@ async def enqueue_ingestion_job(resource_id: str, job_id: str) -> None:
     logger.info(f"Enqueued ingestion job {job_id} for resource {resource_id}")
 
 
+async def queued_job_ids() -> set[str]:
+    """Return the job ids currently waiting in the Redis queue."""
+    r = await get_redis()
+    payloads = await r.lrange(QUEUE_KEY, 0, -1)
+    job_ids: set[str] = set()
+    for payload in payloads:
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            logger.warning("Skipping malformed ingestion queue payload during recovery")
+            continue
+        job_id = data.get("job_id") if isinstance(data, dict) else None
+        if job_id:
+            job_ids.add(str(job_id))
+    return job_ids
+
+
 async def dequeue_ingestion_job(timeout: int = 5) -> Optional[dict]:
     """Block-pop the next job from the queue.  Returns ``None`` on timeout."""
     r = await get_redis()

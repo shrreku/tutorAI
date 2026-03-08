@@ -7,7 +7,7 @@ Your task is to build a high-quality knowledge graph that captures both the ONTO
 ### 1. CONCEPTS (be precise and selective)
 
 For each concept, identify:
-- **concept_name**: Use specific, domain-accurate terminology (e.g., "convective heat transfer coefficient" not "coefficient")
+- **name**: Use specific, domain-accurate terminology (e.g., "convective heat transfer coefficient" not "coefficient")
 - **concept_type**: Classify as one of:
   - `principle`: Fundamental ideas/laws (e.g., "conservation of energy", "Newton's second law")
   - `formula`: Mathematical expressions (e.g., "Fourier's law", "heat equation")
@@ -41,6 +41,9 @@ Extract typed relationships between concepts:
 - **ENABLES**: Understanding A enables learning B
   Example: "temperature gradient" ENABLES "heat flux calculation"
 - **RELATED_TO**: A and B are semantically related (use sparingly, prefer specific types)
+
+Use the exact JSON field names `source`, `target`, and `relation_type` for each semantic relationship.
+Do not invent new relationship labels such as `PROPERTY_OF`; choose the closest supported label above instead.
 
 ### 3. QUALITY GUIDELINES
 

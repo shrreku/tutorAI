@@ -35,6 +35,16 @@ class IngestionJobRepository(BaseRepository[IngestionJob]):
         )
         return list(result.scalars().all())
 
+    async def get_active_jobs(self) -> List[IngestionJob]:
+        """Return incomplete pending/running jobs ordered oldest-first."""
+        result = await self.db.execute(
+            select(IngestionJob)
+            .where(IngestionJob.status.in_(["pending", "running"]))
+            .where(IngestionJob.completed_at.is_(None))
+            .order_by(IngestionJob.created_at.asc())
+        )
+        return list(result.scalars().all())
+
     async def expire_stale_active_jobs(self, max_age_minutes: int = 30) -> int:
         """Mark orphaned pending/running jobs as failed.
 

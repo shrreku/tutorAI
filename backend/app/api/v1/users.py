@@ -8,6 +8,7 @@ from app.db.database import get_db
 from app.db.repositories.session_repo import UserProfileRepository
 from app.models.session import UserProfile
 from app.schemas.api import UserSettingsResponse, UserSettingsUpdateRequest
+from app.services.account_cleanup import delete_user_account
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +53,7 @@ async def delete_my_account(
     db: AsyncSession = Depends(get_db),
     user: UserProfile = Depends(require_auth),
 ):
-    """Delete the current user's account and all associated data.
-
-    This cascades to sessions, turns, credit accounts, ledger entries,
-    and all other user-owned data via the database FK cascade rules.
-    """
+    """Delete the current user's account, uploads, and derived data."""
     logger.warning("Account deletion requested for user %s (%s)", user.id, user.email)
-    await db.delete(user)
-    await db.commit()
+    await delete_user_account(db, user)
     return None

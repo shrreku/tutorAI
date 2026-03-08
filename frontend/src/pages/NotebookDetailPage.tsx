@@ -83,6 +83,7 @@ export default function NotebookDetailPage() {
     const detail = await createNotebookSession.mutateAsync({
       resource_id: firstResource,
       mode: sessionMode,
+      resume_existing: false,
     });
 
     navigate(`/notebooks/${notebookId}/study?sessionId=${detail.session.id}`);
@@ -218,7 +219,7 @@ export default function NotebookDetailPage() {
               className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-gold text-primary-foreground text-sm font-medium disabled:opacity-50"
             >
               {createNotebookSession.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              Start Notebook Session
+              Start New Notebook Session
             </button>
           </div>
         </section>

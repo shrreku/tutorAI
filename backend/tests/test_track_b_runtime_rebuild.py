@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.safety_critic import SafetyCritic
 from app.schemas.agent_output import (
+    EvaluatorOutput,
     PedagogicalAction,
     PolicyOrchestratorOutput,
     ProgressionDecision,
@@ -118,6 +119,65 @@ def test_progression_guard_forces_advance_on_step_turn_limit():
         and e.get("decision_applied") == ProgressionDecision.ADVANCE_STEP.name
         for e in guard_events
     )
+
+
+def test_progression_guard_respects_evaluator_not_ready():
+    obj = _make_objective(
+        step_roadmap=[
+            {"type": "define", "can_skip": True, "max_turns": 2},
+            {"type": "practice", "can_skip": True, "max_turns": 3},
+        ]
+    )
+    plan = _base_plan(obj)
+    plan["turns_at_step"] = 1
+
+    _session_complete, updated_plan, _transition = apply_progression(
+        _session_stub(),
+        plan,
+        _policy_output(ProgressionDecision.CONTINUE_STEP),
+        obj,
+        evaluation_result=EvaluatorOutput(
+            overall_score=0.4,
+            correctness_label="incorrect",
+            ready_to_advance=False,
+        ),
+        progression_context={"student_intent": "answer_attempt"},
+        lf=None,
+        max_ad_hoc_default=3,
+    )
+
+    assert updated_plan["last_decision"] == ProgressionDecision.CONTINUE_STEP.name
+    assert updated_plan["current_step_index"] == 0
+    guard_events = [e for e in updated_plan.get("__trace_events", []) if e.get("name") == "guard_override"]
+    assert not any(e.get("guard_name") == "forced_advance_max_turns" for e in guard_events)
+
+
+def test_progression_guard_keeps_off_topic_redirect_out_of_step_budget():
+    obj = _make_objective(
+        step_roadmap=[
+            {"type": "define", "can_skip": True, "max_turns": 2},
+            {"type": "practice", "can_skip": True, "max_turns": 3},
+        ]
+    )
+    plan = _base_plan(obj)
+    plan["turns_at_step"] = 1
+
+    _session_complete, updated_plan, _transition = apply_progression(
+        _session_stub(),
+        plan,
+        _policy_output(
+            ProgressionDecision.INSERT_AD_HOC,
+            student_intent="off_topic",
+            ad_hoc_step_type="redirect",
+        ),
+        obj,
+        progression_context={"student_intent": "off_topic", "safety_blocked": True},
+        lf=None,
+        max_ad_hoc_default=3,
+    )
+
+    assert updated_plan["last_decision"] == ProgressionDecision.INSERT_AD_HOC.name
+    assert updated_plan["turns_at_step"] == 1
 
 
 def test_progression_guard_rejects_invalid_skip_target():

@@ -1,6 +1,7 @@
 import uuid
 import logging
 from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +11,7 @@ from app.config import settings
 from app.api.v1.router import api_router
 from app.schemas.common import ErrorResponse
 from app.services.tracing import init_langfuse, flush_langfuse
+from app.services.embedding.factory import create_embedding_provider
 
 
 logging.basicConfig(
@@ -59,6 +61,12 @@ async def lifespan(app: FastAPI):
         settings.NEO4J_ENABLED,
         bool(settings.NEO4J_URI),
     )
+    if settings.EMBEDDING_PREWARM_ENABLED:
+        try:
+            await asyncio.to_thread(create_embedding_provider, settings)
+            logger.info("Embedding provider prewarmed during API startup")
+        except Exception as exc:
+            logger.warning("Embedding prewarm failed during API startup: %s", exc)
     yield
     logger.info("Shutting down StudyAgent API...")
     flush_langfuse()

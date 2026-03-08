@@ -1,7 +1,8 @@
-"""
-Ingestion Pipeline Orchestrator - TICKET-018
+"""Core ingestion pipeline.
 
-Orchestrates the full ingestion pipeline from PDF to Knowledge Base.
+Upload-time ingestion now stops once a resource is parsed, chunked, embedded,
+and persisted for retrieval. Heavier enrichment and knowledge preparation are
+deferred to later job families.
 """
 import logging
 import uuid
@@ -10,52 +11,41 @@ from enum import Enum
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from app.models.resource import Resource
+from app.models.resource_artifact import ResourceArtifactState
 from app.models.chunk import Chunk, ChunkConcept
+from app.db.repositories.resource_artifact_repo import ResourceArtifactRepository
 from app.services.llm.base import BaseLLMProvider
 from app.services.embedding.base import BaseEmbeddingProvider
 from app.services.storage.base import StorageProvider
 from app.services.ingestion.docling_adapter import DoclingAdapter, DoclingConversionResult
 from app.services.ingestion.docling_chunker import DoclingChunker, DoclingChunkingResult
 from app.services.ingestion.ingestion_types import ChunkData
-from app.services.ingestion.ontology_extractor import OntologyExtractor, ResourceOntology
-from app.services.ingestion.enricher import ChunkEnricher
-from app.services.ingestion.kb_builder import ResourceKBBuilder
-from app.services.ingestion.graph_builder import ConceptGraphBuilder
-from app.services.ingestion.bundle_builder import BundleBuilder
+from app.services.ingestion.resource_profile import build_resource_profile
 from app.services.ingestion.pipeline_support import (
     compute_quality_metrics,
-    get_graph_data,
-    save_ontology_data,
     update_job,
     update_resource_status,
 )
-from app.services.neo4j import get_neo4j_client
 from langfuse import observe
-
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-PIPELINE_VERSION = "1.1.0"  # Added ontology extraction stage
+PIPELINE_VERSION = "2.0.0"
 
 
 class IngestionStage(str, Enum):
     PARSE = "parse"
     CHUNK = "chunk"
-    ONTOLOGY = "ontology"  # New: extract document-level ontology
     EMBED = "embed"
-    ENRICH = "enrich"
-    BUILD_KB = "build_kb"
-    BUILD_GRAPH = "build_graph"
-    BUILD_BUNDLES = "build_bundles"
+    PERSIST = "persist"
     COMPLETE = "complete"
 
 
 class IngestionPipeline:
-    """Orchestrates the full ingestion pipeline."""
+    """Orchestrates the core upload-time ingestion pipeline."""
     
     def __init__(
         self,
@@ -69,24 +59,11 @@ class IngestionPipeline:
         self.embedding = embedding_provider
         self.storage = storage_provider
         
-        # Initialize stage processors
         self.docling_adapter = DoclingAdapter()
         self.docling_chunker = DoclingChunker(
             embedding_model_id=embedding_provider.model_id,
             use_contextualized_text=True,
         )
-        self.ontology_extractor = OntologyExtractor(
-            llm_provider,
-            ontology_model=settings.LLM_MODEL_ONTOLOGY or None,
-            embed_fn=embedding_provider.embed,
-        )
-        self.enricher = ChunkEnricher(
-            llm_provider,
-            enrichment_model=settings.LLM_MODEL_ENRICHMENT or None,
-        )
-        self.kb_builder = ResourceKBBuilder(db_session)
-        self.graph_builder = ConceptGraphBuilder(db_session)
-        self.bundle_builder = BundleBuilder(db_session)
 
     async def _update_job_stage(
         self,
@@ -108,6 +85,9 @@ class IngestionPipeline:
             progress,
             metrics=metrics,
         )
+        commit = getattr(self.db, "commit", None)
+        if callable(commit):
+            await commit()
     
     @observe(name="ingestion-pipeline", capture_input=False)
     async def run(
@@ -116,7 +96,7 @@ class IngestionPipeline:
         job_id: Optional[uuid.UUID] = None,
     ) -> dict:
         """
-        Run the full ingestion pipeline for a resource.
+        Run the core upload-time ingestion pipeline for a resource.
         
         Args:
             resource_id: UUID of the resource to ingest
@@ -160,7 +140,7 @@ class IngestionPipeline:
                     "; ".join(parse_result.warnings),
                 )
             
-            await self._update_job_stage(job_id, IngestionStage.CHUNK, 15)
+            await self._update_job_stage(job_id, IngestionStage.CHUNK, 25)
             
             # Stage 2: Chunk text
             logger.info(f"Stage 2: Chunking text for resource {resource_id}")
@@ -172,37 +152,21 @@ class IngestionPipeline:
                 "embedding_strategy": chunking_result.metadata.get("embedding_strategy"),
             }
             
-            await self._update_job_stage(job_id, IngestionStage.ONTOLOGY, 25)
+            await self._update_job_stage(job_id, IngestionStage.EMBED, 55)
             
-            # Stage 3: Extract document-level ontology (NEW)
-            logger.info(f"Stage 3: Extracting ontology for resource {resource_id}")
-            ontology = await self._run_ontology_stage(sections, resource.filename)
-            metrics["stages"]["ontology"] = {
-                "topics": len(ontology.main_topics),
-                "concepts": len(ontology.concept_taxonomy),
-                "prerequisites": len(ontology.prerequisites),
-                "semantic_relations": len(ontology.semantic_relations),
-                "learning_objectives": len(ontology.learning_objectives),
-                "windows_processed": ontology.window_count,
-            }
-            
-            await self._update_job_stage(job_id, IngestionStage.EMBED, 35)
-            
-            # Stage 4: Embed chunks
-            logger.info(f"Stage 4: Embedding chunks for resource {resource_id}")
+            # Stage 3: Embed chunks
+            logger.info(f"Stage 3: Embedding chunks for resource {resource_id}")
             embeddings = await self._run_embed_stage(chunks)
             metrics["stages"]["embed"] = {"embeddings": len(embeddings)}
             
-            await self._update_job_stage(job_id, IngestionStage.ENRICH, 45)
-            
-            # Stage 5: Enrich chunks with LLM (using ontology context)
-            logger.info(f"Stage 5: Enriching chunks for resource {resource_id}")
-            enrichments = await self._run_enrich_stage(chunks, ontology)
-            metrics["stages"]["enrich"] = {
-                "enrichments": len(enrichments),
-                "skipped": sum(1 for e in enrichments if e.get("skipped", False)),
+            await self._update_job_stage(job_id, IngestionStage.PERSIST, 80)
+
+            enrichments = self._build_lightweight_enrichments(chunks)
+            metrics["stages"]["persist"] = {
+                "chunks": len(chunks),
+                "light_metadata": len(enrichments),
             }
-            
+
             # Save chunks to database
             await self._save_chunks(
                 resource_id,
@@ -212,36 +176,22 @@ class IngestionPipeline:
                 conversion_metadata=parse_result.metadata,
                 chunking_metadata=chunking_result.metadata,
             )
-            
-            await self._update_job_stage(job_id, IngestionStage.BUILD_KB, 60)
-            
-            # Stage 6: Build KB
-            logger.info(f"Stage 6: Building KB for resource {resource_id}")
-            kb_result = await self._run_kb_stage(resource_id, ontology)
-            metrics["stages"]["build_kb"] = kb_result
-            
-            await self._update_job_stage(job_id, IngestionStage.BUILD_GRAPH, 75)
-            
-            # Stage 7: Build concept graph
-            logger.info(f"Stage 7: Building concept graph for resource {resource_id}")
-            graph_result = await self._run_graph_stage(resource_id, ontology)
-            metrics["stages"]["build_graph"] = graph_result
-            
-            await self._update_job_stage(job_id, IngestionStage.BUILD_BUNDLES, 90)
-            
-            # Stage 8: Build bundles
-            logger.info(f"Stage 8: Building bundles for resource {resource_id}")
-            bundle_result = await self._run_bundle_stage(resource_id)
-            metrics["stages"]["build_bundles"] = bundle_result
+            artifacts_created = await self._persist_core_artifacts(
+                resource=resource,
+                sections=sections,
+                chunks=chunks,
+                chunking_metadata=chunking_result.metadata,
+            )
+            metrics["stages"]["persist"]["artifacts_created"] = artifacts_created
 
             metrics["quality"] = compute_quality_metrics(
                 resource_id=resource_id,
                 chunks=chunks,
                 embeddings=embeddings,
                 enrichments=enrichments,
-                kb_result=kb_result,
-                graph_result=graph_result,
-                bundle_result=bundle_result,
+                kb_result={},
+                graph_result={},
+                bundle_result={},
             )
             if metrics["quality"].get("qa_warnings"):
                 logger.warning(
@@ -268,7 +218,7 @@ class IngestionPipeline:
             if callable(commit):
                 await commit()
             
-            logger.info(f"Pipeline completed successfully for resource {resource_id}")
+            logger.info(f"Core ingestion completed successfully for resource {resource_id}")
             return metrics
             
         except Exception as e:
@@ -329,41 +279,45 @@ class IngestionPipeline:
         )
         return chunking_result
     
-    async def _run_ontology_stage(
-        self,
-        sections: list,
-        resource_title: Optional[str] = None,
-    ) -> ResourceOntology:
-        """Extract document-level ontology for enrichment guidance."""
-        ontology = await self.ontology_extractor.extract(
-            sections=sections,
-            resource_title=resource_title,
-        )
-        return ontology
-    
     async def _run_embed_stage(self, chunks: list[ChunkData]) -> list[list[float]]:
         """Generate embeddings for chunks."""
         texts = [chunk.text for chunk in chunks]
         embeddings = await self.embedding.embed(texts)
         return embeddings
-    
-    async def _run_enrich_stage(
-        self,
-        chunks: list[ChunkData],
-        ontology: Optional[ResourceOntology] = None,
-    ) -> list[dict]:
-        """Enrich chunks with concept extraction, using ontology context."""
-        # Generate context string from ontology
-        ontology_context = None
-        if ontology:
-            ontology_context = ontology.get_enrichment_context(max_tokens=800)
-            logger.info(f"Using ontology context for enrichment ({len(ontology_context)} chars)")
-        
-        enrichments = await self.enricher.enrich_batch(
-            chunks,
-            ontology_context=ontology_context,
-        )
-        return [e.to_dict() for e in enrichments]
+
+    def _build_lightweight_enrichments(self, chunks: list[ChunkData]) -> list[dict]:
+        """Build minimal deterministic per-chunk metadata for core ingestion."""
+        enrichments: list[dict] = []
+        for chunk in chunks:
+            text = chunk.text or ""
+            lowered = text.lower()
+            pedagogy_role = None
+            if "definition" in lowered:
+                pedagogy_role = "definition"
+            elif "example" in lowered:
+                pedagogy_role = "example"
+            elif "exercise" in lowered or "practice" in lowered:
+                pedagogy_role = "exercise"
+
+            difficulty = None
+            if len(text) > 1200:
+                difficulty = "medium"
+            if len(text) > 2200:
+                difficulty = "hard"
+
+            enrichments.append(
+                {
+                    "concepts_taught": [],
+                    "concepts_mentioned": [],
+                    "semantic_relationships": [],
+                    "prereq_hints": [],
+                    "pedagogy_role": pedagogy_role,
+                    "difficulty": difficulty,
+                    "skipped": False,
+                    "metadata_level": "core_lightweight",
+                }
+            )
+        return enrichments
     
     async def _save_chunks(
         self,
@@ -418,96 +372,54 @@ class IngestionPipeline:
                 ))
         
         await self.db.flush()
-    
-    async def _run_kb_stage(
+
+    async def _persist_core_artifacts(
         self,
-        resource_id: uuid.UUID,
-        ontology: Optional[ResourceOntology] = None,
-    ) -> dict:
-        """Build knowledge base, optionally using ontology for prereq hints."""
-        result = await self.kb_builder.build(
-            resource_id,
-            force_rebuild=True,
-            ontology_relations=(ontology.semantic_relations if ontology else None),
+        *,
+        resource: Resource,
+        sections: list,
+        chunks: list[ChunkData],
+        chunking_metadata: Optional[dict] = None,
+    ) -> int:
+        """Persist lightweight understanding artifacts for future preparation."""
+        profile_payload = build_resource_profile(
+            filename=resource.filename,
+            topic=resource.topic,
+            sections=sections,
+            chunks=chunks,
+            chunking_metadata=chunking_metadata,
         )
-        
-        # Persist ontology-derived topics and learning objectives
-        if ontology:
-            await save_ontology_data(self.db, resource_id, ontology)
-            result["ontology_topics_saved"] = len(ontology.main_topics)
-            result["ontology_objectives_saved"] = len(ontology.learning_objectives)
-            result["ontology_prerequisites"] = len(ontology.prerequisites)
-        
-        return result
-    
-    async def _run_graph_stage(
-        self,
-        resource_id: uuid.UUID,
-        ontology: Optional[ResourceOntology] = None,
-    ) -> dict:
-        """Build concept graph, enforce DAG, sync to Neo4j if available."""
-        result = await self.graph_builder.build(
-            resource_id,
-            force_rebuild=True,
-            ontology_relations=(ontology.semantic_relations if ontology else None),
+        artifact_repo = ResourceArtifactRepository(self.db)
+        existing = await artifact_repo.get_for_scope(
+            resource_id=resource.id,
+            scope_type="resource",
+            scope_key=str(resource.id),
+            artifact_kind="resource_profile",
         )
-        
-        # Store topo_order back to concept stats
-        topo_order = result.get("topo_order", {})
-        if topo_order:
-            from app.models.knowledge_base import ResourceConceptStats
-            for concept_id, order in topo_order.items():
-                await self.db.execute(
-                    update(ResourceConceptStats)
-                    .where(
-                        ResourceConceptStats.resource_id == resource_id,
-                        ResourceConceptStats.concept_id == concept_id,
-                    )
-                    .values(topo_order=order)
+        if existing:
+            existing.status = "ready"
+            existing.version = profile_payload.get("artifact_version", "1.0")
+            existing.payload_json = profile_payload
+            existing.content_hash = profile_payload.get("content_hash")
+            existing.error_message = None
+        else:
+            self.db.add(
+                ResourceArtifactState(
+                    resource_id=resource.id,
+                    scope_type="resource",
+                    scope_key=str(resource.id),
+                    artifact_kind="resource_profile",
+                    status="ready",
+                    version=profile_payload.get("artifact_version", "1.0"),
+                    payload_json=profile_payload,
+                    content_hash=profile_payload.get("content_hash"),
                 )
-            await self.db.flush()
-        
-        # Sync to Neo4j only when explicitly enabled
-        if not settings.NEO4J_ENABLED:
-            result["neo4j_sync"] = {"synced": False, "reason": "disabled"}
-            return result
-
-        try:
-            neo4j_client = await get_neo4j_client()
-            if neo4j_client is None:
-                result["neo4j_sync"] = {
-                    "synced": False,
-                    "reason": "client_unavailable",
-                }
-                return result
-            if not neo4j_client.is_connected:
-                result["neo4j_sync"] = {
-                    "synced": False,
-                    "reason": "not_connected",
-                }
-                return result
-
-            concepts, edges, prereq_hints = await get_graph_data(self.db, resource_id)
-            neo4j_result = await neo4j_client.sync_resource_graph(
-                resource_id=str(resource_id),
-                concepts=concepts,
-                edges=edges,
-                prereq_hints=prereq_hints,
             )
-            result["neo4j_sync"] = neo4j_result
-            logger.info(f"Synced concept graph to Neo4j for resource {resource_id}")
-        except Exception as e:
-            logger.warning(f"Failed to sync to Neo4j: {e}")
-            result["neo4j_sync"] = {"synced": False, "error": str(e)}
-        
-        return result
+
+        capabilities = dict(resource.capabilities_json or {})
+        capabilities["resource_profile_ready"] = True
+        capabilities["has_resource_profile"] = True
+        resource.capabilities_json = capabilities
+        await self.db.flush()
+        return 1
     
-    async def _run_bundle_stage(self, resource_id: uuid.UUID) -> dict:
-        """Build bundles."""
-        concept_result = await self.bundle_builder.build_concept_bundles(
-            resource_id, force_rebuild=True
-        )
-        topic_result = await self.bundle_builder.build_topic_bundles(
-            resource_id, force_rebuild=True
-        )
-        return {**concept_result, **topic_result}

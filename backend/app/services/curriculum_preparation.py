@@ -1,0 +1,283 @@
+import hashlib
+import json
+import uuid
+from datetime import datetime, timezone
+from typing import Optional
+
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.chunk import Chunk, ChunkConcept
+from app.models.knowledge_base import (
+    ResourceBundle,
+    ResourceConceptGraph,
+    ResourceTopicBundle,
+)
+from app.models.resource import Resource
+from app.models.resource_artifact import ResourceArtifactState
+from app.services.ingestion.bundle_builder import BundleBuilder
+from app.services.ingestion.enricher import ChunkEnricher
+from app.services.ingestion.graph_builder import ConceptGraphBuilder
+from app.services.ingestion.ingestion_types import ChunkData, SectionData
+from app.services.ingestion.kb_builder import ResourceKBBuilder
+from app.services.ingestion.ontology_extractor import OntologyExtractor
+from app.services.ingestion.pipeline_support import save_ontology_data
+from app.utils.canonicalization import canonicalize_concept_id
+
+
+class CurriculumPreparationService:
+    """Build deferred richer KB artifacts when a study session truly needs them."""
+
+    def __init__(
+        self,
+        db_session: AsyncSession,
+        *,
+        ontology_extractor: OntologyExtractor,
+        enricher: ChunkEnricher,
+        kb_builder: Optional[ResourceKBBuilder] = None,
+        graph_builder: Optional[ConceptGraphBuilder] = None,
+        bundle_builder: Optional[BundleBuilder] = None,
+    ):
+        self.db = db_session
+        self.ontology_extractor = ontology_extractor
+        self.enricher = enricher
+        self.kb_builder = kb_builder or ResourceKBBuilder(db_session)
+        self.graph_builder = graph_builder or ConceptGraphBuilder(db_session)
+        self.bundle_builder = bundle_builder or BundleBuilder(db_session)
+
+    async def ensure_curriculum_ready(self, resource_id: uuid.UUID) -> dict:
+        resource = await self.db.get(Resource, resource_id)
+        if not resource:
+            raise ValueError(f"Resource {resource_id} not found")
+
+        capabilities = dict(resource.capabilities_json or {})
+        if capabilities.get("curriculum_ready") and capabilities.get("has_topic_bundles"):
+            return {"prepared": False, "reason": "already_ready"}
+
+        chunks = await self._get_chunks(resource_id)
+        if not chunks:
+            raise ValueError(f"Resource {resource_id} has no chunks available for curriculum preparation")
+
+        sections = self._build_sections(chunks)
+        chunk_data = self._build_chunk_data(chunks)
+
+        ontology = await self.ontology_extractor.extract(sections=sections, resource_title=resource.filename)
+        ontology_context = ontology.get_enrichment_context(max_tokens=800) if ontology else None
+        enrichments = await self.enricher.enrich_batch(chunk_data, ontology_context=ontology_context)
+        enrichments_dict = [item.to_dict() for item in enrichments]
+
+        await self._persist_enrichments(chunks, enrichments_dict)
+        kb_result = await self.kb_builder.build(
+            resource_id,
+            force_rebuild=True,
+            ontology_relations=(ontology.semantic_relations if ontology else None),
+        )
+        if ontology:
+            await save_ontology_data(self.db, resource_id, ontology)
+
+        graph_result = await self.graph_builder.build(
+            resource_id,
+            force_rebuild=True,
+            ontology_relations=(ontology.semantic_relations if ontology else None),
+        )
+        bundle_result = await self._build_bundles(resource_id)
+        await self._mark_resource_ready(resource, kb_result, graph_result, bundle_result)
+        artifact = await self._upsert_curriculum_artifact(
+            resource,
+            kb_result,
+            graph_result,
+            bundle_result,
+            source_chunk_ids=[chunk.id for chunk in chunks],
+        )
+        await self.db.commit()
+        return {
+            "prepared": True,
+            "artifact_id": str(artifact.id),
+            "concepts_admitted": kb_result.get("concepts_admitted", 0),
+            "graph_edges": graph_result.get("edges_created", 0),
+            "topic_bundles": bundle_result.get("topic_bundles_created", 0),
+        }
+
+    async def _get_chunks(self, resource_id: uuid.UUID) -> list[Chunk]:
+        result = await self.db.execute(
+            select(Chunk).where(Chunk.resource_id == resource_id).order_by(Chunk.chunk_index)
+        )
+        return list(result.scalars().all())
+
+    def _build_sections(self, chunks: list[Chunk]) -> list[SectionData]:
+        grouped: list[SectionData] = []
+        current_heading: Optional[str] = None
+        bucket: list[str] = []
+        page_start: Optional[int] = None
+        page_end: Optional[int] = None
+
+        def flush_bucket():
+            nonlocal bucket, current_heading, page_start, page_end
+            if not bucket:
+                return
+            grouped.append(
+                SectionData(
+                    heading=current_heading,
+                    page_start=page_start,
+                    page_end=page_end,
+                    text="\n\n".join(bucket),
+                    metadata={"source": "stored_chunks"},
+                )
+            )
+            bucket = []
+            page_start = None
+            page_end = None
+
+        for chunk in chunks:
+            heading = chunk.section_heading or current_heading
+            if current_heading is None:
+                current_heading = heading
+            elif heading != current_heading and bucket:
+                flush_bucket()
+                current_heading = heading
+            if page_start is None:
+                page_start = chunk.page_start
+            page_end = chunk.page_end or page_end
+            bucket.append(chunk.text)
+        flush_bucket()
+        return grouped or [
+            SectionData(
+                heading=None,
+                page_start=None,
+                page_end=None,
+                text="\n\n".join(chunk.text for chunk in chunks),
+                metadata={"source": "stored_chunks"},
+            )
+        ]
+
+    def _build_chunk_data(self, chunks: list[Chunk]) -> list[ChunkData]:
+        return [
+            ChunkData(
+                chunk_index=chunk.chunk_index,
+                text=chunk.text,
+                section_heading=chunk.section_heading,
+                page_start=chunk.page_start,
+                page_end=chunk.page_end,
+                metadata={"source": "stored_chunks"},
+            )
+            for chunk in chunks
+        ]
+
+    async def _persist_enrichments(self, chunks: list[Chunk], enrichments: list[dict]) -> None:
+        await self.db.execute(
+            delete(ChunkConcept).where(ChunkConcept.chunk_id.in_([chunk.id for chunk in chunks]))
+        )
+        for chunk, enrichment in zip(chunks, enrichments):
+            existing = dict(chunk.enrichment_metadata or {})
+            docling_payload = existing.get("docling")
+            existing.update(enrichment)
+            existing["metadata_level"] = "curriculum_prepare"
+            if docling_payload is not None:
+                existing["docling"] = docling_payload
+            chunk.enrichment_metadata = existing
+            chunk.pedagogy_role = enrichment.get("pedagogy_role") or chunk.pedagogy_role
+            chunk.difficulty = enrichment.get("difficulty") or chunk.difficulty
+
+            for concept in enrichment.get("concepts_taught", []):
+                self.db.add(
+                    ChunkConcept(
+                        chunk_id=chunk.id,
+                        concept_id=canonicalize_concept_id(concept),
+                        role="teaches",
+                    )
+                )
+            for concept in enrichment.get("concepts_mentioned", []):
+                self.db.add(
+                    ChunkConcept(
+                        chunk_id=chunk.id,
+                        concept_id=canonicalize_concept_id(concept),
+                        role="mentions",
+                    )
+                )
+        await self.db.flush()
+
+    async def _build_bundles(self, resource_id: uuid.UUID) -> dict:
+        await self.db.execute(delete(ResourceBundle).where(ResourceBundle.resource_id == resource_id))
+        await self.db.execute(delete(ResourceTopicBundle).where(ResourceTopicBundle.resource_id == resource_id))
+        await self.db.flush()
+        concept_result = await self.bundle_builder.build_concept_bundles(resource_id, force_rebuild=False)
+        topic_result = await self.bundle_builder.build_topic_bundles(resource_id, force_rebuild=False)
+        return {**concept_result, **topic_result}
+
+    async def _mark_resource_ready(self, resource: Resource, kb_result: dict, graph_result: dict, bundle_result: dict) -> None:
+        capabilities = dict(resource.capabilities_json or {})
+        has_concepts = kb_result.get("concepts_admitted", 0) > 0
+        has_graph = graph_result.get("edges_created", 0) > 0
+        has_topic_bundles = bundle_result.get("topic_bundles_created", 0) > 0
+        now = datetime.now(timezone.utc)
+        capabilities.update(
+            {
+                "concepts_ready": has_concepts,
+                "has_concepts": has_concepts,
+                "has_prereq_graph": has_graph,
+                "graph_ready": has_graph,
+                "has_topic_bundles": has_topic_bundles,
+                "has_curriculum_artifacts": has_topic_bundles,
+                "curriculum_ready": has_topic_bundles,
+                "can_start_learn_session": has_topic_bundles,
+                "can_start_practice_session": has_topic_bundles,
+                "can_start_revision_session": has_topic_bundles,
+            }
+        )
+        resource.capabilities_json = capabilities
+        resource.curriculum_ready_at = now if has_topic_bundles else resource.curriculum_ready_at
+        resource.tutoring_ready_at = now if has_concepts else resource.tutoring_ready_at
+        resource.graph_ready_at = now if has_graph else resource.graph_ready_at
+        resource.processing_profile = "prepared_for_curriculum"
+        self.db.add(resource)
+        await self.db.flush()
+
+    async def _upsert_curriculum_artifact(
+        self,
+        resource: Resource,
+        kb_result: dict,
+        graph_result: dict,
+        bundle_result: dict,
+        source_chunk_ids: list[uuid.UUID],
+    ) -> ResourceArtifactState:
+        result = await self.db.execute(
+            select(ResourceArtifactState)
+            .where(ResourceArtifactState.resource_id == resource.id)
+            .where(ResourceArtifactState.scope_type == "resource")
+            .where(ResourceArtifactState.scope_key == str(resource.id))
+            .where(ResourceArtifactState.artifact_kind == "curriculum_prepare")
+            .limit(1)
+        )
+        existing = result.scalar_one_or_none()
+        payload = {
+            "artifact_kind": "curriculum_prepare",
+            "artifact_version": "1.0",
+            "concepts_admitted": kb_result.get("concepts_admitted", 0),
+            "graph_edges": graph_result.get("edges_created", 0),
+            "topic_bundles": bundle_result.get("topic_bundles_created", 0),
+            "source_chunk_ids": [str(chunk_id) for chunk_id in source_chunk_ids],
+        }
+        payload_hash = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+        if existing:
+            existing.status = "ready"
+            existing.version = "1.0"
+            existing.payload_json = payload
+            existing.content_hash = payload_hash
+            existing.source_chunk_ids = [str(chunk_id) for chunk_id in payload.get("source_chunk_ids", [])]
+            existing.error_message = None
+            await self.db.flush()
+            return existing
+        artifact = ResourceArtifactState(
+            resource_id=resource.id,
+            scope_type="resource",
+            scope_key=str(resource.id),
+            artifact_kind="curriculum_prepare",
+            status="ready",
+            version="1.0",
+            payload_json=payload,
+            source_chunk_ids=[str(chunk_id) for chunk_id in payload.get("source_chunk_ids", [])],
+            content_hash=payload_hash,
+        )
+        self.db.add(artifact)
+        await self.db.flush()
+        return artifact

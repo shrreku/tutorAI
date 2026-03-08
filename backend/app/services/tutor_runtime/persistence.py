@@ -14,6 +14,25 @@ from app.services.tutor_runtime.types import TurnResult
 logger = logging.getLogger(__name__)
 
 
+TRANSIENT_PLAN_KEYS = (
+    "awaiting_evaluation",
+    "awaiting_turn_id",
+    "last_tutor_question",
+    "last_tutor_response",
+    "effective_step_type",
+)
+
+
+def clear_transient_runtime_flags(plan: dict) -> dict:
+    """Clear ephemeral runtime flags that should not survive completion."""
+    for key in TRANSIENT_PLAN_KEYS:
+        if key == "awaiting_evaluation":
+            plan[key] = False
+        else:
+            plan[key] = None
+    return plan
+
+
 def _serialize_policy_output(
     policy_output,
     *,
@@ -167,6 +186,7 @@ async def persist_turn(
                 )
                 db.add(turn)
                 await db.flush()
+                plan["turn_count"] = turn_index + 1
             return
         except IntegrityError:
             if attempt == max_attempts - 1:
@@ -184,6 +204,7 @@ async def handle_session_complete(
     session.status = "completed"
     await db.commit()
     plan = session.plan_state or {}
+    clear_transient_runtime_flags(plan)
     mastery = dict(session.mastery) if session.mastery else {}
     objective_queue = plan.get("objective_queue", [])
     objective_progress = plan.get("objective_progress", {})

@@ -3,11 +3,16 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.curriculum_agent import CurriculumAgent
-from app.api.deps import require_auth, require_notebooks_enabled, verify_notebook_owner
+from app.api.deps import (
+    get_byok_api_key,
+    require_auth,
+    require_notebooks_enabled,
+    verify_notebook_owner,
+)
 from app.config import settings
 from app.db.database import get_db
 from app.db.repositories.notebook_repo import (
@@ -49,6 +54,11 @@ from app.schemas.api import (
     ObjectiveSummary,
 )
 from app.services.llm.factory import create_llm_provider
+from app.services.embedding.factory import create_embedding_provider
+from app.services.curriculum_preparation import CurriculumPreparationService
+from app.services.ingestion.enricher import ChunkEnricher
+from app.services.ingestion.ontology_extractor import OntologyExtractor
+from app.services.notebook_preparation import NotebookPreparationService
 from app.services.telemetry.notebook_events import emit_notebook_event
 from app.services.tutor.session_service import SessionService
 
@@ -61,6 +71,7 @@ router = APIRouter(
 )
 
 SUPPORTED_ARTIFACT_TYPES = {"notes", "flashcards", "quiz", "revision_plan"}
+CURRICULUM_REQUIRED_MODES = {"learn", "practice", "revision"}
 
 
 def _build_curriculum_overview(plan_state: dict) -> Optional[CurriculumOverview]:
@@ -522,12 +533,15 @@ async def detach_resource_from_notebook(
 async def create_notebook_session(
     notebook_id: UUID,
     request: NotebookSessionCreateRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     user: UserProfile = Depends(require_auth),
+    byok: dict = Depends(get_byok_api_key),
 ):
     notebook_resource_repo = NotebookResourceRepository(db)
     notebook_session_repo = NotebookSessionRepository(db)
     user_repo = UserProfileRepository(db)
+    preparation_service = NotebookPreparationService(db)
 
     await verify_notebook_owner(notebook_id, user, db)
 
@@ -538,9 +552,54 @@ async def create_notebook_session(
             detail="Resource is not attached to this notebook",
         )
 
-    curriculum_llm = create_llm_provider(settings, task="curriculum")
-    curriculum_agent = CurriculumAgent(curriculum_llm, db)
-    session_service = SessionService(db, curriculum_agent)
+    try:
+        preparation_summary = await preparation_service.prepare_session_context(
+            notebook_id=notebook_id,
+            request=request,
+            user_id=user.id,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        if "not study-ready" in detail or "no chunks available" in detail:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+    if request.mode in CURRICULUM_REQUIRED_MODES:
+        try:
+            embedding_provider = create_embedding_provider(settings)
+            ontology_llm = create_llm_provider(
+                settings,
+                task="ontology",
+                byok_api_key=byok.get("api_key"),
+                byok_api_base_url=byok.get("api_base_url"),
+            )
+            enrichment_llm = create_llm_provider(
+                settings,
+                task="enrichment",
+                byok_api_key=byok.get("api_key"),
+                byok_api_base_url=byok.get("api_base_url"),
+            )
+            curriculum_preparation = CurriculumPreparationService(
+                db,
+                ontology_extractor=OntologyExtractor(
+                    ontology_llm,
+                    ontology_model=settings.LLM_MODEL_ONTOLOGY,
+                    embed_fn=embedding_provider.embed,
+                ),
+                enricher=ChunkEnricher(
+                    enrichment_llm,
+                    enrichment_model=settings.LLM_MODEL_ENRICHMENT,
+                ),
+            )
+            curriculum_summary = await curriculum_preparation.ensure_curriculum_ready(request.resource_id)
+            if curriculum_summary:
+                preparation_summary["curriculum_preparation"] = curriculum_summary
+        except ValueError as exc:
+            detail = str(exc)
+            if "not found" in detail or "no chunks available" in detail:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
     global_consent, _ = await user_repo.get_global_consent(user)
 
     effective_consent = (
@@ -550,12 +609,21 @@ async def create_notebook_session(
     )
 
     try:
+        curriculum_llm = create_llm_provider(
+            settings,
+            task="curriculum",
+            byok_api_key=byok.get("api_key"),
+            byok_api_base_url=byok.get("api_base_url"),
+        )
+        curriculum_agent = CurriculumAgent(curriculum_llm, db)
+        session_service = SessionService(db, curriculum_agent)
         session = await session_service.create_session(
             resource_id=request.resource_id,
             user_id=user.id,
             topic=request.topic,
             selected_topics=request.selected_topics,
             consent_training=effective_consent,
+            resume_existing=request.resume_existing,
         )
     except ValueError as exc:
         msg = str(exc)
@@ -564,10 +632,16 @@ async def create_notebook_session(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
     existing_link = await notebook_session_repo.get_by_pair(notebook_id, session.id)
+    reused_existing = bool(getattr(session, "_reused_existing", False))
+    response.status_code = (
+        status.HTTP_200_OK if reused_existing else status.HTTP_201_CREATED
+    )
     if existing_link:
         return NotebookSessionDetailResponse(
             notebook_session=_to_notebook_session_response(existing_link),
             session=_to_session_response(session),
+            reused_existing=reused_existing,
+            preparation_summary=preparation_summary,
         )
 
     notebook_session = NotebookSession(
@@ -587,12 +661,17 @@ async def create_notebook_session(
             "session_id": str(session.id),
             "mode": request.mode,
             "resource_id": str(request.resource_id),
+            "scope_type": preparation_summary.get("scope_type"),
+            "scope_resource_ids": preparation_summary.get("scope_resource_ids", []),
+            "artifacts_created": preparation_summary.get("artifacts_created", 0),
         },
     )
 
     return NotebookSessionDetailResponse(
         notebook_session=_to_notebook_session_response(notebook_session),
         session=_to_session_response(session),
+        reused_existing=reused_existing,
+        preparation_summary=preparation_summary,
     )
 
 

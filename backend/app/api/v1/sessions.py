@@ -1,13 +1,16 @@
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
 from app.db.repositories.session_repo import SessionRepository
 from app.models.session import UserSession, UserProfile
+from app.models.notebook import NotebookSession
 from app.api.deps import require_auth, verify_session_owner
 from app.schemas.api import (
     SessionCreate,
@@ -18,10 +21,19 @@ from app.schemas.api import (
     ObjectiveSummary,
     PaginatedResponse,
 )
+from app.services.tutor_runtime.persistence import clear_transient_runtime_flags
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+
+def _canonical_turn_count(session: UserSession) -> int:
+    turns = getattr(session, "turns", None)
+    if turns is not None:
+        return len(turns)
+    plan_state = session.plan_state or {}
+    return int(plan_state.get("turn_count", 0) or 0)
 
 
 def _build_curriculum_overview(plan_state: dict) -> Optional[CurriculumOverview]:
@@ -104,13 +116,14 @@ async def get_session(
         resource_id=session.resource_id,
         topic=ps.get("active_topic"),
         status=session.status,
+        consent_training=session.consent_training,
         current_step=ps.get("current_step"),
         current_concept_id=(ps.get("focus_concepts") or [None])[0],
         mastery=session.mastery,
         curriculum_overview=_build_curriculum_overview(ps),
         created_at=session.created_at,
         plan_state=session.plan_state,
-        turn_count=len(session.turns) if session.turns else 0,
+        turn_count=_canonical_turn_count(session),
     )
 
 
@@ -123,7 +136,7 @@ async def end_session(
     """End an active session and return summary."""
     await verify_session_owner(session_id, user, db)
     session_repo = SessionRepository(db)
-    session = await session_repo.get_by_id(session_id)
+    session = await session_repo.get_with_turns(session_id)
     
     if not session:
         raise HTTPException(
@@ -144,9 +157,12 @@ async def end_session(
     from sqlalchemy.orm.attributes import flag_modified
 
     plan = session.plan_state or {}
+    clear_transient_runtime_flags(plan)
     mastery = dict(session.mastery) if session.mastery else {}
     objective_queue = plan.get("objective_queue", [])
     objective_progress = plan.get("objective_progress", {})
+    turn_count = _canonical_turn_count(session)
+    plan["turn_count"] = turn_count
 
     try:
         llm = create_llm_provider(settings, task="tutoring")
@@ -156,7 +172,7 @@ async def end_session(
             objective_progress=objective_progress,
             mastery=mastery,
             initial_mastery={c: 0.0 for c in mastery},
-            turn_count=plan.get("turn_count", 0),
+            turn_count=turn_count,
             topic=plan.get("active_topic"),
         )
         summary_output = await summary_agent.run(summary_state)
@@ -175,7 +191,7 @@ async def end_session(
                 for obj in objective_queue
             ],
             "mastery_snapshot": mastery,
-            "turn_count": plan.get("turn_count", 0),
+            "turn_count": turn_count,
             "topic": plan.get("active_topic"),
         }
     except Exception as e:
@@ -195,7 +211,7 @@ async def end_session(
                 for obj in objective_queue
             ],
             "mastery_snapshot": mastery,
-            "turn_count": plan.get("turn_count", 0),
+            "turn_count": turn_count,
             "topic": plan.get("active_topic"),
         }
 
@@ -203,7 +219,13 @@ async def end_session(
     plan["session_summary"] = summary_data
     session.plan_state = plan
     session.status = "completed"
+    session.ended_at = datetime.now(timezone.utc)
     flag_modified(session, "plan_state")
+    await db.execute(
+        update(NotebookSession)
+        .where(NotebookSession.session_id == session.id)
+        .values(ended_at=datetime.now(timezone.utc))
+    )
     await db.commit()
     await db.refresh(session)
     
@@ -230,7 +252,7 @@ async def get_session_summary(
     """Get the session summary for a completed session."""
     await verify_session_owner(session_id, user, db)
     session_repo = SessionRepository(db)
-    session = await session_repo.get_by_id(session_id)
+    session = await session_repo.get_with_turns(session_id)
     
     if not session:
         raise HTTPException(
@@ -240,6 +262,8 @@ async def get_session_summary(
     
     plan = session.plan_state or {}
     mastery = dict(session.mastery) if session.mastery else {}
+    turn_count = _canonical_turn_count(session)
+    plan["turn_count"] = turn_count
     summary_data = plan.get("session_summary")
     
     if not summary_data:
@@ -261,7 +285,7 @@ async def get_session_summary(
                 for obj in objective_queue
             ],
             "mastery_snapshot": mastery,
-            "turn_count": plan.get("turn_count", 0),
+            "turn_count": turn_count,
             "topic": plan.get("active_topic"),
         }
     
@@ -269,7 +293,7 @@ async def get_session_summary(
         session_id=session.id,
         status=session.status,
         topic=summary_data.get("topic") or plan.get("active_topic"),
-        turn_count=summary_data.get("turn_count", 0),
+        turn_count=summary_data.get("turn_count") or turn_count,
         summary_text=summary_data.get("summary_text"),
         concepts_strong=summary_data.get("concepts_strong", []),
         concepts_developing=summary_data.get("concepts_developing", []),

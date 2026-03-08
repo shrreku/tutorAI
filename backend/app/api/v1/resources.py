@@ -10,6 +10,7 @@ from sqlalchemy import select, delete
 from app.config import settings
 from app.db.database import get_db
 from app.db.repositories.resource_repo import ResourceRepository
+from app.db.repositories.resource_artifact_repo import ResourceArtifactRepository
 from app.db.repositories.chunk_repo import ChunkRepository
 from app.db.repositories.ingestion_repo import IngestionJobRepository
 from app.models.session import UserProfile
@@ -18,6 +19,7 @@ from app.api.deps import require_auth
 from app.services.storage.factory import create_storage_provider
 from app.schemas.api import (
     ResourceResponse,
+    ResourceArtifactResponse,
     ResourceDetailResponse,
     PaginatedResponse,
     ResourceKnowledgeBaseResponse,
@@ -35,6 +37,56 @@ _DAG_RELATION_TYPES = {"PREREQUISITE", "REQUIRES", "BUILDS_ON", "PART_OF"}
 _DISPLAY_RELATION_TYPES = {"REQUIRES", "ENABLES", "DERIVES_FROM", "PART_OF", "IS_A", "APPLIES_TO"}
 _DISPLAY_MIN_CONFIDENCE = 0.55
 _DISPLAY_MAX_EDGES_PER_CONCEPT = 4
+
+
+def _resource_response_payload(resource) -> dict:
+    return {
+        "id": resource.id,
+        "filename": resource.filename,
+        "topic": resource.topic,
+        "status": resource.status,
+        "lifecycle_status": resource.status,
+        "processing_profile": getattr(resource, "processing_profile", None),
+        "capabilities": getattr(resource, "capabilities_json", None) or {},
+        "uploaded_at": resource.uploaded_at,
+        "processed_at": resource.processed_at,
+    }
+
+
+def _job_status_payload(job) -> IngestionStatusResponse:
+    return IngestionStatusResponse(
+        job_id=job.id,
+        resource_id=job.resource_id,
+        status=job.status,
+        job_kind=getattr(job, "job_kind", "core_ingest"),
+        requested_capability=getattr(job, "requested_capability", None),
+        scope_type=getattr(job, "scope_type", None),
+        scope_key=getattr(job, "scope_key", None),
+        current_stage=job.current_stage,
+        progress_percent=job.progress_percent,
+        error_message=job.error_message,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+    )
+
+
+def _resource_artifact_payload(artifact) -> ResourceArtifactResponse:
+    source_chunk_ids = [str(item) for item in (artifact.source_chunk_ids or [])]
+    return ResourceArtifactResponse(
+        id=artifact.id,
+        resource_id=artifact.resource_id,
+        notebook_id=artifact.notebook_id,
+        scope_type=artifact.scope_type,
+        scope_key=artifact.scope_key,
+        artifact_kind=artifact.artifact_kind,
+        status=artifact.status,
+        version=artifact.version,
+        payload_json=artifact.payload_json,
+        source_chunk_ids=source_chunk_ids or None,
+        content_hash=artifact.content_hash,
+        generated_at=artifact.generated_at,
+        error_message=artifact.error_message,
+    )
 
 
 def _normalize_concept_id(value: str) -> str:
@@ -176,14 +228,7 @@ async def list_resources(
     
     return PaginatedResponse(
         items=[
-            ResourceResponse(
-                id=r.id,
-                filename=r.filename,
-                topic=r.topic,
-                status=r.status,
-                uploaded_at=r.uploaded_at,
-                processed_at=r.processed_at,
-            )
+            ResourceResponse(**_resource_response_payload(r))
             for r in resources
         ],
         total=total,
@@ -211,14 +256,11 @@ async def get_resource(
     # Count chunks
     chunk_repo = ChunkRepository(db)
     chunk_count = await chunk_repo.count_by_resource(resource_id)
+    artifact_repo = ResourceArtifactRepository(db)
+    artifacts = await artifact_repo.list_by_resource(resource_id, limit=10, offset=0)
     
     return ResourceDetailResponse(
-        id=resource.id,
-        filename=resource.filename,
-        topic=resource.topic,
-        status=resource.status,
-        uploaded_at=resource.uploaded_at,
-        processed_at=resource.processed_at,
+        **_resource_response_payload(resource),
         chunk_count=chunk_count,
         concept_count=len(resource.concept_stats) if resource.concept_stats else 0,
         topic_bundles=[
@@ -229,6 +271,45 @@ async def get_resource(
             }
             for tb in (resource.topic_bundles or [])
         ],
+        artifacts=[_resource_artifact_payload(artifact) for artifact in artifacts],
+    )
+
+
+@router.get("/{resource_id}/artifacts", response_model=PaginatedResponse[ResourceArtifactResponse])
+async def list_resource_artifacts(
+    resource_id: UUID,
+    artifact_kind: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(require_auth),
+):
+    repo = ResourceRepository(db)
+    resource = await repo.get_by_id(resource_id)
+    if not resource:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Resource {resource_id} not found",
+        )
+    if resource.owner_user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+
+    artifact_repo = ResourceArtifactRepository(db)
+    artifacts = await artifact_repo.list_by_resource(
+        resource_id,
+        artifact_kind=artifact_kind,
+        limit=limit,
+        offset=offset,
+    )
+    total = await artifact_repo.count_by_resource(resource_id, artifact_kind=artifact_kind)
+    return PaginatedResponse(
+        items=[_resource_artifact_payload(artifact) for artifact in artifacts],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -397,16 +478,7 @@ async def get_resource_knowledge_base(
     job_repo = IngestionJobRepository(db)
     latest_job = await job_repo.get_by_resource(resource_id)
     if latest_job:
-        latest_job_payload = IngestionStatusResponse(
-            job_id=latest_job.id,
-            resource_id=latest_job.resource_id,
-            status=latest_job.status,
-            current_stage=latest_job.current_stage,
-            progress_percent=latest_job.progress_percent,
-            error_message=latest_job.error_message,
-            started_at=latest_job.started_at,
-            completed_at=latest_job.completed_at,
-        )
+        latest_job_payload = _job_status_payload(latest_job)
 
     return ResourceKnowledgeBaseResponse(
         resource_id=resource.id,

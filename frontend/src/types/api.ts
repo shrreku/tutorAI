@@ -25,6 +25,9 @@ export interface Resource {
   filename: string;
   topic: string | null;
   status: string;
+  lifecycle_status?: string | null;
+  processing_profile?: string | null;
+  capabilities?: Record<string, boolean>;
   uploaded_at: string;
   processed_at: string | null;
 }
@@ -33,6 +36,23 @@ export interface ResourceDetail extends Resource {
   chunk_count: number;
   concept_count: number;
   topic_bundles: TopicBundle[];
+  artifacts?: ResourceArtifact[];
+}
+
+export interface ResourceArtifact {
+  id: string;
+  resource_id?: string | null;
+  notebook_id?: string | null;
+  scope_type: string;
+  scope_key: string;
+  artifact_kind: string;
+  status: string;
+  version: string;
+  payload_json?: Record<string, unknown> | null;
+  source_chunk_ids?: string[] | null;
+  content_hash?: string | null;
+  generated_at: string;
+  error_message?: string | null;
 }
 
 export interface TopicBundle {
@@ -51,6 +71,10 @@ export interface IngestionStatus {
   job_id: string;
   resource_id: string;
   status: string;
+  job_kind?: string;
+  requested_capability?: string | null;
+  scope_type?: string | null;
+  scope_key?: string | null;
   current_stage: string | null;
   progress_percent: number;
   error_message: string | null;
@@ -217,15 +241,20 @@ export interface NotebookSession {
 
 export interface NotebookSessionCreateRequest {
   resource_id: string;
+  selected_resource_ids?: string[];
+  notebook_wide?: boolean;
   mode?: 'learn' | 'doubt' | 'practice' | 'revision';
   topic?: string;
   selected_topics?: string[];
   consent_training?: boolean | null;
+  resume_existing?: boolean;
 }
 
 export interface NotebookSessionDetail {
   notebook_session: NotebookSession;
   session: Session;
+  reused_existing: boolean;
+  preparation_summary?: Record<string, unknown>;
 }
 
 export interface NotebookProgress {
