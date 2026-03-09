@@ -54,6 +54,8 @@ backend/.env.*
 storage/
 backend/storage/
 uploads/
+!backend/app/services/storage/
+!backend/app/services/storage/*.py
 
 # Docker volumes and runtime
 docker-data/
