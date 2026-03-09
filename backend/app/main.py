@@ -28,6 +28,17 @@ logging.getLogger("asyncio").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
+def _parse_cors_origins() -> list[str]:
+    origins = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+
+    prod_origins = (settings.CORS_ALLOWED_ORIGINS or settings.CORS_ALLOWED_ORIGIN or "").split(",")
+    origins.extend(origin.strip() for origin in prod_origins if origin.strip())
+    return origins
+
+
 def _validate_auth_config() -> None:
     """Fail fast when auth is enabled with an unsafe JWT signing key."""
     if not settings.AUTH_ENABLED or not settings.AUTH_ENFORCE_STRONG_SECRET:
@@ -80,15 +91,7 @@ app = FastAPI(
 )
 
 # CORS middleware — allow local dev and production frontend origins
-_allowed_origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
-# In production, add your deployed frontend URL via environment variable
-import os as _os
-_prod_origin = _os.getenv("CORS_ALLOWED_ORIGIN")
-if _prod_origin:
-    _allowed_origins.append(_prod_origin)
+_allowed_origins = _parse_cors_origins()
 
 app.add_middleware(
     CORSMiddleware,

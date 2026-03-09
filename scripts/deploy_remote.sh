@@ -8,6 +8,7 @@ set -euo pipefail
 
 export REGISTRY="${REGISTRY:-ghcr.io}"
 export IMAGE_PREFIX
+export IMAGE_PREFIX_LOWER="${IMAGE_PREFIX,,}"
 export APP_IMAGE_TAG
 
 echo "$GHCR_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USERNAME" --password-stdin

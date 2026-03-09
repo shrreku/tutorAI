@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     AUTH_SECRET_MIN_LENGTH: int = 32
     AUTH_ENFORCE_STRONG_SECRET: bool = True
     ADMIN_EXTERNAL_IDS: str = ""
+    CORS_ALLOWED_ORIGIN: str = ""
+    CORS_ALLOWED_ORIGINS: str = ""
     
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = True
