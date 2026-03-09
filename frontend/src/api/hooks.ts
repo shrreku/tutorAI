@@ -3,6 +3,7 @@ import { apiClient } from './client';
 import type {
   PaginatedResponse,
   Resource,
+  IngestionStatus,
   TutorTurnRequest,
   TutorTurnResponse,
   Turn,
@@ -234,6 +235,18 @@ export function useResources(params?: {
         limit: params?.limit?.toString(),
         offset: params?.offset?.toString(),
       } as Record<string, string>),
+  });
+}
+
+export function useUploadResource() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (formData: FormData) =>
+      apiClient.postForm<IngestionStatus>('/ingest/upload', formData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all });
+    },
   });
 }
 
