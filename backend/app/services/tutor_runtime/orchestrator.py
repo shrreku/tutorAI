@@ -9,8 +9,10 @@ import asyncio
 import os
 import time as _time
 import uuid
+from datetime import datetime, timezone
 
 from langfuse import propagate_attributes
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -18,6 +20,7 @@ from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.policy_agent import PolicyAgent
 from app.agents.safety_critic import SafetyCritic
 from app.agents.tutor_agent import TutorAgent
+from app.models.notebook import NotebookSession
 from app.models.session import UserSession
 from app.services.retrieval.service import RetrievalService
 from app.services.tutor_runtime.stage_handoffs import (
@@ -822,7 +825,9 @@ class TurnPipeline:
         # Generate session summary when completing
         session_summary_data = None
         if session_complete:
+            completed_at = datetime.now(timezone.utc)
             session.status = "completed"
+            session.ended_at = completed_at
             _clear_transient_runtime_flags(plan)
             try:
                 from app.agents.summary_agent import SummaryAgent, SummaryState
@@ -861,6 +866,12 @@ class TurnPipeline:
             except Exception as e:
                 import logging as _logging
                 _logging.getLogger(__name__).warning(f"Summary generation failed in orchestrator: {e}")
+
+            await self.db.execute(
+                update(NotebookSession)
+                .where(NotebookSession.session_id == session.id)
+                .values(ended_at=completed_at)
+            )
 
         await self.db.commit()
 

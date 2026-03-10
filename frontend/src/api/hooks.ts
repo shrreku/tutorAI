@@ -161,7 +161,9 @@ export function useCreateNotebookSession(notebookId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: NotebookSessionCreateRequest) =>
-      apiClient.post<NotebookSessionDetail>(`/notebooks/${notebookId}/sessions`, request),
+      apiClient.post<NotebookSessionDetail>(`/notebooks/${notebookId}/sessions`, request, {
+        includeByok: true,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.sessions(notebookId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.progress(notebookId) });
@@ -192,7 +194,9 @@ export function useGenerateNotebookArtifact(notebookId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: NotebookArtifactGenerateRequest) =>
-      apiClient.post<NotebookArtifact>(`/notebooks/${notebookId}/artifacts:generate`, request),
+      apiClient.post<NotebookArtifact>(`/notebooks/${notebookId}/artifacts:generate`, request, {
+        includeByok: true,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.artifacts(notebookId) });
     },
@@ -203,7 +207,9 @@ export function useSendNotebookMessage(notebookId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (request: TutorTurnRequest) =>
-      apiClient.post<TutorTurnResponse>(`/tutor/notebooks/${notebookId}/turn`, request),
+      apiClient.post<TutorTurnResponse>(`/tutor/notebooks/${notebookId}/turn`, request, {
+        includeByok: true,
+      }),
     onSuccess: (data: TutorTurnResponse, variables: TutorTurnRequest) => {
       queryClient.setQueryData<TurnsResponse | undefined>(
         queryKeys.sessions.turns(variables.session_id),
@@ -259,7 +265,9 @@ export function useUploadResource() {
 
   return useMutation({
     mutationFn: (formData: FormData) =>
-      apiClient.postForm<IngestionStatus>('/ingest/upload', formData),
+      apiClient.postForm<IngestionStatus>('/ingest/upload', formData, {
+        includeByok: true,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.resources.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.user.asyncByokEscrows() });

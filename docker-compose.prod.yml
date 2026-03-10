@@ -1,6 +1,6 @@
 services:
   api:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX_LOWER:?set IMAGE_PREFIX_LOWER}-api:${APP_IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX_LOWER:?set IMAGE_PREFIX_LOWER}-api:${APP_IMAGE_TAG:?set APP_IMAGE_TAG}
     env_file:
       - ./backend/deploy.env
     restart: unless-stopped
@@ -14,9 +14,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 60s
 
   worker:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX_LOWER:?set IMAGE_PREFIX_LOWER}-worker:${APP_IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX_LOWER:?set IMAGE_PREFIX_LOWER}-worker:${APP_IMAGE_TAG:?set APP_IMAGE_TAG}
     env_file:
       - ./backend/deploy.env
     restart: unless-stopped
@@ -25,7 +26,7 @@ services:
       - backend_storage:/app/storage
 
   migrate:
-    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX_LOWER:?set IMAGE_PREFIX_LOWER}-api:${APP_IMAGE_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_PREFIX_LOWER:?set IMAGE_PREFIX_LOWER}-api:${APP_IMAGE_TAG:?set APP_IMAGE_TAG}
     env_file:
       - ./backend/deploy.env
     command: ["alembic", "upgrade", "head"]

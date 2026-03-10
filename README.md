@@ -76,7 +76,7 @@ Deprecated legacy routes intentionally return `410 Gone`:
 
 ## BYOK Policy
 
-StudyAgent supports optional BYOK headers on live tutoring and notebook-session creation:
+StudyAgent supports optional BYOK headers on live tutoring, notebook-session creation, notebook artifact generation, and upload flows that explicitly opt into async BYOK escrow:
 
 - `X-LLM-Api-Key`
 - `X-LLM-Api-Base-Url`
@@ -97,7 +97,7 @@ Before deployment:
 - backend tests must pass
 - frontend lint, tests, and build must pass
 - Docker images must build cleanly
-- deploy smoke tests must pass `/health/live`, `/health/ready`, and the authenticated flow when smoke credentials are configured
+- deploy smoke tests must pass `/health/live`, `/health/ready`, and an authenticated flow in staging/production
 
 ## Documentation
 

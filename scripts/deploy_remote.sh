@@ -11,6 +11,11 @@ export IMAGE_PREFIX
 export IMAGE_PREFIX_LOWER="${IMAGE_PREFIX,,}"
 export APP_IMAGE_TAG
 
+if ! [[ "$APP_IMAGE_TAG" =~ ^[a-f0-9]{40}$|^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)*$ ]]; then
+	echo "APP_IMAGE_TAG must be a git SHA or semver-like release tag; got: $APP_IMAGE_TAG" >&2
+	exit 1
+fi
+
 echo "$GHCR_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USERNAME" --password-stdin
 
 docker compose -f docker-compose.prod.yml pull api worker migrate
@@ -18,6 +23,8 @@ docker compose -f docker-compose.prod.yml pull api worker migrate
 docker compose -f docker-compose.prod.yml run --rm migrate
 
 docker compose -f docker-compose.prod.yml up -d api worker
+
+docker compose -f docker-compose.prod.yml ps
 
 docker image prune -f
 

@@ -172,8 +172,9 @@ export default function SettingsPage() {
                 Bring Your Own Key (BYOK)
               </h2>
               <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                BYOK applies only to live tutoring turns. Uploads and background notebook preparation use platform-managed
-                infrastructure, and your key stays <strong>only in your browser</strong>.
+                BYOK is used for live tutoring, notebook session planning, and notebook artifact generation. Uploads only
+                use it when you opt into async BYOK escrow, and your key stays <strong>only in your browser</strong>
+                unless you explicitly choose that escrow flow.
               </p>
             </div>
           </div>

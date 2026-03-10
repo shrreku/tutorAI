@@ -29,7 +29,7 @@ describe('apiClient', () => {
     expect(headers['Content-Type']).toBe('application/json')
   })
 
-  it('postForm includes auth and byok headers', async () => {
+  it('postForm omits byok headers by default', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(new Response(JSON.stringify({ job_id: '1' }), { status: 200 }))
@@ -42,6 +42,30 @@ describe('apiClient', () => {
     formData.append('topic', 'architecture')
 
     await apiClient.postForm('/ingest/upload', formData)
+
+    const call = fetchSpy.mock.calls[0]
+    const options = call[1] as RequestInit
+    const headers = options.headers as Record<string, string>
+
+    expect(headers.Authorization).toBe('Bearer secret-token')
+    expect(headers['X-LLM-Api-Key']).toBeUndefined()
+    expect(headers['X-LLM-Api-Base-Url']).toBeUndefined()
+    expect(headers['Content-Type']).toBeUndefined()
+  })
+
+  it('postForm includes byok headers when explicitly requested', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ job_id: '1' }), { status: 200 }))
+
+    localStorage.setItem('auth_token', 'secret-token')
+    localStorage.setItem('byok_api_key', 'byok-key')
+    localStorage.setItem('byok_api_base_url', 'https://example.com/v1')
+
+    const formData = new FormData()
+    formData.append('topic', 'architecture')
+
+    await apiClient.postForm('/ingest/upload', formData, { includeByok: true })
 
     const call = fetchSpy.mock.calls[0]
     const options = call[1] as RequestInit

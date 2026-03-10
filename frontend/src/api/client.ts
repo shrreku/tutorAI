@@ -6,6 +6,8 @@ type HeaderOptions = {
   includeJsonContentType?: boolean;
 };
 
+type RequestOptions = HeaderOptions;
+
 // ---------------------------------------------------------------------------
 // Auth header injection — reads JWT from localStorage
 // ---------------------------------------------------------------------------
@@ -66,7 +68,7 @@ export function getApiErrorMessage(error: unknown, fallbackMessage: string): str
 function buildHeaders(options: HeaderOptions = {}): Record<string, string> {
   const {
     includeAuth = true,
-    includeByok = true,
+    includeByok = false,
     includeJsonContentType = true,
   } = options;
 
@@ -127,7 +129,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 export const apiClient = {
-  async get<T>(path: string, params?: Record<string, string>): Promise<T> {
+  async get<T>(path: string, params?: Record<string, string>, options?: RequestOptions): Promise<T> {
     const url = new URL(`${API_BASE_URL}${path}`, window.location.origin);
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
@@ -139,46 +141,46 @@ export const apiClient = {
     
     const response = await fetch(url.toString(), {
       method: 'GET',
-      headers: buildHeaders(),
+      headers: buildHeaders(options),
     });
     
     return handleResponse<T>(response);
   },
   
-  async post<T>(path: string, body?: unknown): Promise<T> {
+  async post<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'POST',
-      headers: buildHeaders(),
+      headers: buildHeaders(options),
       body: body ? JSON.stringify(body) : undefined,
     });
     
     return handleResponse<T>(response);
   },
 
-  async patch<T>(path: string, body?: unknown): Promise<T> {
+  async patch<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'PATCH',
-      headers: buildHeaders(),
+      headers: buildHeaders(options),
       body: body ? JSON.stringify(body) : undefined,
     });
 
     return handleResponse<T>(response);
   },
   
-  async postForm<T>(path: string, formData: FormData): Promise<T> {
+  async postForm<T>(path: string, formData: FormData, options?: RequestOptions): Promise<T> {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'POST',
-      headers: buildHeaders({ includeJsonContentType: false }),
+      headers: buildHeaders({ includeJsonContentType: false, ...options }),
       body: formData,
     });
     
     return handleResponse<T>(response);
   },
   
-  async delete<T>(path: string): Promise<T> {
+  async delete<T>(path: string, options?: RequestOptions): Promise<T> {
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: 'DELETE',
-      headers: buildHeaders(),
+      headers: buildHeaders(options),
     });
     
     return handleResponse<T>(response);

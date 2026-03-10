@@ -1,10 +1,13 @@
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
+from app.models.notebook import NotebookSession
 from app.models.session import TutorTurn, UserSession
 from app.agents.summary_agent import SummaryAgent, SummaryState
 from app.services.tutor_runtime.state_loader import next_turn_index
@@ -201,8 +204,9 @@ async def handle_session_complete(
     llm_provider=None,
 ) -> TurnResult:
     """Finalize session state and return completion result with LLM-generated summary."""
+    completed_at = datetime.now(timezone.utc)
     session.status = "completed"
-    await db.commit()
+    session.ended_at = completed_at
     plan = session.plan_state or {}
     clear_transient_runtime_flags(plan)
     mastery = dict(session.mastery) if session.mastery else {}
@@ -275,6 +279,11 @@ async def handle_session_complete(
     session.plan_state = plan
     from sqlalchemy.orm.attributes import flag_modified
     flag_modified(session, "plan_state")
+    await db.execute(
+        update(NotebookSession)
+        .where(NotebookSession.session_id == session.id)
+        .values(ended_at=completed_at)
+    )
     await db.commit()
 
     return TurnResult(

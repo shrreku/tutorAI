@@ -252,7 +252,7 @@ async def execute_notebook_turn(
         logger.error(f"Notebook turn pipeline failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Turn pipeline error: {str(e)}",
+            detail="Turn pipeline error",
         )
 
 

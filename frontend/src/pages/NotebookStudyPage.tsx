@@ -45,7 +45,7 @@ function renderFormattedText(text: string) {
   const formatInline = (s: string): React.ReactNode => {
     // Simple inline formatting: **bold**, *italic*, `code`
     const parts: React.ReactNode[] = [];
-    let remaining = s;
+    const remaining = s;
     let key = 0;
     const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`)/g;
     let lastIndex = 0;

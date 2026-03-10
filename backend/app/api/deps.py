@@ -315,7 +315,6 @@ async def check_auth_rate_limit(request: Request) -> None:
     now = datetime.now(timezone.utc).timestamp()
     window = 60.0
     max_requests = settings.AUTH_RATE_LIMIT_REQUESTS_PER_MINUTE
-
     key = f"auth:{client_ip}"
     timestamps = _auth_rate_limit_store.get(key, [])
     timestamps = [t for t in timestamps if now - t < window]
@@ -326,6 +325,35 @@ async def check_auth_rate_limit(request: Request) -> None:
             detail="Too many authentication attempts. Try again later.",
             headers={"Retry-After": "60"},
         )
+
+    redis_client = await _get_rate_limit_redis()
+    if redis_client is not None:
+        try:
+            bucket = int(now // window)
+            redis_key = f"ratelimit:auth:{client_ip}:{bucket}"
+            pipe = redis_client.pipeline()
+            pipe.incr(redis_key)
+            pipe.expire(redis_key, int(window) + 5)
+            current_count, _ = await pipe.execute()
+
+            if int(current_count) > max_requests:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Too many authentication attempts. Try again later.",
+                    headers={"Retry-After": "60"},
+                )
+
+            timestamps.append(now)
+            _auth_rate_limit_store[key] = timestamps
+            return
+        except HTTPException:
+            raise
+        except Exception as exc:
+            global _rate_limit_redis
+            global _rate_limit_redis_disabled_until
+            _rate_limit_redis = None
+            _rate_limit_redis_disabled_until = time.time() + 30
+            logger.warning("Redis auth rate-limit backend unavailable, falling back to local limiter: %s", exc)
 
     timestamps.append(now)
     _auth_rate_limit_store[key] = timestamps

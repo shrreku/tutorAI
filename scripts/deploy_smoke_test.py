@@ -25,6 +25,8 @@ def main() -> int:
         print("SMOKE_TEST_BASE_URL is required", file=sys.stderr)
         return 1
 
+    require_auth = os.environ.get("SMOKE_TEST_REQUIRE_AUTH", "false").lower() in {"1", "true", "yes"}
+
     checks = [
         f"{base_url}/api/v1/health/live",
         f"{base_url}/api/v1/health/ready",
@@ -38,6 +40,11 @@ def main() -> int:
 
         email = os.environ.get("SMOKE_TEST_EMAIL")
         password = os.environ.get("SMOKE_TEST_PASSWORD")
+        if require_auth and (not email or not password):
+            raise RuntimeError(
+                "Authenticated smoke test is required but SMOKE_TEST_EMAIL/SMOKE_TEST_PASSWORD are not set"
+            )
+
         if email and password:
             _, login_body = _request(
                 f"{base_url}/api/v1/auth/login",
