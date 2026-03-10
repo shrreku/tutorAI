@@ -112,6 +112,34 @@ async def require_auth(
     return user
 
 
+def get_configured_admin_external_id() -> Optional[str]:
+    """Return the single configured admin identity, if one is valid."""
+    configured = settings.ADMIN_EXTERNAL_ID.strip()
+    if configured:
+        if "," in configured:
+            logger.error("ADMIN_EXTERNAL_ID must contain exactly one identity")
+            return None
+        return configured
+
+    legacy_values = [
+        token.strip()
+        for token in settings.ADMIN_EXTERNAL_IDS.split(",")
+        if token.strip()
+    ]
+    if len(legacy_values) > 1:
+        logger.error("Multiple admin identities configured, but only one is supported")
+        return None
+    if legacy_values:
+        return legacy_values[0]
+    return None
+
+
+def is_admin_user(user: UserProfile) -> bool:
+    """Return whether the user matches the sole configured admin identity."""
+    configured_admin = get_configured_admin_external_id()
+    return bool(configured_admin and user.external_id and user.external_id == configured_admin)
+
+
 async def require_admin(
     user: UserProfile = Depends(require_auth),
 ) -> UserProfile:
@@ -122,12 +150,14 @@ async def require_admin(
             detail="Admin endpoint unavailable when auth is disabled",
         )
 
-    allowed = {
-        token.strip()
-        for token in settings.ADMIN_EXTERNAL_IDS.split(",")
-        if token.strip()
-    }
-    if not allowed or not user.external_id or user.external_id not in allowed:
+    configured_admin = get_configured_admin_external_id()
+    if not configured_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin identity is not configured",
+        )
+
+    if not is_admin_user(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin privileges required",
@@ -314,6 +344,10 @@ def get_byok_api_key(
 
     Returns a dict with ``api_key`` and ``api_base_url`` (both may be None
     when BYOK is disabled or when the caller doesn't supply headers).
+
+    Hosted BYOK is intentionally limited to request-scoped, synchronous flows
+    such as live tutoring turns. Queued ingestion and background preparation
+    do not receive request headers and must use platform-managed credentials.
     """
     if not settings.BYOK_ENABLED:
         return {"api_key": None, "api_base_url": None}

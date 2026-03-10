@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -58,6 +57,7 @@ from app.services.embedding.factory import create_embedding_provider
 from app.services.curriculum_preparation import CurriculumPreparationService
 from app.services.ingestion.enricher import ChunkEnricher
 from app.services.ingestion.ontology_extractor import OntologyExtractor
+from app.services.notebook_artifacts import NotebookArtifactService
 from app.services.notebook_preparation import NotebookPreparationService
 from app.services.telemetry.notebook_events import emit_notebook_event
 from app.services.tutor.session_service import SessionService
@@ -249,121 +249,6 @@ async def _compute_and_persist_notebook_progress(
         completed_sessions_count=completed_sessions_count,
         updated_at=progress.updated_at,
     )
-
-
-def _build_notes_payload(sessions: list[UserSession], turns_by_session: dict[str, list]) -> dict:
-    note_lines: list[str] = []
-    for session in sessions[:5]:
-        plan_state = session.plan_state or {}
-        topic = plan_state.get("active_topic") or "General"
-        turns = turns_by_session.get(str(session.id), [])
-        latest_turn = turns[-1] if turns else None
-        summary_line = (
-            (latest_turn.tutor_response or "").strip()[:240]
-            if latest_turn is not None
-            else "Session completed with no turn transcript available."
-        )
-        note_lines.append(f"[{topic}] {summary_line}")
-    return {
-        "title": "Notebook Study Notes",
-        "sections": note_lines,
-    }
-
-
-def _build_flashcards_payload(sessions: list[UserSession]) -> dict:
-    concept_scores: dict[str, list[float]] = {}
-    for session in sessions:
-        for concept, score in (session.mastery or {}).items():
-            try:
-                concept_scores.setdefault(concept, []).append(float(score))
-            except (TypeError, ValueError):
-                continue
-
-    cards = []
-    for concept, scores in sorted(concept_scores.items(), key=lambda kv: min(kv[1]))[:12]:
-        avg_score = sum(scores) / max(len(scores), 1)
-        cards.append(
-            {
-                "front": f"Explain: {concept}",
-                "back": f"Mastery trend {avg_score:.2f}. Review definitions and one worked example.",
-                "mastery": round(avg_score, 3),
-            }
-        )
-    return {
-        "title": "Notebook Flashcards",
-        "cards": cards,
-    }
-
-
-def _build_quiz_payload(sessions: list[UserSession]) -> dict:
-    concept_scores: dict[str, float] = {}
-    for session in sessions:
-        for concept, score in (session.mastery or {}).items():
-            try:
-                value = float(score)
-            except (TypeError, ValueError):
-                continue
-            concept_scores[concept] = min(concept_scores.get(concept, value), value)
-
-    prioritized = [c for c, _ in sorted(concept_scores.items(), key=lambda kv: kv[1])][:5]
-    questions = [
-        {
-            "question_id": f"q{i+1}",
-            "question": f"Which statement best describes {concept}?",
-            "question_type": "short_answer",
-            "concept": concept,
-        }
-        for i, concept in enumerate(prioritized)
-    ]
-    return {
-        "title": "Notebook Quiz",
-        "questions": questions,
-    }
-
-
-def _build_revision_plan_payload(progress: NotebookProgressResponse) -> dict:
-    now = datetime.now(timezone.utc)
-    items = [
-        {
-            "concept": concept,
-            "scheduled_for": (now + timedelta(days=index + 1)).date().isoformat(),
-            "focus": "review + self-explanation + one practice problem",
-        }
-        for index, concept in enumerate(progress.weak_concepts_snapshot[:10])
-    ]
-    return {
-        "title": "Notebook Revision Plan",
-        "items": items,
-    }
-
-
-async def _build_artifact_payload(
-    artifact_type: str,
-    sessions: list[UserSession],
-    turns_by_session: dict[str, list],
-    progress: NotebookProgressResponse,
-    options: dict,
-) -> dict:
-    if artifact_type == "notes":
-        base_payload = _build_notes_payload(sessions, turns_by_session)
-    elif artifact_type == "flashcards":
-        base_payload = _build_flashcards_payload(sessions)
-    elif artifact_type == "quiz":
-        base_payload = _build_quiz_payload(sessions)
-    elif artifact_type == "revision_plan":
-        base_payload = _build_revision_plan_payload(progress)
-    else:
-        raise ValueError(f"Unsupported artifact_type: {artifact_type}")
-
-    base_payload["artifact_type"] = artifact_type
-    base_payload["generated_at"] = datetime.now(timezone.utc).isoformat()
-    base_payload["options"] = options or {}
-    base_payload["progress_context"] = {
-        "sessions_count": progress.sessions_count,
-        "completed_sessions_count": progress.completed_sessions_count,
-        "weak_concepts": progress.weak_concepts_snapshot,
-    }
-    return base_payload
 
 
 @router.post("", response_model=NotebookResponse, status_code=status.HTTP_201_CREATED)
@@ -622,6 +507,7 @@ async def create_notebook_session(
             user_id=user.id,
             topic=request.topic,
             selected_topics=request.selected_topics,
+            mode=request.mode,
             consent_training=effective_consent,
             resume_existing=request.resume_existing,
         )
@@ -775,8 +661,9 @@ async def generate_notebook_artifact(
     request: NotebookArtifactGenerateRequest,
     db: AsyncSession = Depends(get_db),
     user: UserProfile = Depends(require_auth),
+    byok: dict = Depends(get_byok_api_key),
 ):
-    await verify_notebook_owner(notebook_id, user, db)
+    notebook = await verify_notebook_owner(notebook_id, user, db)
 
     if request.artifact_type not in SUPPORTED_ARTIFACT_TYPES:
         raise HTTPException(
@@ -817,6 +704,12 @@ async def generate_notebook_artifact(
     if not valid_resource_ids:
         valid_resource_ids = sorted(notebook_resource_ids)
 
+    resource_names: list[str] = []
+    for resource_id in valid_resource_ids:
+        resource = await resource_repo.get_by_id(UUID(resource_id))
+        if resource and resource.owner_user_id == user.id:
+            resource_names.append(resource.filename)
+
     source_sessions: list[UserSession] = []
     turns_by_session: dict[str, list] = {}
     for session_id in valid_session_ids:
@@ -827,11 +720,25 @@ async def generate_notebook_artifact(
         turns_by_session[session_id] = await turn_repo.get_by_session(session.id, limit=20)
 
     progress = await _compute_and_persist_notebook_progress(notebook_id, db)
-    payload = await _build_artifact_payload(
+
+    artifact_llm = None
+    try:
+        artifact_llm = create_llm_provider(
+            settings,
+            task="tutoring",
+            byok_api_key=byok.get("api_key"),
+            byok_api_base_url=byok.get("api_base_url"),
+        )
+    except ValueError as exc:
+        logger.info("Notebook artifact generation using fallback path: %s", exc)
+
+    payload = await NotebookArtifactService(artifact_llm).generate_payload(
         artifact_type=request.artifact_type,
+        notebook=notebook,
         sessions=source_sessions,
         turns_by_session=turns_by_session,
         progress=progress,
+        source_resource_names=resource_names,
         options=request.options,
     )
     payload["source_counts"] = {

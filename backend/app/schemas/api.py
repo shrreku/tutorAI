@@ -88,7 +88,31 @@ class ResourceDetailResponse(ResourceResponse):
     artifacts: List[ResourceArtifactResponse] = Field(default_factory=list)
 
 
-# Ingestion API schemas
+class IngestionBillingStatusResponse(BaseModel):
+    """Billing lifecycle details attached to an ingestion job."""
+    model_config = ConfigDict(extra="forbid")
+
+    uses_platform_credits: bool = False
+    estimated_credits: int = 0
+    reserved_credits: int = 0
+    actual_credits: Optional[int] = None
+    status: str = "not_applicable"
+    release_reason: Optional[str] = None
+    file_size_bytes: int = 0
+
+
+class IngestionAsyncByokStatusResponse(BaseModel):
+    """Async BYOK escrow details attached to an ingestion job."""
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    escrow_id: Optional[UUID] = None
+    provider_name: Optional[str] = None
+    status: str = "disabled"
+    expires_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+
+
 class IngestionStatusResponse(BaseModel):
     """Ingestion job status response."""
     model_config = ConfigDict(extra="forbid")
@@ -105,6 +129,8 @@ class IngestionStatusResponse(BaseModel):
     error_message: Optional[str]
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
+    billing: Optional[IngestionBillingStatusResponse] = None
+    async_byok: Optional[IngestionAsyncByokStatusResponse] = None
 
 
 class KnowledgeBaseConceptOverride(BaseModel):
@@ -390,6 +416,30 @@ class UserSettingsResponse(BaseModel):
 
     consent_training_global: bool = False
     consent_preference_set: bool = False
+    is_admin: bool = False
+    async_byok_escrow_enabled: bool = False
+    async_byok_escrow_backend: Optional[str] = None
+    async_byok_escrow_ttl_minutes: int = 0
+
+
+class AsyncByokEscrowResponse(BaseModel):
+    """Safe metadata for a user's async BYOK escrow objects."""
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    purpose_type: str
+    purpose_id: str
+    scope_type: str
+    scope_key: str
+    provider_name: Optional[str] = None
+    status: str
+    expires_at: datetime
+    hard_delete_after: datetime
+    access_count: int = 0
+    last_accessed_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
+    deletion_reason: Optional[str] = None
 
 
 class UserSettingsUpdateRequest(BaseModel):

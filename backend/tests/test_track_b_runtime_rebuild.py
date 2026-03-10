@@ -243,6 +243,52 @@ def test_progression_guard_blocks_objective_advance_until_required_steps():
     )
 
 
+def test_progression_holds_objective_when_fluid_progression_is_disabled():
+    obj = _make_objective(
+        step_roadmap=[
+            {"type": "summarize", "can_skip": True, "max_turns": 3},
+        ]
+    )
+    plan = _base_plan(obj)
+
+    session_complete, updated_plan, _transition = apply_progression(
+        _session_stub(),
+        plan,
+        _policy_output(ProgressionDecision.ADVANCE_OBJECTIVE),
+        obj,
+        progression_context={"allow_fluid_objective_progression": False},
+        lf=None,
+        max_ad_hoc_default=3,
+    )
+
+    assert session_complete is False
+    assert updated_plan["last_decision"] == ProgressionDecision.CONTINUE_STEP.name
+    assert updated_plan["current_objective_index"] == 0
+
+
+def test_progression_allows_objective_advance_when_fluid_progression_is_enabled():
+    obj = _make_objective(
+        step_roadmap=[
+            {"type": "summarize", "can_skip": True, "max_turns": 3},
+        ]
+    )
+    plan = _base_plan(obj)
+
+    session_complete, updated_plan, _transition = apply_progression(
+        _session_stub(),
+        plan,
+        _policy_output(ProgressionDecision.ADVANCE_OBJECTIVE),
+        obj,
+        progression_context={"allow_fluid_objective_progression": True},
+        lf=None,
+        max_ad_hoc_default=3,
+    )
+
+    assert session_complete is True
+    assert updated_plan["last_decision"] == ProgressionDecision.ADVANCE_OBJECTIVE.name
+    assert updated_plan["current_objective_index"] == 1
+
+
 class _TutorStub:
     def __init__(self, output: TutorOutput):
         self.output = output
@@ -277,7 +323,7 @@ def test_response_runner_low_evidence_path_is_explicit_and_traced():
 
 
 def test_response_runner_backfills_evidence_ids_into_tutor_output():
-    plan = {"current_step": "explain", "current_step_index": 0}
+    plan = {"current_step": "explain", "current_step_index": 0, "mode": "practice"}
     chunk_id = uuid.uuid4()
     retrieved = [
         RetrievedChunk(
@@ -309,6 +355,7 @@ def test_response_runner_backfills_evidence_ids_into_tutor_output():
 
     assert result.evidence_chunk_ids == [str(chunk_id)]
     assert tutor_stub.seen_state is not None
+    assert tutor_stub.seen_state.session_mode == "practice"
     assert tutor_stub.seen_state.evidence_chunk_ids == [str(chunk_id)]
 
 

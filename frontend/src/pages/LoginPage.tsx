@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Sparkles, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { getApiErrorMessage } from '../api/client';
 import { useAuth } from '../hooks/useAuth';
 
 export default function LoginPage() {
@@ -20,8 +21,8 @@ export default function LoginPage() {
     try {
       await login({ email, password });
       navigate('/', { replace: true });
-    } catch (err: any) {
-      setError(err.message || 'Login failed');
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, 'Login failed'));
     } finally {
       setLoading(false);
     }

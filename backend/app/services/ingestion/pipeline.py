@@ -13,6 +13,8 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.config import settings
+from app.models.ingestion import IngestionJob
 from app.models.resource import Resource
 from app.models.resource_artifact import ResourceArtifactState
 from app.models.chunk import Chunk, ChunkConcept
@@ -29,6 +31,7 @@ from app.services.ingestion.pipeline_support import (
     update_job,
     update_resource_status,
 )
+from app.services.neo4j.client import get_neo4j_client
 from langfuse import observe
 
 logger = logging.getLogger(__name__)
@@ -88,6 +91,28 @@ class IngestionPipeline:
         commit = getattr(self.db, "commit", None)
         if callable(commit):
             await commit()
+
+    async def _merge_job_metrics(
+        self,
+        job_id: Optional[uuid.UUID],
+        metrics: Optional[dict],
+    ) -> Optional[dict]:
+        if not job_id or not isinstance(metrics, dict):
+            return metrics
+
+        get_record = getattr(self.db, "get", None)
+        if not callable(get_record):
+            return metrics
+
+        current_job = await get_record(IngestionJob, job_id)
+        current_metrics = getattr(current_job, "metrics", None) if current_job is not None else None
+        if not isinstance(current_metrics, dict):
+            return metrics
+
+        return {
+            **current_metrics,
+            **metrics,
+        }
     
     @observe(name="ingestion-pipeline", capture_input=False)
     async def run(
@@ -206,6 +231,8 @@ class IngestionPipeline:
             # Mark complete
             await update_resource_status(self.db, resource_id, "ready", PIPELINE_VERSION)
 
+            metrics = await self._merge_job_metrics(job_id, metrics)
+
             await self._update_job_stage(
                 job_id,
                 IngestionStage.COMPLETE,
@@ -236,6 +263,7 @@ class IngestionPipeline:
             metrics["completed_at"] = datetime.now(timezone.utc).isoformat()
             metrics["status"] = "failed"
             metrics["error"] = str(e)
+            metrics = await self._merge_job_metrics(job_id, metrics)
 
             if job_id:
                 await update_job(
@@ -284,6 +312,38 @@ class IngestionPipeline:
         texts = [chunk.text for chunk in chunks]
         embeddings = await self.embedding.embed(texts)
         return embeddings
+
+    async def _run_graph_stage(self, resource_id: uuid.UUID) -> dict:
+        """Compatibility helper for optional graph sync tests and future use."""
+        build_result = await self.graph_builder.build(resource_id, force_rebuild=True)
+
+        if not settings.NEO4J_ENABLED:
+            build_result["neo4j_sync"] = {
+                "synced": False,
+                "reason": "disabled",
+            }
+            return build_result
+
+        client = await get_neo4j_client()
+        if client is None:
+            build_result["neo4j_sync"] = {
+                "synced": False,
+                "reason": "client_unavailable",
+            }
+            return build_result
+
+        if not getattr(client, "is_connected", False):
+            build_result["neo4j_sync"] = {
+                "synced": False,
+                "reason": "not_connected",
+            }
+            return build_result
+
+        build_result["neo4j_sync"] = {
+            "synced": True,
+            "reason": "connected",
+        }
+        return build_result
 
     def _build_lightweight_enrichments(self, chunks: list[ChunkData]) -> list[dict]:
         """Build minimal deterministic per-chunk metadata for core ingestion."""

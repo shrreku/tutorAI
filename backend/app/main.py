@@ -9,7 +9,9 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.api.v1.router import api_router
+from app.db.database import engine
 from app.schemas.common import ErrorResponse
+from app.services.admin_bootstrap import ensure_bootstrap_admin
 from app.services.tracing import init_langfuse, flush_langfuse
 from app.services.embedding.factory import create_embedding_provider
 
@@ -64,6 +66,8 @@ def _validate_auth_config() -> None:
 async def lifespan(app: FastAPI):
     logger.info("Starting StudyAgent API...")
     _validate_auth_config()
+    await engine.dispose()
+    await ensure_bootstrap_admin()
     # Initialise Langfuse singleton (reads env vars, runs auth_check)
     lf = init_langfuse()
     logger.info(f"Langfuse enabled: {lf is not None}")
@@ -81,6 +85,7 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("Shutting down StudyAgent API...")
     flush_langfuse()
+    await engine.dispose()
 
 
 app = FastAPI(

@@ -2,6 +2,7 @@ from uuid import UUID
 from typing import Optional
 import logging
 from collections import defaultdict
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,7 @@ from app.models.knowledge_base import ResourceTopicBundle, ResourceConceptStats,
 from app.api.deps import require_auth
 from app.services.storage.factory import create_storage_provider
 from app.schemas.api import (
+    IngestionAsyncByokStatusResponse,
     ResourceResponse,
     ResourceArtifactResponse,
     ResourceDetailResponse,
@@ -54,6 +56,9 @@ def _resource_response_payload(resource) -> dict:
 
 
 def _job_status_payload(job) -> IngestionStatusResponse:
+    metrics = (getattr(job, "metrics", None) or {})
+    billing = metrics.get("billing") if isinstance(metrics, dict) else None
+    async_byok = metrics.get("async_byok") if isinstance(metrics, dict) else None
     return IngestionStatusResponse(
         job_id=job.id,
         resource_id=job.resource_id,
@@ -67,6 +72,23 @@ def _job_status_payload(job) -> IngestionStatusResponse:
         error_message=job.error_message,
         started_at=job.started_at,
         completed_at=job.completed_at,
+        billing={
+            "uses_platform_credits": bool(billing.get("uses_platform_credits", False)),
+            "estimated_credits": int(billing.get("estimated_credits") or 0),
+            "reserved_credits": int(billing.get("reserved_credits") or 0),
+            "actual_credits": int(billing.get("actual_credits")) if billing and billing.get("actual_credits") is not None else None,
+            "status": str(billing.get("status") or "not_applicable") if billing else "not_applicable",
+            "release_reason": billing.get("release_reason") if billing else None,
+            "file_size_bytes": int(billing.get("file_size_bytes") or 0) if billing else 0,
+        } if isinstance(billing, dict) else None,
+        async_byok=IngestionAsyncByokStatusResponse(
+            enabled=bool(async_byok.get("enabled", False)),
+            escrow_id=UUID(async_byok["escrow_id"]) if async_byok.get("escrow_id") else None,
+            provider_name=async_byok.get("provider_name"),
+            status=str(async_byok.get("status") or "disabled"),
+            expires_at=datetime.fromisoformat(async_byok["expires_at"]) if async_byok.get("expires_at") else None,
+            revoked_at=datetime.fromisoformat(async_byok["revoked_at"]) if async_byok.get("revoked_at") else None,
+        ) if isinstance(async_byok, dict) else None,
     )
 
 

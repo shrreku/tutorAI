@@ -21,6 +21,14 @@ import type {
   NotebookProgress,
   NotebookArtifact,
   NotebookArtifactGenerateRequest,
+  AdminBillingOverview,
+  AdminGrantRequest,
+  AdminGrantResponse,
+  CreditBalance,
+  CreditUsageHistory,
+  AdminMonthlyGrantRequest,
+  AdminMonthlyGrantResponse,
+  AsyncByokEscrow,
 } from '../types/api';
 
 // Query keys
@@ -30,6 +38,7 @@ export const queryKeys = {
     list: (params?: { status?: string; limit?: number; offset?: number }) =>
       [...queryKeys.resources.all, 'list', params] as const,
     detail: (id: string) => [...queryKeys.resources.all, 'detail', id] as const,
+    ingestionStatus: (jobId: string) => [...queryKeys.resources.all, 'ingestion', jobId] as const,
   },
   sessions: {
     all: ['sessions'] as const,
@@ -39,6 +48,7 @@ export const queryKeys = {
   user: {
     all: ['user'] as const,
     settings: () => [...queryKeys.user.all, 'settings'] as const,
+    asyncByokEscrows: () => [...queryKeys.user.all, 'async-byok-escrows'] as const,
   },
   notebooks: {
     all: ['notebooks'] as const,
@@ -51,6 +61,12 @@ export const queryKeys = {
     progress: (id: string) => [...queryKeys.notebooks.all, 'progress', id] as const,
     artifacts: (id: string, artifactType?: string) =>
       [...queryKeys.notebooks.all, 'artifacts', id, artifactType] as const,
+  },
+  billing: {
+    all: ['billing'] as const,
+    adminOverview: (search?: string) => [...queryKeys.billing.all, 'admin-overview', search] as const,
+    balance: () => [...queryKeys.billing.all, 'balance'] as const,
+    usage: (limit?: number) => [...queryKeys.billing.all, 'usage', limit] as const,
   },
 };
 
@@ -246,7 +262,29 @@ export function useUploadResource() {
       apiClient.postForm<IngestionStatus>('/ingest/upload', formData),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.resources.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.asyncByokEscrows() });
     },
+  });
+}
+
+export function useIngestionStatus(jobId: string) {
+  return useQuery({
+    queryKey: queryKeys.resources.ingestionStatus(jobId),
+    queryFn: () => apiClient.get<IngestionStatus>(`/ingest/status/${jobId}`),
+    enabled: !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === 'completed' || status === 'failed') return false;
+      return 3000;
+    },
+  });
+}
+
+export function useResourceDetail(resourceId: string) {
+  return useQuery({
+    queryKey: queryKeys.resources.detail(resourceId),
+    queryFn: () => apiClient.get<Resource>(`/resources/${resourceId}`),
+    enabled: !!resourceId,
   });
 }
 
@@ -275,5 +313,77 @@ export function useUpdateUserSettings() {
     onSuccess: (data: UserSettings) => {
       queryClient.setQueryData(queryKeys.user.settings(), data);
     },
+  });
+}
+
+export function useAsyncByokEscrows(includeInactive = false) {
+  return useQuery({
+    queryKey: [...queryKeys.user.asyncByokEscrows(), includeInactive] as const,
+    queryFn: () =>
+      apiClient.get<AsyncByokEscrow[]>('/users/me/async-byok-escrows', {
+        include_inactive: includeInactive ? 'true' : 'false',
+      }),
+  });
+}
+
+export function useRevokeAsyncByokEscrow() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (escrowId: string) =>
+      apiClient.post<AsyncByokEscrow>(`/users/me/async-byok-escrows/${escrowId}:revoke`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.asyncByokEscrows() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all });
+    },
+  });
+}
+
+export function useAdminBillingOverview(search?: string) {
+  return useQuery({
+    queryKey: queryKeys.billing.adminOverview(search),
+    queryFn: () =>
+      apiClient.get<AdminBillingOverview>('/billing/admin/overview', search ? { search } : undefined),
+  });
+}
+
+export function useAdminGrant() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (request: AdminGrantRequest) =>
+      apiClient.post<AdminGrantResponse>('/billing/admin/grant', request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.billing.all });
+    },
+  });
+}
+
+export function useAdminMonthlyGrant() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (request: AdminMonthlyGrantRequest) =>
+      apiClient.post<AdminMonthlyGrantResponse>('/billing/admin/monthly-grant', request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.billing.all });
+    },
+  });
+}
+
+export function useBillingBalance() {
+  return useQuery({
+    queryKey: queryKeys.billing.balance(),
+    queryFn: () => apiClient.get<CreditBalance>('/billing/balance'),
+  });
+}
+
+export function useBillingUsage(limit = 50) {
+  return useQuery({
+    queryKey: queryKeys.billing.usage(limit),
+    queryFn: () =>
+      apiClient.get<CreditUsageHistory>('/billing/usage', {
+        limit: limit.toString(),
+      }),
   });
 }

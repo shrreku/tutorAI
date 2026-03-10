@@ -23,6 +23,52 @@ from app.services.tutor_runtime.step_state import (
 
 logger = logging.getLogger(__name__)
 
+SUPPORTED_SESSION_MODES = {"learn", "doubt", "practice", "revision"}
+
+
+def _normalize_session_mode(mode: Optional[str]) -> str:
+    normalized = (mode or "learn").strip().lower()
+    return normalized if normalized in SUPPORTED_SESSION_MODES else "learn"
+
+
+def _mode_session_contract(mode: str) -> dict:
+    normalized = _normalize_session_mode(mode)
+    contracts = {
+        "learn": {
+            "opening_step_type": "motivate",
+            "max_ad_hoc_per_objective": 4,
+            "objective_window": "broad",
+            "tutor_contract": "teach-first",
+            "policy_contract": "concept_building",
+            "allow_fluid_objective_progression": False,
+        },
+        "doubt": {
+            "opening_step_type": "clarify",
+            "max_ad_hoc_per_objective": 2,
+            "objective_window": "narrow",
+            "tutor_contract": "clarify-first",
+            "policy_contract": "resolve_question",
+            "allow_fluid_objective_progression": True,
+        },
+        "practice": {
+            "opening_step_type": "practice",
+            "max_ad_hoc_per_objective": 3,
+            "objective_window": "medium",
+            "tutor_contract": "attempt-first",
+            "policy_contract": "retrieval_and_feedback",
+            "allow_fluid_objective_progression": False,
+        },
+        "revision": {
+            "opening_step_type": "summarize",
+            "max_ad_hoc_per_objective": 2,
+            "objective_window": "targeted",
+            "tutor_contract": "recall-first",
+            "policy_contract": "consolidate_and_test",
+            "allow_fluid_objective_progression": True,
+        },
+    }
+    return contracts[normalized]
+
 
 def _build_session_overview(objective_queue: list[dict]) -> str:
     """Build a short human-readable overview for session start."""
@@ -35,6 +81,112 @@ def _build_session_overview(objective_queue: list[dict]) -> str:
         + "; ".join(f"{i+1}) {title}" for i, title in enumerate(titles))
         + ". Let's get started!"
     )
+
+
+def _mode_session_overview(mode: str, objective_queue: list[dict], active_topic: Optional[str]) -> str:
+    normalized = _normalize_session_mode(mode)
+    topic_label = active_topic or "this material"
+    if normalized == "doubt":
+        return (
+            f"This is a doubt-clearing session for {topic_label}. "
+            "We will answer the specific confusion directly, verify it against the material, and stop once the point is clear."
+        )
+    if normalized == "practice":
+        return (
+            f"This is a practice session for {topic_label}. "
+            "Expect more questions, fewer long explanations, and rapid feedback on your attempts."
+        )
+    if normalized == "revision":
+        return (
+            f"This is a revision session for {topic_label}. "
+            "We will compress the core ideas, target weak spots, and use recall checks to consolidate memory."
+        )
+    return _build_session_overview(objective_queue)
+
+
+def _align_roadmap_to_mode(mode: str, roadmap: list[dict]) -> list[dict]:
+    normalized = _normalize_session_mode(mode)
+    if not roadmap:
+        return roadmap
+
+    aligned: list[dict] = []
+    for index, step in enumerate(roadmap):
+        current = dict(step or {})
+        step_type = str(current.get("type") or "explain")
+
+        if normalized == "doubt":
+            replacements = {
+                "motivate": "explain",
+                "activate_prior": "probe",
+                "worked_example": "explain",
+                "practice": "probe",
+                "summarize": "summarize",
+            }
+            step_type = replacements.get(step_type, step_type)
+            current["max_turns"] = min(int(current.get("max_turns", 2) or 2), 2)
+            current["can_skip"] = True
+        elif normalized == "practice":
+            replacements = {
+                "motivate": "probe",
+                "define": "probe",
+                "explain": "practice",
+                "worked_example": "practice",
+                "summarize": "reflect",
+            }
+            step_type = replacements.get(step_type, step_type)
+            if step_type in {"practice", "probe", "assess"}:
+                current["max_turns"] = min(int(current.get("max_turns", 2) or 2), 2)
+        elif normalized == "revision":
+            replacements = {
+                "motivate": "summarize",
+                "activate_prior": "probe",
+                "define": "summarize",
+                "worked_example": "compare_contrast",
+                "practice": "assess",
+            }
+            step_type = replacements.get(step_type, step_type)
+            current["max_turns"] = min(int(current.get("max_turns", 2) or 2), 2)
+
+        current["type"] = step_type
+        if index == 0 and normalized in {"practice", "revision"} and step_type == "assess":
+            current["can_skip"] = False
+        aligned.append(current)
+
+    return aligned
+
+
+def _opening_step_goal(step_type: str, topic_label: str) -> str:
+    goals = {
+        "motivate": f"Frame why {topic_label} matters and what the learner should focus on first.",
+        "clarify": f"Surface the main confusion about {topic_label} and define the question to resolve.",
+        "practice": f"Get the learner attempting a task on {topic_label} immediately.",
+        "summarize": f"Condense the key ideas in {topic_label} before testing recall.",
+    }
+    return goals.get(step_type, f"Open the session with a focused step on {topic_label}.")
+
+
+def _ensure_opening_step(
+    roadmap: list[dict],
+    opening_step_type: str,
+    topic_label: Optional[str],
+    target_concepts: list[str],
+) -> list[dict]:
+    if not roadmap:
+        return roadmap
+
+    for index, step in enumerate(roadmap):
+        if get_step_type(step) == opening_step_type:
+            if index == 0:
+                return roadmap
+            return [step, *roadmap[:index], *roadmap[index + 1 :]]
+
+    first_step = dict(roadmap[0] or {})
+    first_step["type"] = opening_step_type
+    first_step["target_concepts"] = target_concepts or first_step.get("target_concepts", [])
+    first_step["can_skip"] = False
+    first_step["max_turns"] = 1
+    first_step["goal"] = _opening_step_goal(opening_step_type, topic_label or "this topic")
+    return [first_step, *roadmap]
 
 
 class SessionService:
@@ -54,6 +206,7 @@ class SessionService:
         user_id: Optional[uuid.UUID] = None,
         topic: Optional[str] = None,
         selected_topics: Optional[list[str]] = None,
+        mode: Optional[str] = None,
         consent_training: bool = False,
         resume_existing: bool = True,
     ) -> UserSession:
@@ -82,13 +235,17 @@ class SessionService:
         else:
             user = await self._get_or_create_default_user()
         
+        session_mode = _normalize_session_mode(mode)
+        mode_contract = _mode_session_contract(session_mode)
+
         # Check for existing active session
         existing = None
         if resume_existing:
             existing = await self._get_active_session(user.id, resource_id)
         if existing:
             existing_version = (existing.plan_state or {}).get("version")
-            if existing_version in (None, 3):
+            existing_mode = _normalize_session_mode((existing.plan_state or {}).get("mode"))
+            if existing_version in (None, 3) and existing_mode == session_mode:
                 await self.db.refresh(existing)
                 setattr(existing, "_reused_existing", True)
                 return existing
@@ -105,25 +262,51 @@ class SessionService:
         
         # Get concepts for resource
         concepts = await self._get_concepts(resource_id)
+        if not concepts:
+            raise ValueError(
+                f"Resource {resource_id} is marked {resource.status} but has no admitted concepts yet. "
+                "Tutoring sessions cannot start until concept extraction/enrichment succeeds."
+            )
         
         # Generate curriculum plan
         plan_output = await self.curriculum.generate_plan(
             resource_id=resource_id,
             topic=topic or resource.topic,
             selected_topics=selected_topics,
+            mode=session_mode,
         )
         
         # Build initial plan state
         objective_queue = plan_output.get("objective_queue", [])
+        for index, obj in enumerate(objective_queue):
+            roadmap = obj.get("step_roadmap") or []
+            aligned_roadmap = _align_roadmap_to_mode(session_mode, roadmap)
+            if index == 0 and aligned_roadmap:
+                scope = obj.get("concept_scope", {})
+                opening_targets = (
+                    scope.get("primary", []) +
+                    scope.get("support", []) +
+                    scope.get("prereq", [])
+                )[:5]
+                aligned_roadmap = _ensure_opening_step(
+                    aligned_roadmap,
+                    mode_contract["opening_step_type"],
+                    topic or resource.topic,
+                    opening_targets,
+                )
+            obj["step_roadmap"] = aligned_roadmap
         first_obj = objective_queue[0] if objective_queue else {}
         first_roadmap = get_step_roadmap(first_obj)
         first_step = first_roadmap[0] if first_roadmap else {}
-        session_overview = _build_session_overview(objective_queue)
+        active_topic = plan_output.get("active_topic", topic or resource.topic)
+        session_overview = _mode_session_overview(session_mode, objective_queue, active_topic)
         
         plan_state = {
             "version": 3,
+            "mode": session_mode,
+            "mode_contract": mode_contract,
             "resource_id": str(resource_id),
-            "active_topic": plan_output.get("active_topic", topic or resource.topic),
+            "active_topic": active_topic,
             "objective_queue": objective_queue,
             "current_objective_index": 0,
             "current_step_index": 0,
@@ -131,7 +314,7 @@ class SessionService:
             "turns_at_step": 0,
             "step_status": build_step_status(first_roadmap, 0),
             "ad_hoc_count": 0,
-            "max_ad_hoc_per_objective": 4,
+            "max_ad_hoc_per_objective": mode_contract["max_ad_hoc_per_objective"],
             "last_decision": None,
             "last_ad_hoc_type": None,
             "objective_progress": {
@@ -243,7 +426,20 @@ class SessionService:
             .where(UserSession.status == "active")
             .order_by(UserSession.created_at.desc())
         )
-        return result.scalar_one_or_none()
+        active_sessions = list(result.scalars().all())
+        if not active_sessions:
+            return None
+
+        if len(active_sessions) > 1:
+            logger.warning(
+                "Found %s active sessions for user %s and resource %s; reusing newest session %s",
+                len(active_sessions),
+                user_id,
+                resource_id,
+                active_sessions[0].id,
+            )
+
+        return active_sessions[0]
     
     async def _get_concepts(self, resource_id: uuid.UUID) -> list[str]:
         """Get admitted concepts for resource."""

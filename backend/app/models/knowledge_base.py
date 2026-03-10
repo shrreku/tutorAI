@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 
-from sqlalchemy import String, Text, Integer, Float, ForeignKey, Index, UniqueConstraint, func, DateTime
+from sqlalchemy import String, Text, Integer, Float, ForeignKey, Index, UniqueConstraint, func, DateTime, text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -16,7 +16,9 @@ class ResourceConceptStats(Base):
     """Aggregate statistics per concept within a resource with ontological metadata."""
     __tablename__ = "resource_concept_stats"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")
+    )
     resource_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("resource.id", ondelete="CASCADE"),
@@ -60,7 +62,9 @@ class ResourceConceptEvidence(Base):
     """Weighted links between concepts and chunks."""
     __tablename__ = "resource_concept_evidence"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")
+    )
     resource_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("resource.id", ondelete="CASCADE"),
@@ -94,7 +98,9 @@ class ResourceConceptGraph(Base):
     """Typed semantic edges between concepts within a resource."""
     __tablename__ = "resource_concept_graph"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")
+    )
     resource_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("resource.id", ondelete="CASCADE"),
@@ -137,7 +143,9 @@ class ResourceBundle(Base):
     """Cached per-concept working set used by retrieval and orchestration."""
     __tablename__ = "resource_bundle"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")
+    )
     resource_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("resource.id", ondelete="CASCADE"),
@@ -165,7 +173,9 @@ class ResourceTopicBundle(Base):
     """Higher-level groupings used by curriculum/objective generation."""
     __tablename__ = "resource_topic_bundle"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")
+    )
     resource_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("resource.id", ondelete="CASCADE"),
@@ -195,7 +205,9 @@ class ResourceTopic(Base):
     """Persisted topic strings derived from extraction/enrichment."""
     __tablename__ = "resource_topic"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")
+    )
     resource_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("resource.id", ondelete="CASCADE"),
@@ -214,7 +226,9 @@ class ResourceLearningObjective(Base):
     """Persisted learning objective strings."""
     __tablename__ = "resource_learning_objective"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")
+    )
     resource_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("resource.id", ondelete="CASCADE"),
@@ -234,7 +248,9 @@ class ResourcePrereqHint(Base):
     """Soft prerequisite hints derived from chunk enrichment."""
     __tablename__ = "resource_prereq_hint"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()")
+    )
     resource_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("resource.id", ondelete="CASCADE"),

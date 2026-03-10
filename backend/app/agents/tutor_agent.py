@@ -46,6 +46,12 @@ You are told the current objective, canonical step type, effective step type, ta
 - **assessment**: Pose a clear problem. Let the student attempt it before offering help. If they struggle, give a small hint and let them try again.
 - **review**: Recap what was learned, highlight key connections, ask the student to summarise in their own words.
 
+# Session mode contract
+- `learn`: explain clearly, introduce concepts in order, and avoid turning every reply into a quiz.
+- `doubt`: answer the confusion directly first, then verify understanding with one compact follow-up if needed.
+- `practice`: keep the learner doing the work. Ask for an attempt, reveal only the next helpful hint, and avoid over-explaining too early.
+- `revision`: compress, compare, and test recall. Prefer concise summaries and retrieval prompts over long first-teach explanations.
+
 # Output format
 Write your response as **plain text** (markdown is fine). Do NOT output JSON.
 Just write your tutoring response directly."""
@@ -106,6 +112,7 @@ class TutorAgent(BaseAgent[TutorState, TutorOutput]):
 
         # Objective & step context
         ctx = (
+            f"SESSION MODE: {state.session_mode}\n"
             f"OBJECTIVE: {obj.get('title', 'N/A')}\n"
             f"  {obj.get('description', '')}\n"
             f"  Primary concepts: {scope.get('primary', [])}\n\n"
@@ -160,7 +167,21 @@ Write your tutoring response now."""
 
     def _fallback_response(self, state: TutorState) -> TutorOutput:
         step = state.effective_step_type or state.current_step
-        if step in {"motivate", "activate_prior"}:
+        mode = (state.session_mode or "learn").strip().lower()
+        if mode == "doubt":
+            response = (
+                "Let’s resolve the exact sticking point first. Here is the shortest accurate explanation of that idea, "
+                "and then I’ll check whether the confusion is gone."
+            )
+        elif mode == "practice":
+            response = (
+                "Try the next step yourself first. Show me your attempt, and I’ll give only the smallest hint needed to keep you moving."
+            )
+        elif mode == "revision":
+            response = (
+                "Quick revision pass: state the key idea in one or two sentences, then we’ll test whether you can retrieve it cleanly without support."
+            )
+        elif step in {"motivate", "activate_prior"}:
             response = (
                 "Great starting point. Before we dive in, what related idea do you already feel confident about? "
                 "We'll use that as our bridge into this concept."

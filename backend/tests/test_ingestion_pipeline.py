@@ -77,3 +77,37 @@ def test_ingestion_pipeline_run_completes_with_fixture_resource(monkeypatch):
     assert result["quality"]["chunks_created"] == 2
     assert result["quality"]["concepts_admitted"] == 0
     assert updates[-1] == (str(resource_id), "ready")
+
+
+def test_ingestion_pipeline_merge_job_metrics_preserves_dispatch_state():
+    job_id = uuid.uuid4()
+
+    class _Db:
+        async def get(self, model, requested_job_id):
+            del model
+            assert requested_job_id == job_id
+            return SimpleNamespace(
+                metrics={
+                    "billing": {"status": "reserved", "reserved_credits": 750},
+                    "async_byok": {"enabled": False, "status": "disabled"},
+                }
+            )
+
+    pipeline = object.__new__(pipeline_module.IngestionPipeline)
+    pipeline.db = _Db()
+
+    merged = asyncio.run(
+        pipeline._merge_job_metrics(
+            job_id,
+            {
+                "status": "success",
+                "stages": {"persist": {"chunks": 2}},
+            },
+        )
+    )
+
+    assert merged["billing"]["status"] == "reserved"
+    assert merged["billing"]["reserved_credits"] == 750
+    assert merged["async_byok"]["status"] == "disabled"
+    assert merged["status"] == "success"
+    assert merged["stages"]["persist"]["chunks"] == 2

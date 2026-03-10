@@ -57,6 +57,11 @@ def _serialize_turn(turn: TutorTurn) -> dict:
     }
 
 
+def _uses_platform_credits(byok: dict) -> bool:
+    """Hosted credits apply only when the platform key is used."""
+    return settings.CREDITS_ENABLED and not bool(byok.get("api_key"))
+
+
 def get_turn_pipeline(
     db: AsyncSession,
     *,
@@ -173,8 +178,9 @@ async def execute_notebook_turn(
     turn_id = str(uuid4())
     reserved_credits = 0
     meter = CreditMeter(db)
+    uses_platform_credits = _uses_platform_credits(byok)
 
-    if settings.CREDITS_ENABLED:
+    if uses_platform_credits:
         estimated = 2000
         reserved = await meter.reserve_for_turn(user.id, turn_id, estimated)
         if reserved is None:
@@ -207,7 +213,7 @@ async def execute_notebook_turn(
             },
         )
 
-        if settings.CREDITS_ENABLED and not byok.get("api_key"):
+        if uses_platform_credits:
             model_id = settings.LLM_MODEL_TUTORING or settings.LLM_MODEL
             prompt_tokens = getattr(result, "prompt_tokens", 0) or 0
             completion_tokens = getattr(result, "completion_tokens", 0) or 0
@@ -222,6 +228,8 @@ async def execute_notebook_turn(
                 completion_tokens,
                 reserved_credits,
             )
+        elif byok.get("api_key"):
+            logger.info("Notebook turn %s used BYOK and bypassed platform credits", turn_id)
 
         return TutorTurnResponse(
             turn_id=UUID(result.turn_id),

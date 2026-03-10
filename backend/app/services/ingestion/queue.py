@@ -35,10 +35,10 @@ async def get_redis() -> aioredis.Redis:
     return _redis_client
 
 
-async def enqueue_ingestion_job(resource_id: str, job_id: str) -> None:
+async def enqueue_ingestion_job(resource_id: str, job_id: str, *, escrow_id: str | None = None) -> None:
     """Push an ingestion job onto the durable Redis queue."""
     r = await get_redis()
-    payload = json.dumps({"resource_id": resource_id, "job_id": job_id})
+    payload = json.dumps({"resource_id": resource_id, "job_id": job_id, "escrow_id": escrow_id})
     await r.rpush(QUEUE_KEY, payload)
     logger.info(f"Enqueued ingestion job {job_id} for resource {resource_id}")
 

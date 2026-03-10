@@ -70,7 +70,7 @@ class CreditGrant(Base, UUIDMixin, TimestampMixin):
     remaining: Mapped[int] = mapped_column(BigInteger, nullable=False)
     source: Mapped[str] = mapped_column(
         String(64), nullable=False, default="monthly_grant"
-    )  # monthly_grant | admin_topup | promo | refund
+    )  # monthly_grant | signup_grant | admin_topup | promo | refund
     memo: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     expires_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True

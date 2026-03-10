@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from app.config import settings
 from app.db.database import async_session_factory
+from app.services.llm.factory import get_missing_platform_llm_config
 
 
 router = APIRouter(tags=["health"])
@@ -69,6 +70,23 @@ async def readiness_check():
                     "reason": f"redis check failed: {exc}",
                 },
             ) from exc
+
+        missing_llm = get_missing_platform_llm_config(settings, task="ontology")
+        if missing_llm:
+            dependencies["async_llm"] = "required_but_unconfigured"
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "status": "not_ready",
+                    "service": "studyagent-api",
+                    "dependencies": dependencies,
+                    "reason": (
+                        "queue mode requires platform-managed LLM credentials for async ingestion; "
+                        f"missing {', '.join(missing_llm)}"
+                    ),
+                },
+            )
+        dependencies["async_llm"] = "ready"
     elif settings.INGESTION_QUEUE_ENABLED:
         dependencies["redis"] = "required_but_unconfigured"
         raise HTTPException(
@@ -82,6 +100,7 @@ async def readiness_check():
         )
     else:
         dependencies["redis"] = "optional_disabled"
+        dependencies["async_llm"] = "optional_disabled"
 
     return HealthResponse(
         status="ready",

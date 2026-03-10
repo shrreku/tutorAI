@@ -1,5 +1,3 @@
-import { useQuery } from '@tanstack/react-query';
-import { apiClient } from '../api/client';
 import {
   CreditCard,
   TrendingDown,
@@ -9,51 +7,11 @@ import {
   ArrowDownRight,
   Loader2,
   Download,
+  Gauge,
+  Coins,
 } from 'lucide-react';
-
-// Types matching backend billing schemas
-interface BalanceData {
-  credits_enabled: boolean;
-  balance: number;
-  lifetime_granted: number;
-  lifetime_used: number;
-  plan_tier: string;
-  daily_limit: number;
-  monthly_limit: number;
-  soft_limit_pct: number;
-}
-
-interface LedgerEntry {
-  id: string;
-  entry_type: string;
-  delta: number;
-  balance_after: number;
-  reference_type: string | null;
-  reference_id: string | null;
-  created_at: string;
-}
-
-interface UsageHistory {
-  credits_enabled: boolean;
-  entries: LedgerEntry[];
-}
-
-function useBalance() {
-  return useQuery({
-    queryKey: ['billing', 'balance'],
-    queryFn: () => apiClient.get<BalanceData>('/billing/balance'),
-  });
-}
-
-function useUsageHistory(limit = 50) {
-  return useQuery({
-    queryKey: ['billing', 'usage', limit],
-    queryFn: () =>
-      apiClient.get<UsageHistory>('/billing/usage', {
-        limit: limit.toString(),
-      }),
-  });
-}
+import { useBillingBalance, useBillingUsage } from '../api/hooks';
+import type { CreditLedgerEntry } from '../types/api';
 
 function entryTypeLabel(t: string) {
   const labels: Record<string, string> = {
@@ -77,7 +35,7 @@ function formatNumber(n: number) {
   return n.toLocaleString();
 }
 
-function downloadCsv(entries: LedgerEntry[]) {
+function downloadCsv(entries: CreditLedgerEntry[]) {
   const header = 'Date,Type,Delta,Balance After,Reference Type,Reference ID\n';
   const rows = entries.map(
     (e) =>
@@ -93,8 +51,8 @@ function downloadCsv(entries: LedgerEntry[]) {
 }
 
 export default function BillingPage() {
-  const { data: balance, isLoading: balanceLoading } = useBalance();
-  const { data: usage, isLoading: usageLoading } = useUsageHistory();
+  const { data: balance, isLoading: balanceLoading } = useBillingBalance();
+  const { data: usage, isLoading: usageLoading } = useBillingUsage();
 
   if (balanceLoading || usageLoading) {
     return (
@@ -109,6 +67,9 @@ export default function BillingPage() {
     (balance?.monthly_limit ?? 0) * (balance?.soft_limit_pct ?? 0.8);
   const isLowBalance =
     creditsEnabled && (balance?.balance ?? 0) < softThreshold * 0.2; // warn at 20% of soft
+  const monthlyUsagePct = balance?.monthly_limit
+    ? Math.min(100, Math.round(((balance.lifetime_used || 0) / balance.monthly_limit) * 100))
+    : 0;
 
   return (
     <div className="h-full flex flex-col p-8 overflow-auto">
@@ -123,8 +84,9 @@ export default function BillingPage() {
           Credits & <span className="italic text-gold">usage</span>
         </h1>
         <p className="text-muted-foreground max-w-2xl">
-          Monitor your credit balance and usage history. Credits are used for
-          tutoring turns and document ingestion.
+          Monitor your credit balance and usage history. Platform-managed tutoring,
+          uploads, and background preparation consume credits. Live tutoring with a
+          valid BYOK key bypasses platform billing.
         </p>
       </div>
 
@@ -139,7 +101,7 @@ export default function BillingPage() {
       {creditsEnabled && balance && (
         <div className="max-w-4xl mt-8 space-y-6">
           {/* Balance cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             <div className="rounded-xl border border-border bg-card p-5">
               <div className="flex items-center gap-2 mb-2">
                 <CreditCard className="w-4 h-4 text-gold" />
@@ -180,6 +142,55 @@ export default function BillingPage() {
               </p>
               <p className="text-xs text-muted-foreground mt-1">lifetime total</p>
             </div>
+
+            <div className="rounded-xl border border-border bg-card p-5">
+              <div className="flex items-center gap-2 mb-2">
+                <Coins className="w-4 h-4 text-gold" />
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Monthly grant
+                </span>
+              </div>
+              <p className="text-2xl font-display font-semibold text-foreground">
+                {formatNumber(balance.default_monthly_grant)}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">operator-managed refresh amount</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="rounded-xl border border-border bg-card p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Gauge className="w-4 h-4 text-gold" />
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">Limits</span>
+              </div>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Daily cap</span>
+                  <span className="text-foreground font-medium">{formatNumber(balance.daily_limit)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Monthly cap</span>
+                  <span className="text-foreground font-medium">{formatNumber(balance.monthly_limit)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Soft-limit warning</span>
+                  <span className="text-foreground font-medium">{Math.round(balance.soft_limit_pct * 100)}%</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">Usage against monthly cap</span>
+                <span className="text-sm font-medium text-foreground">{monthlyUsagePct}%</span>
+              </div>
+              <div className="h-2 rounded-full bg-background overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-gold to-amber-400" style={{ width: `${monthlyUsagePct}%` }} />
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">
+                Tutoring with platform credentials, uploads, and queued notebook preparation draw from the same shared credit pool.
+              </p>
+            </div>
           </div>
 
           {/* Low balance warning */}
@@ -195,6 +206,11 @@ export default function BillingPage() {
               </div>
             </div>
           )}
+
+          <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+            BYOK scope: your own key applies only to live tutoring requests. Uploads and queued notebook preparation always
+            run on platform infrastructure so they can complete outside the browser request lifecycle.
+          </div>
 
           {/* Usage history */}
           <div className="rounded-xl border border-border bg-card">

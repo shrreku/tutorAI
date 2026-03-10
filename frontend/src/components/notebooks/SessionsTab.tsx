@@ -1,9 +1,9 @@
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Loader2, MessageSquare, BookOpen, Target, Sparkles,
+  Loader2, MessageSquare, BookOpen, Target, Sparkles,
   ArrowRight, Clock,
 } from 'lucide-react';
-import { useNotebook, useNotebookSessions } from '../api/hooks';
+import { useNotebookSessions } from '../../api/hooks';
 
 const MODE_META: Record<string, { icon: typeof BookOpen; label: string; color: string; bg: string }> = {
   learn:    { icon: BookOpen,      label: 'Learn',    color: 'text-blue-400',    bg: 'bg-blue-400/10 border-blue-400/20' },
@@ -12,16 +12,11 @@ const MODE_META: Record<string, { icon: typeof BookOpen; label: string; color: s
   revision: { icon: Sparkles,      label: 'Revision', color: 'text-purple-400',  bg: 'bg-purple-400/10 border-purple-400/20' },
 };
 
-export default function NotebookSessionsPage() {
+export default function SessionsTab({ notebookId }: { notebookId: string }) {
   const navigate = useNavigate();
-  const { notebookId = '' } = useParams<{ notebookId: string }>();
-
-  const { data: notebook } = useNotebook(notebookId);
   const { data: notebookSessions, isLoading } = useNotebookSessions(notebookId);
-
   const sessions = notebookSessions?.items ?? [];
 
-  // Group by date
   const grouped = sessions.reduce<Record<string, typeof sessions>>((acc, s) => {
     const dateKey = new Date(s.started_at).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
     (acc[dateKey] ??= []).push(s);
@@ -30,22 +25,8 @@ export default function NotebookSessionsPage() {
   const dateKeys = Object.keys(grouped);
 
   return (
-    <div className="h-full flex flex-col overflow-auto">
-      {/* Header */}
-      <div className="px-8 pt-8 pb-2">
-        <button onClick={() => navigate(`/notebooks/${notebookId}`)} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-5 transition-colors">
-          <ArrowLeft className="w-4 h-4" /> Back to notebook
-        </button>
-        <div className="flex items-center gap-2 mb-2">
-          <div className="h-px flex-1 max-w-[40px] bg-gold/40" />
-          <span className="text-[11px] uppercase tracking-[0.25em] text-gold font-medium">Sessions</span>
-        </div>
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground mb-1">{notebook?.title || 'Notebook'}</h1>
-        <p className="text-sm text-muted-foreground">Tutoring session history · {sessions.length} session{sessions.length !== 1 ? 's' : ''}</p>
-      </div>
-
-      {/* Content */}
-      <div className="px-8 py-6 max-w-3xl">
+    <div className="px-6 lg:px-8 py-6 animate-tab-enter">
+      <div className="max-w-3xl">
         {isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading sessions…

@@ -6,7 +6,9 @@ pattern described in the L009 ticket.
 """
 
 import logging
+import math
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +26,15 @@ class CreditMeter:
         self.db = db
         self.repo = CreditAccountRepository(db)
 
+    @staticmethod
+    def current_grant_period_key(now: datetime | None = None) -> str:
+        current = now or datetime.now(timezone.utc)
+        return f"{current.year:04d}-{current.month:02d}"
+
+    @staticmethod
+    def default_signup_grant_memo(now: datetime | None = None) -> str:
+        return f"Initial research grant at signup ({CreditMeter.current_grant_period_key(now)})"
+
     async def ensure_account(self, user_id: uuid.UUID) -> None:
         """Lazily create a credit account and issue the default monthly grant
         if the user doesn't have one yet."""
@@ -31,13 +42,30 @@ class CreditMeter:
             return
         account = await self.repo.get_account(user_id)
         if account is None:
-            await self.repo.issue_grant(
-                user_id,
-                amount=settings.CREDITS_DEFAULT_MONTHLY_GRANT,
-                source="monthly_grant",
-                memo="Initial monthly research grant",
-            )
-            logger.info("Issued default grant of %d to user %s", settings.CREDITS_DEFAULT_MONTHLY_GRANT, user_id)
+            await self.issue_signup_grant_if_missing(user_id)
+
+    async def issue_signup_grant_if_missing(self, user_id: uuid.UUID) -> bool:
+        """Create the user's initial research grant exactly once."""
+        if not settings.CREDITS_ENABLED:
+            return False
+
+        memo = self.default_signup_grant_memo()
+        if await self.repo.has_grant(user_id, source="signup_grant", memo=memo):
+            return False
+
+        await self.repo.issue_grant(
+            user_id,
+            amount=settings.CREDITS_DEFAULT_MONTHLY_GRANT,
+            source="signup_grant",
+            memo=memo,
+            metadata={"grant_period": self.current_grant_period_key()},
+        )
+        logger.info(
+            "Issued signup grant of %d to user %s",
+            settings.CREDITS_DEFAULT_MONTHLY_GRANT,
+            user_id,
+        )
+        return True
 
     async def check_sufficient_balance(
         self, user_id: uuid.UUID, estimated_credits: int
@@ -147,3 +175,86 @@ class CreditMeter:
             },
         )
         return actual
+
+    def estimate_ingestion_credits(
+        self,
+        *,
+        file_size_bytes: int,
+        filename: str,
+        processing_profile: str = "core_only",
+    ) -> int:
+        """Estimate ingestion credits before a job is accepted.
+
+        The estimate is intentionally conservative and based on file size,
+        probable OCR risk for PDFs, and the selected preparation profile.
+        """
+        del processing_profile
+
+        size_mb = max(1, math.ceil(max(file_size_bytes, 1) / (1024 * 1024)))
+        estimate = settings.CREDITS_INGESTION_BASE_ESTIMATE + size_mb * settings.CREDITS_INGESTION_PER_MB
+        if filename.lower().endswith(".pdf"):
+            estimate += settings.CREDITS_INGESTION_PDF_SURCHARGE
+        return estimate
+
+    async def reserve_for_ingestion(
+        self,
+        user_id: uuid.UUID,
+        job_id: str,
+        estimated_credits: int,
+    ) -> Optional[int]:
+        """Reserve credits before accepting an ingestion job."""
+        if not settings.CREDITS_ENABLED:
+            return 0
+        await self.ensure_account(user_id)
+        entry = await self.repo.reserve_credits(
+            user_id,
+            estimated_credits,
+            reference_type="ingestion",
+            reference_id=job_id,
+        )
+        if entry is None:
+            return None
+        logger.info("Reserved %d credits for ingestion job %s", estimated_credits, job_id)
+        return estimated_credits
+
+    async def finalize_ingestion(
+        self,
+        user_id: uuid.UUID,
+        job_id: str,
+        actual_credits: int,
+        reserved_credits: int,
+    ) -> int:
+        """Finalize an ingestion reservation when the worker completes."""
+        if not settings.CREDITS_ENABLED:
+            return 0
+        await self.repo.finalize_debit(
+            user_id,
+            actual_credits=actual_credits,
+            reserved_credits=reserved_credits,
+            reference_type="ingestion",
+            reference_id=job_id,
+        )
+        logger.info(
+            "Finalized ingestion job %s cost %d credits (reserved %d)",
+            job_id,
+            actual_credits,
+            reserved_credits,
+        )
+        return actual_credits
+
+    async def release_ingestion(
+        self,
+        user_id: uuid.UUID,
+        job_id: str,
+        reserved_credits: int,
+    ) -> None:
+        """Release a reserved ingestion amount on failure/cancellation."""
+        if not settings.CREDITS_ENABLED or reserved_credits <= 0:
+            return
+        await self.repo.release_reservation(
+            user_id,
+            reserved_credits,
+            reference_type="ingestion",
+            reference_id=job_id,
+        )
+        logger.info("Released %d reserved credits for ingestion job %s", reserved_credits, job_id)

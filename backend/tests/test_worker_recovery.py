@@ -12,12 +12,16 @@ class _FakeSession:
         self.resources = resources
         self.jobs = jobs
         self.commit_calls = 0
+        self.rollback_calls = 0
 
     async def get(self, model, resource_id):
         return self.resources.get(resource_id)
 
     async def commit(self):
         self.commit_calls += 1
+
+    async def rollback(self):
+        self.rollback_calls += 1
 
 
 class _FakeSessionFactory:
@@ -40,6 +44,12 @@ class _FakeJobRepo:
 
     async def get_active_jobs(self):
         return self.db.jobs
+
+    async def get_by_id(self, job_id):
+        for job in self.db.jobs:
+            if job.id == job_id:
+                return job
+        return None
 
 
 @pytest.mark.asyncio
@@ -153,3 +163,184 @@ async def test_reconcile_orphaned_jobs_does_not_duplicate_queued_pending_jobs(mo
     assert summary == {"requeued_pending": 0, "failed_running": 0}
     assert enqueued == []
     assert fake_session.commit_calls == 1
+
+
+class _FakeSequencedSessionFactory:
+    def __init__(self, sessions):
+        self._sessions = list(sessions)
+
+    def __call__(self):
+        return self
+
+    async def __aenter__(self):
+        return self._sessions.pop(0)
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+@pytest.mark.asyncio
+async def test_process_job_finalizes_reserved_ingestion_credits(monkeypatch):
+    job = SimpleNamespace(
+        id=uuid.uuid4(),
+        resource_id=uuid.uuid4(),
+        owner_user_id=uuid.uuid4(),
+        status="pending",
+        current_stage=None,
+        progress_percent=0,
+        metrics={"billing": {"reserved_credits": 750, "estimated_credits": 750, "status": "reserved"}},
+        started_at=None,
+        completed_at=None,
+    )
+    fake_session = _FakeSession(resources={}, jobs=[job])
+    finalized = []
+
+    class _Meter:
+        def __init__(self, _db):
+            pass
+
+        async def finalize_ingestion(self, user_id, job_id, actual_credits, reserved_credits):
+            finalized.append((user_id, job_id, actual_credits, reserved_credits))
+
+    class _Pipeline:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def run(self, *_args, **_kwargs):
+            return {}
+
+    monkeypatch.setattr(worker_module, "CreditMeter", _Meter)
+    monkeypatch.setattr(worker_module, "IngestionJobRepository", _FakeJobRepo)
+    monkeypatch.setattr(worker_module, "async_session_factory", _FakeSequencedSessionFactory([fake_session]))
+    monkeypatch.setattr(worker_module, "create_llm_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(worker_module, "create_embedding_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(worker_module, "create_storage_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(worker_module, "IngestionPipeline", _Pipeline)
+
+    result = await worker_module.process_job({"resource_id": str(job.resource_id), "job_id": str(job.id)})
+
+    assert result is True
+    assert finalized == [(job.owner_user_id, str(job.id), 750, 750)]
+    assert job.metrics["billing"]["status"] == "finalized"
+
+
+@pytest.mark.asyncio
+async def test_process_job_releases_reserved_ingestion_credits_on_failure(monkeypatch):
+    monkeypatch.setattr(worker_module.settings, "INGESTION_WORKER_MAX_RETRIES", 1, raising=False)
+
+    job = SimpleNamespace(
+        id=uuid.uuid4(),
+        resource_id=uuid.uuid4(),
+        owner_user_id=uuid.uuid4(),
+        status="pending",
+        current_stage=None,
+        progress_percent=0,
+        retry_count=0,
+        error_message=None,
+        metrics={"billing": {"reserved_credits": 900, "estimated_credits": 900, "status": "reserved"}},
+        started_at=None,
+        completed_at=None,
+    )
+    first_session = _FakeSession(resources={}, jobs=[job])
+    second_session = _FakeSession(resources={}, jobs=[job])
+    released = []
+    dlq = []
+
+    class _Meter:
+        def __init__(self, _db):
+            pass
+
+        async def release_ingestion(self, user_id, job_id, reserved_credits):
+            released.append((user_id, job_id, reserved_credits))
+
+    class _Pipeline:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def run(self, *_args, **_kwargs):
+            raise RuntimeError("pipeline failed")
+
+    async def _fake_dlq(payload, error):
+        dlq.append((payload, error))
+
+    monkeypatch.setattr(worker_module, "CreditMeter", _Meter)
+    monkeypatch.setattr(worker_module, "IngestionJobRepository", _FakeJobRepo)
+    monkeypatch.setattr(worker_module, "async_session_factory", _FakeSequencedSessionFactory([first_session, second_session]))
+    monkeypatch.setattr(worker_module, "create_llm_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(worker_module, "create_embedding_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(worker_module, "create_storage_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(worker_module, "IngestionPipeline", _Pipeline)
+    monkeypatch.setattr(worker_module, "send_to_dlq", _fake_dlq)
+
+    result = await worker_module.process_job({"resource_id": str(job.resource_id), "job_id": str(job.id)})
+
+    assert result is False
+    assert released == [(job.owner_user_id, str(job.id), 900)]
+    assert job.metrics["billing"]["status"] == "released"
+    assert dlq
+
+
+@pytest.mark.asyncio
+async def test_process_job_uses_async_byok_escrow_when_present(monkeypatch):
+    job = SimpleNamespace(
+        id=uuid.uuid4(),
+        resource_id=uuid.uuid4(),
+        owner_user_id=uuid.uuid4(),
+        status="pending",
+        current_stage=None,
+        progress_percent=0,
+        metrics={
+            "billing": {"reserved_credits": 0, "estimated_credits": 0, "status": "not_applicable"},
+            "async_byok": {"enabled": True, "escrow_id": str(uuid.uuid4()), "status": "active"},
+        },
+        started_at=None,
+        completed_at=None,
+    )
+    fake_session = _FakeSession(resources={}, jobs=[job])
+    create_calls = []
+    finalized = []
+
+    class _EscrowService:
+        def __init__(self, _repo):
+            pass
+
+        async def decrypt_for_ingestion(self, *, escrow_id, resource_id, job_id):
+            return SimpleNamespace(
+                api_key="sk-user-key",
+                api_base_url="https://api.openai.com/v1",
+                provider_name="openai-compatible",
+                escrow_id=str(escrow_id),
+            )
+
+        async def finalize_job_escrow(self, escrow_id, *, reason, success):
+            finalized.append((str(escrow_id), reason, success))
+
+    class _Pipeline:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def run(self, *_args, **_kwargs):
+            return {}
+
+    def _fake_create_llm_provider(_settings, **kwargs):
+        create_calls.append(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(worker_module, "AsyncByokEscrowService", _EscrowService)
+    monkeypatch.setattr(worker_module, "AsyncByokEscrowRepository", lambda _db: object())
+    monkeypatch.setattr(worker_module, "IngestionJobRepository", _FakeJobRepo)
+    monkeypatch.setattr(worker_module, "async_session_factory", _FakeSequencedSessionFactory([fake_session]))
+    monkeypatch.setattr(worker_module, "create_llm_provider", _fake_create_llm_provider)
+    monkeypatch.setattr(worker_module, "create_embedding_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(worker_module, "create_storage_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(worker_module, "IngestionPipeline", _Pipeline)
+
+    result = await worker_module.process_job(
+        {"resource_id": str(job.resource_id), "job_id": str(job.id), "escrow_id": job.metrics["async_byok"]["escrow_id"]}
+    )
+
+    assert result is True
+    assert create_calls[0]["byok_api_key"] == "sk-user-key"
+    assert create_calls[0]["byok_api_base_url"] == "https://api.openai.com/v1"
+    assert finalized == [(job.metrics["async_byok"]["escrow_id"], "ingestion_complete", True)]
+    assert job.metrics["async_byok"]["status"] == "consumed"

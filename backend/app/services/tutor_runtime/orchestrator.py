@@ -737,7 +737,12 @@ class TurnPipeline:
                     "student_intent": policy_metadata.get("student_intent")
                     or getattr(policy_output, "student_intent", None),
                     "safety_blocked": bool(degraded_mode),
-                    "allow_fluid_objective_progression": False,
+                    "allow_fluid_objective_progression": bool(
+                        (plan.get("mode_contract") or {}).get(
+                            "allow_fluid_objective_progression",
+                            False,
+                        )
+                    ),
                 },
                 lf=lf,
                 max_ad_hoc_default=self.MAX_AD_HOC_STEPS,

@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Key, Loader2, Save, Settings2 } from 'lucide-react';
-import { useUserSettings, useUpdateUserSettings } from '../api/hooks';
+import { CheckCircle2, Key, Loader2, Save, Settings2, ShieldAlert, Trash2 } from 'lucide-react';
+import { getApiErrorMessage } from '../api/client';
+import { useAsyncByokEscrows, useRevokeAsyncByokEscrow, useUserSettings, useUpdateUserSettings } from '../api/hooks';
 
 export default function SettingsPage() {
   const { data, isLoading } = useUserSettings();
+  const { data: asyncByokEscrows, isLoading: asyncByokEscrowsLoading } = useAsyncByokEscrows();
+  const revokeAsyncByokEscrow = useRevokeAsyncByokEscrow();
   const updateSettings = useUpdateUserSettings();
   const [consentTrainingGlobal, setConsentTrainingGlobal] = useState(false);
 
@@ -11,6 +14,8 @@ export default function SettingsPage() {
   const [byokApiKey, setByokApiKey] = useState('');
   const [byokBaseUrl, setByokBaseUrl] = useState('');
   const [byokSaved, setByokSaved] = useState(false);
+  const [byokError, setByokError] = useState<string | null>(null);
+  const [asyncByokFeedback, setAsyncByokFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     if (data) {
@@ -40,6 +45,19 @@ export default function SettingsPage() {
 
   const handleSaveByok = () => {
     try {
+      setByokError(null);
+      if (byokBaseUrl.trim()) {
+        const parsed = new URL(byokBaseUrl.trim());
+        if (parsed.protocol !== 'https:') {
+          setByokError('Custom BYOK base URLs must use HTTPS.');
+          return;
+        }
+        const blockedHosts = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1']);
+        if (blockedHosts.has(parsed.hostname.toLowerCase()) || parsed.hostname.toLowerCase().endsWith('.local')) {
+          setByokError('Local or private BYOK base URLs are not allowed.');
+          return;
+        }
+      }
       if (byokApiKey) {
         localStorage.setItem('byok_api_key', byokApiKey);
       } else {
@@ -53,6 +71,16 @@ export default function SettingsPage() {
       setByokSaved(true);
       setTimeout(() => setByokSaved(false), 2000);
     } catch { /* noop */ }
+  };
+
+  const handleRevokeAsyncByokEscrow = async (escrowId: string) => {
+    setAsyncByokFeedback(null);
+    try {
+      await revokeAsyncByokEscrow.mutateAsync(escrowId);
+      setAsyncByokFeedback('Async BYOK escrow revoked. Queued jobs will no longer be able to decrypt it.');
+    } catch (error) {
+      setAsyncByokFeedback(getApiErrorMessage(error, 'Failed to revoke async BYOK escrow.'));
+    }
   };
 
   return (
@@ -144,8 +172,8 @@ export default function SettingsPage() {
                 Bring Your Own Key (BYOK)
               </h2>
               <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                Optionally provide your own LLM API key. Your key is stored <strong>only in your browser</strong> and
-                is never persisted on the server.
+                BYOK applies only to live tutoring turns. Uploads and background notebook preparation use platform-managed
+                infrastructure, and your key stays <strong>only in your browser</strong>.
               </p>
             </div>
           </div>
@@ -194,12 +222,81 @@ export default function SettingsPage() {
 
             {byokApiKey && (
               <p className="text-xs text-muted-foreground">
-                Your key will be sent as a header with each request to the tutoring API.
-                Clear the field and save to stop using BYOK.
+                Your key is attached only to live request-scoped tutoring calls. Clear the field and save to stop using BYOK.
               </p>
+            )}
+
+            <div className="rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
+              Hosted policy: live tutoring can use BYOK. Uploads, ingestion, and other queued preparation flows always use
+              platform infrastructure and may consume platform credits.
+            </div>
+
+            {byokError && (
+              <p className="text-xs text-red-300">{byokError}</p>
             )}
           </div>
         </div>
+
+        {data?.async_byok_escrow_enabled && (
+          <div className="rounded-xl border border-border bg-card p-6 mt-6 animate-fade-up" style={{ animationDelay: '0.15s' }}>
+            <div className="flex items-start gap-3 mb-5">
+              <div className="w-10 h-10 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center flex-shrink-0">
+                <ShieldAlert className="w-5 h-5 text-gold" />
+              </div>
+              <div>
+                <h2 className="font-display text-lg font-semibold text-card-foreground">
+                  Async BYOK escrow
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
+                  Background uploads can temporarily escrow your BYOK in encrypted form so queued ingestion workers can use it.
+                  Backend: {data.async_byok_escrow_backend || 'unknown'}. TTL: {data.async_byok_escrow_ttl_minutes} minutes.
+                </p>
+              </div>
+            </div>
+
+            {asyncByokFeedback && (
+              <div className="mb-4 rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-sm text-muted-foreground">
+                {asyncByokFeedback}
+              </div>
+            )}
+
+            {asyncByokEscrowsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading active escrow objects...
+              </div>
+            ) : !asyncByokEscrows?.length ? (
+              <div className="rounded-lg border border-border/70 bg-background/40 px-3 py-3 text-sm text-muted-foreground">
+                No active async BYOK escrows.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {asyncByokEscrows.map((escrow) => (
+                  <div key={escrow.id} className="rounded-lg border border-border/70 bg-background/40 px-4 py-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {escrow.provider_name || 'BYOK'} · {escrow.purpose_type}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Expires {new Date(escrow.expires_at).toLocaleString()} · Access count {escrow.access_count}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleRevokeAsyncByokEscrow(escrow.id)}
+                        disabled={revokeAsyncByokEscrow.isPending}
+                        className="inline-flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200 disabled:opacity-60"
+                      >
+                        {revokeAsyncByokEscrow.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        Revoke
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

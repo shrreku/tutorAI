@@ -116,6 +116,7 @@ class CreditAccountRepository:
         source: str = "monthly_grant",
         memo: Optional[str] = None,
         expires_at: Optional[datetime] = None,
+        metadata: Optional[dict] = None,
     ) -> CreditGrant:
         """Issue a credit grant and record it in the ledger."""
         account = await self.get_or_create_account(user_id)
@@ -138,9 +139,30 @@ class CreditAccountRepository:
             idempotency_key=f"grant:{grant.id}",
             reference_type="grant",
             reference_id=str(grant.id),
-            metadata={"source": source, "memo": memo},
+            metadata={"source": source, "memo": memo, **(metadata or {})},
         )
         return grant
+
+    async def has_grant(
+        self,
+        user_id: uuid.UUID,
+        *,
+        source: Optional[str] = None,
+        memo: Optional[str] = None,
+    ) -> bool:
+        """Return whether a matching grant already exists for the user."""
+        account = await self.get_account(user_id)
+        if account is None:
+            return False
+
+        query = select(CreditGrant.id).where(CreditGrant.account_id == account.id)
+        if source is not None:
+            query = query.where(CreditGrant.source == source)
+        if memo is not None:
+            query = query.where(CreditGrant.memo == memo)
+
+        result = await self.db.execute(query.limit(1))
+        return result.scalar_one_or_none() is not None
 
     # ------------------------------------------------------------------
     # Reserve / Debit / Release flow

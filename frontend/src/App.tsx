@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useParams } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MainLayout } from './components/layout';
 import { useAuth } from './hooks/useAuth';
@@ -8,13 +8,12 @@ import RegisterPage from './pages/RegisterPage';
 import HomePage from './pages/HomePage';
 import BillingPage from './pages/BillingPage';
 import SettingsPage from './pages/SettingsPage';
+import AdminPage from './pages/AdminPage';
 import NotebooksPage from './pages/NotebooksPage';
 import NotebookCreatePage from './pages/NotebookCreatePage';
 import NotebookDetailPage from './pages/NotebookDetailPage';
 import NotebookStudyPage from './pages/NotebookStudyPage';
-import NotebookResourcesPage from './pages/NotebookResourcesPage';
-import NotebookSessionsPage from './pages/NotebookSessionsPage';
-import NotebookProgressArtifactsPage from './pages/NotebookProgressArtifactsPage';
+import ResourcesLibraryPage from './pages/ResourcesLibraryPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +38,18 @@ function GuestOnly({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RequireAdmin({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  if (!user?.is_admin) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+/** Redirect old notebook sub-routes to tab-based detail page */
+function NotebookTabRedirect({ tab }: { tab: string }) {
+  const { notebookId } = useParams<{ notebookId: string }>();
+  return <Navigate to={`/notebooks/${notebookId}?tab=${tab}`} replace />;
+}
+
 function App() {
   const notebooksEnabled = import.meta.env.VITE_FEATURE_NOTEBOOKS_ENABLED !== 'false';
 
@@ -57,10 +68,10 @@ function App() {
           {notebooksEnabled && <Route path="/notebooks/new" element={<NotebookCreatePage />} />}
           {notebooksEnabled && <Route path="/notebooks/:notebookId" element={<NotebookDetailPage />} />}
           {notebooksEnabled && <Route path="/notebooks/:notebookId/study" element={<NotebookStudyPage />} />}
-          {notebooksEnabled && <Route path="/notebooks/:notebookId/resources" element={<NotebookResourcesPage />} />}
-          {notebooksEnabled && <Route path="/notebooks/:notebookId/sessions" element={<NotebookSessionsPage />} />}
-          {notebooksEnabled && <Route path="/notebooks/:notebookId/progress" element={<NotebookProgressArtifactsPage />} />}
-          <Route path="/resources" element={<Navigate to="/notebooks" replace />} />
+          {notebooksEnabled && <Route path="/notebooks/:notebookId/resources" element={<NotebookTabRedirect tab="resources" />} />}
+          {notebooksEnabled && <Route path="/notebooks/:notebookId/sessions" element={<NotebookTabRedirect tab="sessions" />} />}
+          {notebooksEnabled && <Route path="/notebooks/:notebookId/progress" element={<NotebookTabRedirect tab="progress" />} />}
+          <Route path="/resources" element={<ResourcesLibraryPage />} />
           <Route path="/resources/:id" element={<Navigate to="/notebooks" replace />} />
           <Route path="/sessions" element={<Navigate to="/notebooks" replace />} />
           <Route path="/sessions/new" element={<Navigate to="/notebooks" replace />} />
@@ -68,6 +79,7 @@ function App() {
           <Route path="/sessions/:sessionId/quiz" element={<Navigate to="/notebooks" replace />} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
         </Route>
 
         {/* ── Fallback ──────────────────────────────── */}

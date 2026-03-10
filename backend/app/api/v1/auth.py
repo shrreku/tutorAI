@@ -16,7 +16,8 @@ from app.config import settings
 from app.db.database import get_db
 from app.db.repositories.session_repo import UserProfileRepository
 from app.models.session import UserProfile
-from app.api.deps import check_auth_rate_limit, create_access_token
+from app.api.deps import check_auth_rate_limit, create_access_token, is_admin_user
+from app.services.credits.meter import CreditMeter
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ class AuthUserInfo(BaseModel):
     email: Optional[str] = None
     display_name: Optional[str] = None
     consent_training_global: bool = False
+    is_admin: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +100,9 @@ async def register(
     )
     user = await repo.create(user)
 
+    meter = CreditMeter(db)
+    await meter.issue_signup_grant_if_missing(user.id)
+
     token = create_access_token(user.external_id or str(user.id))
 
     return AuthResponse(
@@ -107,6 +112,7 @@ async def register(
             email=user.email,
             display_name=user.display_name,
             consent_training_global=body.consent_training,
+            is_admin=is_admin_user(user),
         ),
     )
 
@@ -144,5 +150,6 @@ async def login(
             email=user.email,
             display_name=user.display_name,
             consent_training_global=consent,
+            is_admin=is_admin_user(user),
         ),
     )

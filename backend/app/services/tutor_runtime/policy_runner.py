@@ -70,6 +70,7 @@ async def run_policy(
 
         policy_state = PolicyState(
             student_message=student_message,
+            session_mode=str(plan.get("mode") or "learn"),
             current_step_index=step_idx,
             current_step=plan.get("current_step", "explain"),
             curriculum_slice=build_curriculum_slice(current_obj, step_idx),

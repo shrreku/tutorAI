@@ -1,35 +1,27 @@
-import { useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useMemo } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeft,
-  Loader2,
-  Plus,
-  Sparkles,
-  BarChart3,
-  Layers,
-  MessageSquare,
-  Wand2,
-  Trash2,
+  ArrowLeft, Loader2, Sparkles, BarChart3, Layers,
+  MessageSquare, Calendar, LayoutDashboard, AlertTriangle,
+  FileText,
 } from 'lucide-react';
 import {
-  useNotebook,
-  useNotebookResources,
-  useNotebookSessions,
-  useNotebookProgress,
-  useNotebookArtifacts,
-  useResources,
-  useAttachNotebookResource,
-  useDetachNotebookResource,
+  useNotebook, useNotebookResources, useNotebookSessions,
+  useNotebookProgress, useNotebookArtifacts, useResources,
   useCreateNotebookSession,
-  useGenerateNotebookArtifact,
 } from '../api/hooks';
-
-const MODES = ['learn', 'doubt', 'practice', 'revision'] as const;
-const ARTIFACT_TYPES = ['notes', 'flashcards', 'quiz', 'revision_plan'] as const;
+import SessionLaunchPanel from '../components/notebooks/SessionLaunchPanel';
+import ResourcesTab from '../components/notebooks/ResourcesTab';
+import SessionsTab from '../components/notebooks/SessionsTab';
+import ProgressTab from '../components/notebooks/ProgressTab';
+import type { NotebookSessionCreateRequest } from '../types/api';
+import { cn } from '../lib/utils';
 
 export default function NotebookDetailPage() {
   const navigate = useNavigate();
   const { notebookId = '' } = useParams<{ notebookId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'overview';
 
   const { data: notebook, isLoading: notebookLoading } = useNotebook(notebookId);
   const { data: notebookResources } = useNotebookResources(notebookId);
@@ -37,237 +29,182 @@ export default function NotebookDetailPage() {
   const { data: progress } = useNotebookProgress(notebookId);
   const { data: artifacts } = useNotebookArtifacts(notebookId);
   const { data: allResources } = useResources();
-
-  const attachResource = useAttachNotebookResource(notebookId);
-  const detachResource = useDetachNotebookResource(notebookId);
   const createNotebookSession = useCreateNotebookSession(notebookId);
-  const generateArtifact = useGenerateNotebookArtifact(notebookId);
 
-  const [resourceToAttach, setResourceToAttach] = useState('');
-  const [sessionMode, setSessionMode] = useState<(typeof MODES)[number]>('learn');
-  const [artifactType, setArtifactType] = useState<(typeof ARTIFACT_TYPES)[number]>('notes');
+  const resourceItems = notebookResources?.items ?? [];
+  const sessions = notebookSessions?.items ?? [];
+  const artifactItems = artifacts?.items ?? [];
+  const mastery = progress?.mastery_snapshot ?? {};
+  const masteryValues = Object.values(mastery);
+  const avgMastery = masteryValues.length ? Math.round((masteryValues.reduce((a, b) => a + b, 0) / masteryValues.length) * 100) : 0;
+  const weakConcepts = progress?.weak_concepts_snapshot ?? [];
+  const resourceById = useMemo(() => new Map((allResources?.items ?? []).map((r) => [r.id, r])), [allResources?.items]);
 
-  const linkedResourceIds = useMemo(
-    () => new Set((notebookResources?.items ?? []).map((item) => item.resource_id)),
-    [notebookResources?.items]
-  );
+  if (notebookLoading) return <div className="flex items-center justify-center h-full"><Loader2 className="w-6 h-6 text-gold animate-spin" /></div>;
+  if (!notebook) return <div className="p-8 text-sm text-muted-foreground">Notebook not found.</div>;
 
-  const availableResources = (allResources?.items ?? []).filter((resource) => !linkedResourceIds.has(resource.id));
-
-  if (notebookLoading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-6 h-6 text-gold animate-spin" />
-      </div>
-    );
-  }
-
-  if (!notebook) {
-    return (
-      <div className="p-8 text-sm text-muted-foreground">
-        Notebook not found.
-      </div>
-    );
-  }
-
-  const handleAttachResource = async () => {
-    if (!resourceToAttach) return;
-    await attachResource.mutateAsync({ resource_id: resourceToAttach });
-    setResourceToAttach('');
+  const setTab = (tab: string) => {
+    setSearchParams(tab === 'overview' ? {} : { tab }, { replace: true });
   };
 
-  const handleStartSession = async () => {
-    const firstResource = notebookResources?.items?.[0]?.resource_id;
-    if (!firstResource) return;
+  const recommendedMode = weakConcepts.length >= 3
+    ? 'revision'
+    : sessions.length === 0
+      ? 'learn'
+      : avgMastery < 55
+        ? 'practice'
+        : 'doubt';
 
-    const detail = await createNotebookSession.mutateAsync({
-      resource_id: firstResource,
-      mode: sessionMode,
-      resume_existing: false,
+  const recommendedReason = weakConcepts.length >= 3
+    ? `You have ${weakConcepts.length} weak concepts flagged, so a revision pass should produce the most immediate gain.`
+    : sessions.length === 0
+      ? 'You have resources ready but no study history yet, so a structured learn session is the cleanest first step.'
+      : avgMastery < 55
+        ? `Average mastery is ${avgMastery}%, which suggests retrieval practice is more valuable than more passive review right now.`
+        : 'Use doubt mode when you mostly understand the material but want to clear specific uncertainty before moving on.';
+
+  const launchResources = resourceItems.map((entry) => {
+    const resource = resourceById.get(entry.resource_id);
+    return {
+      id: entry.resource_id,
+      label: resource?.filename ?? 'Untitled resource',
+      subtitle: resource?.topic || resource?.status || 'Attached resource',
+      status: resource?.status,
+    };
+  });
+
+  const handleStartSession = async (request: NotebookSessionCreateRequest) => {
+    const detail = await createNotebookSession.mutateAsync(request);
+    navigate(`/notebooks/${notebookId}/study?sessionId=${detail.session.id}`, {
+      state: { launchSummary: detail.preparation_summary },
     });
-
-    navigate(`/notebooks/${notebookId}/study?sessionId=${detail.session.id}`);
   };
 
-  const handleGenerateArtifact = async () => {
-    await generateArtifact.mutateAsync({ artifact_type: artifactType });
-  };
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'resources', label: 'Resources', icon: Layers, badge: resourceItems.length || undefined },
+    { id: 'sessions', label: 'Sessions', icon: MessageSquare, badge: sessions.length || undefined },
+    { id: 'progress', label: 'Progress & Artifacts', icon: BarChart3, badge: artifactItems.length > 0 ? `${artifactItems.length}` : undefined },
+  ];
 
   return (
-    <div className="h-full flex flex-col p-8 overflow-auto">
-      <button
-        onClick={() => navigate('/notebooks')}
-        className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Back to notebooks
-      </button>
+    <div className="h-full flex flex-col">
+      {/* Header — compact and informational */}
+      <div className="px-6 lg:px-8 pt-5 pb-0 shrink-0">
+        <button onClick={() => navigate('/notebooks')} className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground mb-3 transition-colors group">
+          <ArrowLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" /> Notebooks
+        </button>
 
-      <div className="mb-8">
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground mb-2">{notebook.title}</h1>
-        <p className="text-sm text-muted-foreground max-w-2xl">{notebook.goal || 'No notebook goal set yet.'}</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            onClick={() => navigate(`/notebooks/${notebookId}/study`)}
-            className="px-3 py-1.5 rounded-md bg-gold text-primary-foreground text-xs font-medium"
-          >
-            Open Study Workspace
-          </button>
-          <button
-            onClick={() => navigate(`/notebooks/${notebookId}/resources`)}
-            className="px-3 py-1.5 rounded-md border border-border text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            Resources Screen
-          </button>
-          <button
-            onClick={() => navigate(`/notebooks/${notebookId}/sessions`)}
-            className="px-3 py-1.5 rounded-md border border-border text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            Sessions History
-          </button>
-          <button
-            onClick={() => navigate(`/notebooks/${notebookId}/progress`)}
-            className="px-3 py-1.5 rounded-md border border-border text-xs font-medium text-muted-foreground hover:text-foreground"
-          >
-            Progress & Artifacts
-          </button>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <h1 className="font-display text-xl md:text-2xl font-semibold tracking-tight text-foreground truncate leading-tight">{notebook.title}</h1>
+            <div className="flex items-center gap-3 mt-1">
+              {notebook.goal && <p className="text-xs text-muted-foreground truncate max-w-sm">{notebook.goal}</p>}
+              {notebook.target_date && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
+                  <Calendar className="w-2.5 h-2.5" /> {new Date(notebook.target_date).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Compact inline stats + study button */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="hidden md:flex items-center gap-3 text-[11px] text-muted-foreground">
+              {resourceItems.length > 0 && (
+                <button onClick={() => setTab('resources')} className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
+                  <FileText className="w-3 h-3" />
+                  <span>{resourceItems.length} resource{resourceItems.length !== 1 ? 's' : ''}</span>
+                </button>
+              )}
+              {masteryValues.length > 0 && (
+                <button onClick={() => setTab('progress')} className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
+                  <div className="relative w-4 h-4">
+                    <svg viewBox="0 0 36 36" className="w-4 h-4 -rotate-90">
+                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none" stroke="hsl(var(--border))" strokeWidth="4" />
+                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none" stroke="hsl(var(--gold))" strokeWidth="4" strokeLinecap="round"
+                        strokeDasharray={`${avgMastery}, 100`} />
+                    </svg>
+                  </div>
+                  <span>{avgMastery}% mastery</span>
+                </button>
+              )}
+              {weakConcepts.length > 0 && (
+                <button onClick={() => setTab('progress')} className="inline-flex items-center gap-1 text-red-400/80 hover:text-red-400 transition-colors">
+                  <AlertTriangle className="w-3 h-3" />
+                  <span>{weakConcepts.length} weak</span>
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => navigate(`/notebooks/${notebookId}/study`)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-gold text-primary-foreground text-sm font-medium hover:bg-gold/90 transition-colors shadow-sm shadow-gold/20"
+            >
+              <Sparkles className="w-3.5 h-3.5" /> Study
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-5">
-        <section className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 mb-4 text-gold text-sm font-medium">
-            <Layers className="w-4 h-4" />
-            Resources
-          </div>
-          <div className="space-y-2 mb-4 max-h-64 overflow-auto">
-            {(notebookResources?.items ?? []).map((entry) => (
-              <div key={entry.id} className="flex items-center justify-between gap-2 p-2 rounded-lg border border-border/70">
-                <span className="text-xs text-foreground font-mono truncate">{entry.resource_id}</span>
-                <button
-                  onClick={() => detachResource.mutate(entry.resource_id)}
-                  className="text-red-400 hover:text-red-300"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
-            {(notebookResources?.items ?? []).length === 0 && (
-              <p className="text-xs text-muted-foreground">No resources attached yet.</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <select
-              value={resourceToAttach}
-              onChange={(e) => setResourceToAttach(e.target.value)}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-            >
-              <option value="">Select resource to attach</option>
-              {availableResources.map((resource) => (
-                <option key={resource.id} value={resource.id}>
-                  {resource.filename}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={handleAttachResource}
-              disabled={attachResource.isPending || !resourceToAttach}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-gold/10 border border-gold/20 text-gold text-sm font-medium disabled:opacity-50"
-            >
-              {attachResource.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              Attach Resource
-            </button>
-          </div>
-        </section>
-
-        <section className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 mb-4 text-gold text-sm font-medium">
-            <MessageSquare className="w-4 h-4" />
-            Sessions
-          </div>
-
-          <div className="space-y-2 mb-4 max-h-64 overflow-auto">
-            {(notebookSessions?.items ?? []).map((entry) => (
+      {/* Tab navigation */}
+      <div className="px-6 lg:px-8 mt-4 shrink-0">
+        <div className="flex gap-0.5 border-b border-border/40">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
               <button
-                key={entry.id}
-                onClick={() => navigate(`/notebooks/${notebookId}/study?sessionId=${entry.session_id}`)}
-                className="w-full text-left p-2 rounded-lg border border-border/70 hover:border-gold/20"
+                key={tab.id}
+                onClick={() => setTab(tab.id)}
+                className={cn(
+                  'relative flex items-center gap-1.5 px-3 py-2.5 text-[13px] font-medium transition-colors',
+                  isActive
+                    ? 'text-gold'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted/30 rounded-t-md'
+                )}
               >
-                <p className="text-xs text-foreground font-mono truncate">{entry.session_id}</p>
-                <p className="text-[11px] text-muted-foreground mt-1">Mode: {entry.mode}</p>
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+                {tab.badge != null && (
+                  <span className={cn(
+                    'px-1.5 py-0.5 text-[9px] rounded-full font-medium leading-none',
+                    isActive ? 'bg-gold/15 text-gold' : 'bg-muted text-muted-foreground'
+                  )}>
+                    {tab.badge}
+                  </span>
+                )}
+                {isActive && (
+                  <span className="absolute bottom-0 left-2 right-2 h-[2px] bg-gold rounded-full" />
+                )}
               </button>
-            ))}
-            {(notebookSessions?.items ?? []).length === 0 && (
-              <p className="text-xs text-muted-foreground">No sessions in this notebook yet.</p>
-            )}
-          </div>
+            );
+          })}
+        </div>
+      </div>
 
-          <div className="space-y-2">
-            <select
-              value={sessionMode}
-              onChange={(e) => setSessionMode(e.target.value as (typeof MODES)[number])}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-            >
-              {MODES.map((mode) => (
-                <option key={mode} value={mode}>{mode}</option>
-              ))}
-            </select>
-            <button
-              onClick={handleStartSession}
-              disabled={createNotebookSession.isPending || (notebookResources?.items ?? []).length === 0}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-gold text-primary-foreground text-sm font-medium disabled:opacity-50"
-            >
-              {createNotebookSession.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-              Start New Notebook Session
-            </button>
+      {/* Tab content */}
+      <div className="flex-1 overflow-auto">
+        {activeTab === 'overview' && (
+          <div className="px-6 lg:px-8 py-6 animate-tab-enter">
+            <div className="max-w-5xl">
+              <SessionLaunchPanel
+                resources={launchResources}
+                recommendedMode={recommendedMode}
+                recommendedReason={recommendedReason}
+                pending={createNotebookSession.isPending}
+                onLaunch={handleStartSession}
+                title="Start the right session"
+                subtitle="Study mode, scope, and topic focus all matter. Build the session around what you actually need."
+              />
+            </div>
           </div>
-        </section>
+        )}
 
-        <section className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 mb-4 text-gold text-sm font-medium">
-            <BarChart3 className="w-4 h-4" />
-            Progress & Artifacts
-          </div>
-
-          <div className="mb-4 text-xs text-muted-foreground space-y-1">
-            <p>Sessions: {progress?.sessions_count ?? 0}</p>
-            <p>Completed: {progress?.completed_sessions_count ?? 0}</p>
-            <p>Weak concepts: {(progress?.weak_concepts_snapshot ?? []).slice(0, 3).join(', ') || 'None'}</p>
-          </div>
-
-          <div className="space-y-2 mb-4">
-            <select
-              value={artifactType}
-              onChange={(e) => setArtifactType(e.target.value as (typeof ARTIFACT_TYPES)[number])}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-            >
-              {ARTIFACT_TYPES.map((type) => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-            <button
-              onClick={handleGenerateArtifact}
-              disabled={generateArtifact.isPending}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-gold/10 border border-gold/20 text-gold text-sm font-medium disabled:opacity-50"
-            >
-              {generateArtifact.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-              Generate Artifact
-            </button>
-          </div>
-
-          <div className="space-y-2 max-h-48 overflow-auto">
-            {(artifacts?.items ?? []).slice(0, 8).map((artifact) => (
-              <div key={artifact.id} className="p-2 rounded-lg border border-border/70">
-                <p className="text-xs text-foreground">{artifact.artifact_type}</p>
-                <p className="text-[11px] text-muted-foreground mt-1">{new Date(artifact.created_at).toLocaleString()}</p>
-              </div>
-            ))}
-            {(artifacts?.items ?? []).length === 0 && (
-              <p className="text-xs text-muted-foreground">No artifacts generated yet.</p>
-            )}
-          </div>
-        </section>
+        {activeTab === 'resources' && <ResourcesTab notebookId={notebookId} />}
+        {activeTab === 'sessions' && <SessionsTab notebookId={notebookId} />}
+        {activeTab === 'progress' && <ProgressTab notebookId={notebookId} />}
       </div>
     </div>
   );

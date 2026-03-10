@@ -7,6 +7,7 @@ class PolicyState(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     student_message: str
+    session_mode: str = Field(default="learn", description="Requested session mode: learn, doubt, practice, revision")
     current_step_index: int = Field(
         default=0,
         ge=0,
@@ -43,6 +44,7 @@ class TutorState(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     student_message: str
+    session_mode: str = Field(default="learn", description="Requested session mode: learn, doubt, practice, revision")
     current_step_index: int = Field(
         default=0,
         ge=0,

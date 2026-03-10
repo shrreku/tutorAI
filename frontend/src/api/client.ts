@@ -48,6 +48,21 @@ export class ApiError extends Error {
   }
 }
 
+export function getApiErrorMessage(error: unknown, fallbackMessage: string): string {
+  if (error instanceof ApiError) {
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    if (error.message === 'Failed to fetch') {
+      return 'Cannot reach the API. In local Docker dev, verify the frontend proxy and backend container are running.';
+    }
+    return error.message || fallbackMessage;
+  }
+
+  return fallbackMessage;
+}
+
 function buildHeaders(options: HeaderOptions = {}): Record<string, string> {
   const {
     includeAuth = true,

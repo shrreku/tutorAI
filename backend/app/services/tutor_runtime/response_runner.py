@@ -95,6 +95,7 @@ async def generate_response(
     try:
         tutor_state = TutorState(
             student_message=student_message,
+            session_mode=str(plan.get("mode") or "learn"),
             current_step_index=step_idx,
             current_step=plan.get("current_step", "explain"),
             effective_step_type=plan.get(

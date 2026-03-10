@@ -1,17 +1,20 @@
 import { useNavigate } from 'react-router-dom'
-import { BookOpen, Upload, ArrowRight, Sparkles } from 'lucide-react'
-import { useNotebooks, useResources, useUserSettings, useUpdateUserSettings } from '../api/hooks'
+import { BookOpen, Upload, ArrowRight, Sparkles, Wallet, AlertTriangle } from 'lucide-react'
+import { useBillingBalance, useNotebooks, useResources, useUserSettings, useUpdateUserSettings } from '../api/hooks'
 
 export default function HomePage() {
   const navigate = useNavigate()
   const { data: notebooksData } = useNotebooks()
   const { data: resourcesData } = useResources()
   const { data: userSettings } = useUserSettings()
+  const { data: balance } = useBillingBalance()
   const updateUserSettings = useUpdateUserSettings()
 
   const notebookCount = notebooksData?.items?.length ?? 0
   const resourceCount = resourcesData?.items?.length ?? 0
   const showConsentPrompt = userSettings ? !userSettings.consent_preference_set : false
+  const creditsEnabled = balance?.credits_enabled ?? false
+  const isLowBalance = creditsEnabled && (balance?.balance ?? 0) < Math.round((balance?.default_monthly_grant ?? 0) * 0.2)
 
   const saveConsentPreference = async (enabled: boolean) => {
     try {
@@ -112,6 +115,30 @@ export default function HomePage() {
           </div>
         </button>
       </div>
+
+      {creditsEnabled && balance && (
+        <div className="max-w-4xl mb-8 animate-fade-up" style={{ animationDelay: '0.32s' }}>
+          <div className={`rounded-xl border p-5 ${isLowBalance ? 'border-amber-500/30 bg-amber-500/5' : 'border-border bg-card'}`}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1.5">
+                  {isLowBalance ? <AlertTriangle className="w-4 h-4 text-amber-400" /> : <Wallet className="w-4 h-4 text-gold" />}
+                  <p className="text-sm font-medium text-foreground">Platform credit status</p>
+                </div>
+                <p className="text-sm text-muted-foreground max-w-2xl">
+                  Balance: {balance.balance.toLocaleString()} credits. Live tutoring with BYOK bypasses platform billing, but uploads and queued preparation always use platform credits.
+                </p>
+              </div>
+              <button
+                onClick={() => navigate('/billing')}
+                className="inline-flex items-center gap-2 rounded-lg border border-gold/20 bg-gold/10 px-3 py-2 text-sm font-medium text-gold"
+              >
+                Open billing <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showConsentPrompt && (
         <div className="max-w-4xl mb-8 animate-fade-up" style={{ animationDelay: '0.35s' }}>

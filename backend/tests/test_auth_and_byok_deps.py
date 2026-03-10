@@ -87,6 +87,31 @@ def test_check_auth_rate_limit_noop_when_disabled(monkeypatch):
     asyncio.run(deps_module.check_auth_rate_limit(request))
 
 
+def test_get_configured_admin_external_id_prefers_single_explicit_value(monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_EXTERNAL_ID", "admin@example.com", raising=False)
+    monkeypatch.setattr(settings, "ADMIN_EXTERNAL_IDS", "legacy@example.com", raising=False)
+
+    assert deps_module.get_configured_admin_external_id() == "admin@example.com"
+
+
+def test_get_configured_admin_external_id_rejects_multiple_legacy_values(monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_EXTERNAL_ID", "", raising=False)
+    monkeypatch.setattr(settings, "ADMIN_EXTERNAL_IDS", "a@example.com,b@example.com", raising=False)
+
+    assert deps_module.get_configured_admin_external_id() is None
+
+
+def test_is_admin_user_matches_only_configured_identity(monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_EXTERNAL_ID", "admin@example.com", raising=False)
+    monkeypatch.setattr(settings, "ADMIN_EXTERNAL_IDS", "", raising=False)
+
+    admin_user = SimpleNamespace(external_id="admin@example.com")
+    normal_user = SimpleNamespace(external_id="student@example.com")
+
+    assert deps_module.is_admin_user(admin_user) is True
+    assert deps_module.is_admin_user(normal_user) is False
+
+
 def test_require_notebooks_enabled_raises_when_disabled(monkeypatch):
     monkeypatch.setattr(settings, "FEATURE_NOTEBOOKS_ENABLED", False, raising=False)
 

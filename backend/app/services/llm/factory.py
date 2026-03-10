@@ -7,6 +7,40 @@ from app.services.llm.openai_provider import OpenAICompatibleProvider
 logger = logging.getLogger(__name__)
 
 
+def get_missing_platform_llm_config(config: Settings, *, task: str = "default") -> list[str]:
+    """Return required platform LLM settings that are missing for a task."""
+    model_map = {
+        "tutoring": config.LLM_MODEL_TUTORING,
+        "evaluation": config.LLM_MODEL_EVALUATION,
+        "curriculum": config.LLM_MODEL_CURRICULUM,
+        "ontology": config.LLM_MODEL_ONTOLOGY,
+        "enrichment": config.LLM_MODEL_ENRICHMENT,
+    }
+
+    missing: list[str] = []
+    if not (config.LLM_API_KEY or "").strip():
+        missing.append("LLM_API_KEY")
+    if not (config.LLM_API_BASE_URL or "").strip():
+        missing.append("LLM_API_BASE_URL")
+
+    task_model = model_map.get(task)
+    if not ((task_model or config.LLM_MODEL or "").strip()):
+        missing.append(f"LLM_MODEL[{task}]")
+
+    return missing
+
+
+def validate_platform_llm_config(config: Settings, *, task: str = "default") -> None:
+    """Raise a clear error when hosted platform LLM configuration is incomplete."""
+    missing = get_missing_platform_llm_config(config, task=task)
+    if missing:
+        fields = ", ".join(missing)
+        raise ValueError(
+            f"Hosted async LLM configuration is incomplete for {task}: missing {fields}. "
+            "Configure platform-managed credentials for uploads and worker jobs."
+        )
+
+
 def create_llm_provider(
     config: Settings,
     task: str = "default",
@@ -40,6 +74,8 @@ def create_llm_provider(
     # Resolve API key: prefer BYOK, fall back to server config.
     api_key = byok_api_key or config.LLM_API_KEY
     base_url = byok_api_base_url or config.LLM_API_BASE_URL
+    if not byok_api_key:
+        validate_platform_llm_config(config, task=task)
 
     if not api_key:
         raise ValueError(

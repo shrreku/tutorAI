@@ -81,6 +81,14 @@ Output valid JSON with:
 }"""
 
 
+MODE_CURRICULUM_GUIDANCE = {
+        "learn": "Design a full teaching flow: concept introduction, explanation, worked examples, supported practice, then assessment.",
+        "doubt": "Design a short clarification flow centered on resolving one confusion quickly. Prefer 1-2 tightly scoped objectives and explanation/probe/summary steps over long teaching arcs.",
+        "practice": "Design a doing-first flow. Minimize exposition, prefer probe/practice/assess steps, and make the student produce answers early.",
+        "revision": "Design a compact review flow. Prioritize recall, comparison, summary, misconception repair, and short assessment over first-teach exposition.",
+}
+
+
 class CurriculumAgent:
     """Generates curriculum plans from resource content."""
     
@@ -94,6 +102,7 @@ class CurriculumAgent:
         resource_id: UUID,
         topic: Optional[str] = None,
         selected_topics: Optional[list[str]] = None,
+        mode: str = "learn",
     ) -> dict:
         """
         Generate a curriculum plan for a resource.
@@ -146,6 +155,7 @@ class CurriculumAgent:
             concept_graph_edges,
             prereq_hints,
             topic,
+            mode,
         )
         
         try:
@@ -177,7 +187,7 @@ class CurriculumAgent:
             # Return fallback plan
             return {
                 "active_topic": topic or "General",
-                "objective_queue": self._create_fallback_objectives(concepts),
+                "objective_queue": self._create_fallback_objectives(concepts, mode=mode),
             }
     
     @observe(name="curriculum-extend", capture_input=False)
@@ -355,6 +365,7 @@ class CurriculumAgent:
         concept_graph_edges: list[dict],
         prereq_hints: list[dict],
         topic: Optional[str],
+        mode: str,
     ) -> list[dict]:
         """Build messages for LLM."""
         bundles_text = "\n".join([
@@ -375,7 +386,13 @@ class CurriculumAgent:
             for hint in prereq_hints[:20]
         ) or "No prerequisite hints available"
         
+        normalized_mode = (mode or "learn").strip().lower()
+        mode_guidance = MODE_CURRICULUM_GUIDANCE.get(normalized_mode, MODE_CURRICULUM_GUIDANCE["learn"])
+
         user_content = f"""Create a curriculum plan for the following resource:
+
+    Session Mode: {normalized_mode}
+    Mode Guidance: {mode_guidance}
 
 Topic Focus: {topic or "All topics"}
 
@@ -504,8 +521,82 @@ Generate 2-4 learning objectives that cover the key concepts, ordered by prerequ
             "step_roadmap": validated_roadmap,
         }
 
-    def _create_default_roadmap(self, concepts: list[str]) -> list[dict]:
+    def _create_default_roadmap(self, concepts: list[str], mode: str = "learn") -> list[dict]:
         """Create default step roadmap."""
+        normalized_mode = (mode or "learn").strip().lower()
+        if normalized_mode == "doubt":
+            return [
+                {
+                    "type": "explain",
+                    "target_concepts": concepts[:1],
+                    "can_skip": True,
+                    "max_turns": 2,
+                    "goal": "Resolve the learner's specific confusion directly and accurately.",
+                },
+                {
+                    "type": "probe",
+                    "target_concepts": concepts[:1],
+                    "can_skip": True,
+                    "max_turns": 1,
+                    "goal": "Check whether the clarification actually resolved the confusion.",
+                },
+                {
+                    "type": "summarize",
+                    "target_concepts": concepts[:1],
+                    "can_skip": True,
+                    "max_turns": 1,
+                    "goal": "Summarize the answer crisply and note what to revisit if needed.",
+                },
+            ]
+        if normalized_mode == "practice":
+            return [
+                {
+                    "type": "probe",
+                    "target_concepts": concepts[:1],
+                    "can_skip": False,
+                    "max_turns": 1,
+                    "goal": "Elicit the learner's current attempt before teaching further.",
+                },
+                {
+                    "type": "practice",
+                    "target_concepts": concepts,
+                    "can_skip": False,
+                    "max_turns": 2,
+                    "goal": "Have the learner solve a representative task with limited support.",
+                },
+                {
+                    "type": "assess",
+                    "target_concepts": concepts,
+                    "can_skip": False,
+                    "max_turns": 2,
+                    "goal": "Check for independent performance on the target concepts.",
+                },
+            ]
+        if normalized_mode == "revision":
+            return [
+                {
+                    "type": "summarize",
+                    "target_concepts": concepts[:1],
+                    "can_skip": False,
+                    "max_turns": 1,
+                    "goal": "Compress the core idea into a concise review frame.",
+                },
+                {
+                    "type": "compare_contrast",
+                    "target_concepts": concepts,
+                    "can_skip": True,
+                    "max_turns": 1,
+                    "goal": "Differentiate easily confused concepts and surface weak spots.",
+                },
+                {
+                    "type": "assess",
+                    "target_concepts": concepts,
+                    "can_skip": False,
+                    "max_turns": 2,
+                    "goal": "Use recall and quick checks to verify the learner can retrieve the idea unaided.",
+                },
+            ]
+
         return [
             {
                 "type": "motivate",
@@ -544,10 +635,10 @@ Generate 2-4 learning objectives that cover the key concepts, ordered by prerequ
             },
         ]
     
-    def _create_fallback_objectives(self, concepts: list[str]) -> list[dict]:
+    def _create_fallback_objectives(self, concepts: list[str], mode: str = "learn") -> list[dict]:
         """Create multiple fallback objectives by chunking available concepts."""
         if not concepts:
-            return [self._create_single_fallback("obj_01_fallback", ["general"], [])]
+            return [self._create_single_fallback("obj_01_fallback", ["general"], [], mode=mode)]
 
         # Chunk concepts into groups of 2 primary + up to 2 support
         objectives = []
@@ -562,7 +653,7 @@ Generate 2-4 learning objectives that cover the key concepts, ordered by prerequ
 
             obj = self._create_single_fallback(
                 f"obj_{obj_num:02d}_fallback",
-                primary, support, prereq,
+                primary, support, prereq, mode=mode,
             )
             objectives.append(obj)
             prev_primary = primary
@@ -572,16 +663,16 @@ Generate 2-4 learning objectives that cover the key concepts, ordered by prerequ
             if obj_num > 4:  # cap at 4 objectives
                 break
 
-        return objectives if objectives else [self._create_single_fallback("obj_01_fallback", concepts[:2], [])]
+        return objectives if objectives else [self._create_single_fallback("obj_01_fallback", concepts[:2], [], mode=mode)]
 
-    def _create_fallback_objective(self, concepts: list[str]) -> dict:
+    def _create_fallback_objective(self, concepts: list[str], mode: str = "learn") -> dict:
         """Create a single fallback objective for legacy call sites."""
         primary = concepts[:2] if concepts else ["general"]
         support = concepts[2:4] if len(concepts) > 2 else []
-        return self._create_single_fallback("obj_01_fallback", primary, support)
+        return self._create_single_fallback("obj_01_fallback", primary, support, mode=mode)
 
     def _create_single_fallback(
-        self, obj_id: str, primary: list[str], support: list[str], prereq: list[str] = None,
+        self, obj_id: str, primary: list[str], support: list[str], prereq: list[str] = None, mode: str = "learn",
     ) -> dict:
         """Create a single fallback objective."""
         title_concept = primary[0].replace("_", " ").title() if primary else "Core Concepts"
@@ -599,5 +690,5 @@ Generate 2-4 learning objectives that cover the key concepts, ordered by prerequ
                 "min_mastery": 0.6,
             },
             "estimated_turns": 5,
-            "step_roadmap": self._create_default_roadmap(primary),
+            "step_roadmap": self._create_default_roadmap(primary, mode=mode),
         }

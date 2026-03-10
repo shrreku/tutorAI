@@ -54,7 +54,7 @@ VITE_API_BASE_URL=/api/v1 VITE_API_PROXY_TARGET=http://localhost:8000 npm run de
 ### 4. Hosted split deployment
 
 - Frontend build-time env: `VITE_API_BASE_URL=https://api.example.com/api/v1`
-- Backend env: `DATABASE_URL`, `LLM_API_KEY` or BYOK-only config, `REDIS_URL` when queue mode is enabled
+- Backend env: `DATABASE_URL`, `LLM_API_KEY`, `LLM_API_BASE_URL`, `ADMIN_EXTERNAL_ID`, `ADMIN_BOOTSTRAP_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD`, `REDIS_URL` when queue mode is enabled
 - Worker env: same backend storage/database/queue settings
 
 ## API Contract
@@ -76,12 +76,19 @@ Deprecated legacy routes intentionally return `410 Gone`:
 
 ## BYOK Policy
 
-StudyAgent supports optional BYOK headers on tutoring and notebook-session creation:
+StudyAgent supports optional BYOK headers on live tutoring and notebook-session creation:
 
 - `X-LLM-Api-Key`
 - `X-LLM-Api-Base-Url`
 
-If BYOK is omitted, the server uses `LLM_API_KEY` when configured. Keys are never persisted, logged, or traced.
+If BYOK is omitted, the server uses `LLM_API_KEY` when configured. Uploads and queued preparation always use platform-managed credentials, not BYOK headers. Keys are never persisted, logged, or traced.
+
+## Credits Policy
+
+- Hosted live tutoring with BYOK bypasses platform billing.
+- Hosted live tutoring without BYOK, uploads, and queued preparation consume platform credits when `CREDITS_ENABLED=true`.
+- New accounts receive a signup research grant.
+- Admins can run the monthly research grant refresh from the admin dashboard or `POST /api/v1/billing/admin/monthly-grant`.
 
 ## Quality Bar
 

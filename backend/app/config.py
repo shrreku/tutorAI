@@ -61,7 +61,11 @@ class Settings(BaseSettings):
     AUTH_TOKEN_EXPIRE_MINUTES: int = 1440
     AUTH_SECRET_MIN_LENGTH: int = 32
     AUTH_ENFORCE_STRONG_SECRET: bool = True
+    ADMIN_EXTERNAL_ID: str = ""
     ADMIN_EXTERNAL_IDS: str = ""
+    ADMIN_BOOTSTRAP_EMAIL: str = ""
+    ADMIN_BOOTSTRAP_PASSWORD: str = ""
+    ADMIN_BOOTSTRAP_DISPLAY_NAME: str = "StudyAgent Admin"
     CORS_ALLOWED_ORIGIN: str = ""
     CORS_ALLOWED_ORIGINS: str = ""
     
@@ -110,6 +114,16 @@ class Settings(BaseSettings):
     BYOK_ENABLED: bool = False
     BYOK_ALLOW_PRIVATE_BASE_URLS: bool = False
     BYOK_REQUIRE_HTTPS: bool = True
+    ASYNC_BYOK_ESCROW_ENABLED: bool = False
+    ASYNC_BYOK_ESCROW_BACKEND: str = "local"
+    ASYNC_BYOK_ESCROW_TTL_MINUTES: int = 120
+    ASYNC_BYOK_ESCROW_HARD_MAX_MINUTES: int = 1440
+    ASYNC_BYOK_ESCROW_RETENTION_MINUTES: int = 1440
+    ASYNC_BYOK_LOCAL_KEK: str = ""
+    ASYNC_BYOK_VAULT_URL: str = ""
+    ASYNC_BYOK_VAULT_TOKEN: str = ""
+    ASYNC_BYOK_VAULT_TRANSIT_KEY_NAME: str = "studyagent-async-byok"
+    ASYNC_BYOK_VAULT_TIMEOUT_SECONDS: int = 10
 
     # Public auth endpoint abuse controls
     AUTH_RATE_LIMIT_REQUESTS_PER_MINUTE: int = 20
@@ -145,6 +159,10 @@ class Settings(BaseSettings):
     CREDITS_MONTHLY_LIMIT: int = 100000       # hard monthly cap per user
     CREDITS_SOFT_LIMIT_PCT: float = 0.8       # warn at 80% of monthly limit
     CREDITS_TURN_MAX_COST: int = 5000         # reject turns estimated above this
+    ADMIN_CREDIT_GRANT_MAX: int = 250000
+    CREDITS_INGESTION_BASE_ESTIMATE: int = 500
+    CREDITS_INGESTION_PER_MB: int = 250
+    CREDITS_INGESTION_PDF_SURCHARGE: int = 250
     
     model_config = {
         "env_file": ".env",

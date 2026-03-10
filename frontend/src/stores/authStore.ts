@@ -10,6 +10,7 @@ export interface AuthUser {
   email: string | null;
   display_name: string | null;
   consent_training_global: boolean;
+  is_admin: boolean;
 }
 
 export interface AuthState {

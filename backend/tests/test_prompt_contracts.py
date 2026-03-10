@@ -41,6 +41,20 @@ def test_policy_prompt_mentions_student_intent_controls():
     assert "advance_objective" in normalized
 
 
+def test_policy_prompt_mentions_session_mode_contract():
+    normalized = POLICY_SYSTEM_PROMPT.lower()
+    assert "session mode contract" in normalized
+    assert "practice" in normalized
+    assert "revision" in normalized
+
+
+def test_tutor_prompt_mentions_session_mode_contract():
+    normalized = TUTOR_SYSTEM_PROMPT.lower()
+    assert "session mode contract" in normalized
+    assert "doubt" in normalized
+    assert "learn" in normalized
+
+
 def test_evaluator_prompt_mentions_readiness_contract_fields():
     normalized = EVALUATOR_SYSTEM_PROMPT.lower()
     assert "ready_to_advance" in normalized

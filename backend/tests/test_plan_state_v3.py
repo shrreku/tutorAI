@@ -90,11 +90,41 @@ class _DbStub:
 
 
 class _CurriculumStub:
-    async def generate_plan(self, resource_id, topic=None, selected_topics=None):
+    async def generate_plan(self, resource_id, topic=None, selected_topics=None, mode=None):
         return {
             "active_topic": topic,
+            "mode": mode,
             "objective_queue": [_objective_fixture()],
         }
+
+
+class _CurriculumCountingStub:
+    def __init__(self):
+        self.calls = 0
+
+    async def generate_plan(self, resource_id, topic=None, selected_topics=None, mode=None):
+        self.calls += 1
+        return {
+            "active_topic": topic,
+            "mode": mode,
+            "objective_queue": [_objective_fixture()],
+        }
+
+
+class _ScalarListResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def all(self):
+        return list(self._rows)
+
+
+class _ExecuteResult:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def scalars(self):
+        return _ScalarListResult(self._rows)
 
 
 def test_session_service_writes_new_sessions_as_v3(monkeypatch):
@@ -119,6 +149,7 @@ def test_session_service_writes_new_sessions_as_v3(monkeypatch):
     session = asyncio.run(service.create_session(resource_id=uuid.uuid4()))
 
     assert session.plan_state["version"] == 3
+    assert session.plan_state["mode"] == "learn"
 
 
 def test_session_service_retires_legacy_active_session(monkeypatch):
@@ -193,3 +224,76 @@ def test_session_service_can_force_new_session_without_resuming(monkeypatch):
 
     assert session is not active_session
     assert session.plan_state["version"] == 3
+
+
+def test_get_active_session_uses_newest_when_duplicates_exist():
+    newest = SimpleNamespace(id=uuid.uuid4(), status="active")
+    older = SimpleNamespace(id=uuid.uuid4(), status="active")
+
+    class _DbExecuteStub:
+        async def execute(self, _query):
+            return _ExecuteResult([newest, older])
+
+    service = SessionService(_DbExecuteStub(), _CurriculumStub())
+    session = asyncio.run(service._get_active_session(uuid.uuid4(), uuid.uuid4()))
+
+    assert session is newest
+
+
+def test_session_service_bootstraps_first_step_from_mode_contract(monkeypatch):
+    async def _get_resource(self, resource_id):
+        return SimpleNamespace(id=resource_id, topic="heat", status="ready")
+
+    async def _get_or_create_default_user(self):
+        return SimpleNamespace(id=uuid.uuid4())
+
+    async def _get_active_session(self, user_id, resource_id):
+        return None
+
+    async def _get_concepts(self, resource_id):
+        return ["conduction"]
+
+    monkeypatch.setattr(SessionService, "_get_resource", _get_resource)
+    monkeypatch.setattr(SessionService, "_get_or_create_default_user", _get_or_create_default_user)
+    monkeypatch.setattr(SessionService, "_get_active_session", _get_active_session)
+    monkeypatch.setattr(SessionService, "_get_concepts", _get_concepts)
+
+    service = SessionService(_DbStub(), _CurriculumStub())
+    session = asyncio.run(
+        service.create_session(
+            resource_id=uuid.uuid4(),
+            mode="learn",
+        )
+    )
+
+    roadmap = session.plan_state["objective_queue"][0]["step_roadmap"]
+    assert roadmap[0]["type"] == "motivate"
+    assert session.plan_state["current_step"] == "motivate"
+    assert session.plan_state["step_status"] == {"0": "active", "1": "upcoming"}
+
+
+def test_session_service_fails_early_when_ready_resource_has_no_concepts(monkeypatch):
+    async def _get_resource(self, resource_id):
+        return SimpleNamespace(id=resource_id, topic="heat", status="ready")
+
+    async def _get_or_create_default_user(self):
+        return SimpleNamespace(id=uuid.uuid4())
+
+    async def _get_active_session(self, user_id, resource_id):
+        return None
+
+    async def _get_concepts(self, resource_id):
+        return []
+
+    monkeypatch.setattr(SessionService, "_get_resource", _get_resource)
+    monkeypatch.setattr(SessionService, "_get_or_create_default_user", _get_or_create_default_user)
+    monkeypatch.setattr(SessionService, "_get_active_session", _get_active_session)
+    monkeypatch.setattr(SessionService, "_get_concepts", _get_concepts)
+
+    curriculum = _CurriculumCountingStub()
+    service = SessionService(_DbStub(), curriculum)
+
+    with pytest.raises(ValueError, match="has no admitted concepts yet"):
+        asyncio.run(service.create_session(resource_id=uuid.uuid4()))
+
+    assert curriculum.calls == 0

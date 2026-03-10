@@ -4,23 +4,33 @@ from uuid import uuid4
 
 import pytest
 
-from app.api.v1.notebooks import (
-    SUPPORTED_ARTIFACT_TYPES,
-    _build_artifact_payload,
-)
+from app.api.v1.notebooks import SUPPORTED_ARTIFACT_TYPES
 from app.schemas.api import NotebookProgressResponse
+from app.services.notebook_artifacts import NotebookArtifactService
 
 
 def _sample_sessions():
     return [
         SimpleNamespace(
             id=uuid4(),
-            plan_state={"active_topic": "Thermodynamics"},
+            status="active",
+            plan_state={
+                "active_topic": "Thermodynamics",
+                "mode": "learn",
+                "session_overview": "Studied entropy and enthalpy tradeoffs.",
+                "focus_concepts": ["entropy", "enthalpy"],
+            },
             mastery={"entropy": 0.32, "enthalpy": 0.61},
         ),
         SimpleNamespace(
             id=uuid4(),
-            plan_state={"active_topic": "Kinematics"},
+            status="completed",
+            plan_state={
+                "active_topic": "Kinematics",
+                "mode": "practice",
+                "session_overview": "Reviewed velocity using simple motion questions.",
+                "focus_concepts": ["velocity"],
+            },
             mastery={"velocity": 0.45},
         ),
     ]
@@ -47,12 +57,15 @@ def _sample_progress():
 @pytest.mark.parametrize("artifact_type", sorted(SUPPORTED_ARTIFACT_TYPES))
 def test_build_artifact_payload_supported_types(artifact_type: str):
     sessions = _sample_sessions()
+    service = NotebookArtifactService()
     payload = asyncio.run(
-        _build_artifact_payload(
+        service.generate_payload(
             artifact_type=artifact_type,
+            notebook=SimpleNamespace(title="Physics Notebook", goal="Prepare for exam"),
             sessions=sessions,
             turns_by_session=_sample_turns(sessions),
             progress=_sample_progress(),
+            source_resource_names=["thermo.pdf", "kinematics.md"],
             options={"difficulty": "medium"},
         )
     )
@@ -64,13 +77,16 @@ def test_build_artifact_payload_supported_types(artifact_type: str):
 
 
 def test_build_artifact_payload_rejects_unsupported_type():
+    service = NotebookArtifactService()
     with pytest.raises(ValueError, match="Unsupported artifact_type"):
         asyncio.run(
-            _build_artifact_payload(
+            service.generate_payload(
                 artifact_type="mind_map",
+                notebook=SimpleNamespace(title="Physics Notebook", goal="Prepare for exam"),
                 sessions=_sample_sessions(),
                 turns_by_session={},
                 progress=_sample_progress(),
+                source_resource_names=["thermo.pdf"],
                 options={},
             )
         )

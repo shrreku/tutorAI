@@ -17,6 +17,7 @@ from app.models.session import UserProfile, UserSession, TutorTurn
 from app.models.ingestion import IngestionJob
 from app.models.feedback import SessionFeedbackEntry
 from app.models.auth import ApiKey
+from app.models.async_byok import AsyncByokEscrow
 from app.models.credits import CreditAccount, CreditGrant, CreditLedgerEntry, ModelMultiplier
 from app.models.notebook import (
     Notebook,
@@ -49,6 +50,7 @@ __all__ = [
     "IngestionJob",
     "SessionFeedbackEntry",
     "ApiKey",
+    "AsyncByokEscrow",
     "CreditAccount",
     "CreditGrant",
     "CreditLedgerEntry",

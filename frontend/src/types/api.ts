@@ -80,6 +80,27 @@ export interface IngestionStatus {
   error_message: string | null;
   started_at: string | null;
   completed_at: string | null;
+  billing?: IngestionBillingStatus | null;
+  async_byok?: IngestionAsyncByokStatus | null;
+}
+
+export interface IngestionBillingStatus {
+  uses_platform_credits: boolean;
+  estimated_credits: number;
+  reserved_credits: number;
+  actual_credits?: number | null;
+  status: string;
+  release_reason?: string | null;
+  file_size_bytes: number;
+}
+
+export interface IngestionAsyncByokStatus {
+  enabled: boolean;
+  escrow_id?: string | null;
+  provider_name?: string | null;
+  status: string;
+  expires_at?: string | null;
+  revoked_at?: string | null;
 }
 
 export interface KnowledgeBaseConcept {
@@ -288,12 +309,108 @@ export interface NotebookArtifactGenerateRequest {
 export interface UserSettings {
   consent_training_global: boolean;
   consent_preference_set: boolean;
+  is_admin: boolean;
+  async_byok_escrow_enabled: boolean;
+  async_byok_escrow_backend?: string | null;
+  async_byok_escrow_ttl_minutes: number;
   byok_api_key_set?: boolean;
   byok_api_base_url?: string;
 }
 
 export interface UserSettingsUpdateRequest {
   consent_training_global?: boolean;
+}
+
+export interface AdminUserSummary {
+  id: string;
+  email: string | null;
+  display_name: string | null;
+  external_id: string | null;
+  created_at: string;
+  balance: number;
+  lifetime_granted: number;
+  lifetime_used: number;
+  is_admin: boolean;
+}
+
+export interface AsyncByokEscrow {
+  id: string;
+  purpose_type: string;
+  purpose_id: string;
+  scope_type: string;
+  scope_key: string;
+  provider_name?: string | null;
+  status: string;
+  expires_at: string;
+  hard_delete_after: string;
+  access_count: number;
+  last_accessed_at?: string | null;
+  revoked_at?: string | null;
+  deleted_at?: string | null;
+  deletion_reason?: string | null;
+}
+
+export interface AdminBillingOverview {
+  configured_admin_external_id: string | null;
+  credits_enabled: boolean;
+  default_monthly_grant: number;
+  current_grant_period: string;
+  users: AdminUserSummary[];
+}
+
+export interface AdminGrantRequest {
+  user_id: string;
+  amount: number;
+  source: string;
+  memo: string;
+}
+
+export interface AdminGrantResponse {
+  grant_id: string;
+  user_id: string;
+  amount: number;
+  new_balance: number;
+}
+
+export interface CreditBalance {
+  credits_enabled: boolean;
+  balance: number;
+  lifetime_granted: number;
+  lifetime_used: number;
+  plan_tier: string;
+  daily_limit: number;
+  monthly_limit: number;
+  soft_limit_pct: number;
+  default_monthly_grant: number;
+}
+
+export interface CreditLedgerEntry {
+  id: string;
+  entry_type: string;
+  delta: number;
+  balance_after: number;
+  reference_type: string | null;
+  reference_id: string | null;
+  created_at: string;
+}
+
+export interface CreditUsageHistory {
+  credits_enabled: boolean;
+  entries: CreditLedgerEntry[];
+}
+
+export interface AdminMonthlyGrantRequest {
+  amount?: number;
+  period_key?: string;
+  memo_prefix?: string;
+}
+
+export interface AdminMonthlyGrantResponse {
+  period_key: string;
+  amount: number;
+  granted_user_count: number;
+  skipped_user_count: number;
+  granted_user_ids: string[];
 }
 
 // Tutor types

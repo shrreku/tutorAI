@@ -1,17 +1,22 @@
+import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_auth, require_admin
+from app.api.deps import require_auth, require_admin, get_configured_admin_external_id, is_admin_user
 from app.config import settings
 from app.db.database import get_db
 from app.db.repositories.credits_repo import CreditAccountRepository
+from app.models.credits import CreditAccount
 from app.models.session import UserProfile
 from app.schemas.api import CreditEstimateRequest, CreditEstimateResponse
+from app.services.credits.meter import CreditMeter
 
 router = APIRouter(prefix="/billing", tags=["billing"])
+logger = logging.getLogger(__name__)
 
 
 # ---- Additional schemas for billing endpoints ----
@@ -25,6 +30,7 @@ class BalanceResponse(BaseModel):
     daily_limit: int = 0
     monthly_limit: int = 0
     soft_limit_pct: float = 0.8
+    default_monthly_grant: int = 0
 
 
 class LedgerEntryResponse(BaseModel):
@@ -44,9 +50,9 @@ class UsageHistoryResponse(BaseModel):
 
 class AdminGrantRequest(BaseModel):
     user_id: str
-    amount: int = Field(gt=0)
-    source: str = "admin_topup"
-    memo: Optional[str] = None
+    amount: int = Field(gt=0, le=settings.ADMIN_CREDIT_GRANT_MAX)
+    source: str = Field(default="admin_topup", pattern=r"^[a-z_]{3,32}$")
+    memo: str = Field(min_length=3, max_length=280)
 
 
 class AdminGrantResponse(BaseModel):
@@ -54,6 +60,40 @@ class AdminGrantResponse(BaseModel):
     user_id: str
     amount: int
     new_balance: int
+
+
+class AdminUserSummaryResponse(BaseModel):
+    id: str
+    email: Optional[str] = None
+    display_name: Optional[str] = None
+    external_id: Optional[str] = None
+    created_at: str
+    balance: int = 0
+    lifetime_granted: int = 0
+    lifetime_used: int = 0
+    is_admin: bool = False
+
+
+class AdminOverviewResponse(BaseModel):
+    configured_admin_external_id: Optional[str] = None
+    credits_enabled: bool
+    default_monthly_grant: int = 0
+    current_grant_period: str
+    users: list[AdminUserSummaryResponse] = []
+
+
+class AdminMonthlyGrantRequest(BaseModel):
+    amount: int = Field(default=settings.CREDITS_DEFAULT_MONTHLY_GRANT, gt=0, le=settings.ADMIN_CREDIT_GRANT_MAX)
+    period_key: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}$")
+    memo_prefix: str = Field(default="Monthly research grant", min_length=3, max_length=120)
+
+
+class AdminMonthlyGrantResponse(BaseModel):
+    period_key: str
+    amount: int
+    granted_user_count: int
+    skipped_user_count: int
+    granted_user_ids: list[str] = []
 
 
 # ---- Endpoints ----
@@ -100,6 +140,7 @@ async def get_balance(
             daily_limit=settings.CREDITS_DAILY_LIMIT,
             monthly_limit=settings.CREDITS_MONTHLY_LIMIT,
             soft_limit_pct=settings.CREDITS_SOFT_LIMIT_PCT,
+            default_monthly_grant=settings.CREDITS_DEFAULT_MONTHLY_GRANT,
         )
 
     return BalanceResponse(
@@ -111,6 +152,7 @@ async def get_balance(
         daily_limit=settings.CREDITS_DAILY_LIMIT,
         monthly_limit=settings.CREDITS_MONTHLY_LIMIT,
         soft_limit_pct=settings.CREDITS_SOFT_LIMIT_PCT,
+        default_monthly_grant=settings.CREDITS_DEFAULT_MONTHLY_GRANT,
     )
 
 
@@ -144,6 +186,55 @@ async def get_usage_history(
     )
 
 
+@router.get("/admin/overview", response_model=AdminOverviewResponse)
+async def get_admin_overview(
+    search: str | None = Query(default=None, min_length=1, max_length=120),
+    limit: int = Query(default=25, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(require_admin),
+):
+    """Return a searchable user list for admin credit operations."""
+    del user
+
+    query = (
+        select(UserProfile, CreditAccount)
+        .outerjoin(CreditAccount, CreditAccount.user_id == UserProfile.id)
+        .order_by(UserProfile.created_at.desc())
+        .limit(limit)
+    )
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.where(
+            or_(
+                UserProfile.email.ilike(term),
+                UserProfile.display_name.ilike(term),
+                UserProfile.external_id.ilike(term),
+            )
+        )
+
+    rows = (await db.execute(query)).all()
+    return AdminOverviewResponse(
+        configured_admin_external_id=get_configured_admin_external_id(),
+        credits_enabled=settings.CREDITS_ENABLED,
+        default_monthly_grant=settings.CREDITS_DEFAULT_MONTHLY_GRANT,
+        current_grant_period=CreditMeter.current_grant_period_key(),
+        users=[
+            AdminUserSummaryResponse(
+                id=str(profile.id),
+                email=profile.email,
+                display_name=profile.display_name,
+                external_id=profile.external_id,
+                created_at=profile.created_at.isoformat() if profile.created_at else "",
+                balance=account.balance if account else 0,
+                lifetime_granted=account.lifetime_granted if account else 0,
+                lifetime_used=account.lifetime_used if account else 0,
+                is_admin=is_admin_user(profile),
+            )
+            for profile, account in rows
+        ],
+    )
+
+
 @router.post("/admin/grant", response_model=AdminGrantResponse)
 async def admin_grant(
     request: AdminGrantRequest,
@@ -164,14 +255,76 @@ async def admin_grant(
         amount=request.amount,
         source=request.source,
         memo=request.memo,
+        metadata={
+            "granted_by_external_id": user.external_id,
+            "granted_by_user_id": str(user.id),
+            "target_user_id": request.user_id,
+        },
     )
     await db.commit()
 
     account = await repo.get_account(target_user_id)
+    logger.warning(
+        "Admin credit grant issued by %s to user %s for %s credits",
+        user.external_id,
+        request.user_id,
+        request.amount,
+    )
 
     return AdminGrantResponse(
         grant_id=str(grant.id),
         user_id=request.user_id,
         amount=request.amount,
         new_balance=account.balance if account else 0,
+    )
+
+
+@router.post("/admin/monthly-grant", response_model=AdminMonthlyGrantResponse)
+async def admin_issue_monthly_grant(
+    request: AdminMonthlyGrantRequest,
+    db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(require_admin),
+):
+    """Issue the operator-managed monthly grant once per period for each user."""
+    repo = CreditAccountRepository(db)
+    period_key = request.period_key or CreditMeter.current_grant_period_key()
+    memo = f"{request.memo_prefix} ({period_key})"
+
+    user_rows = await db.execute(select(UserProfile.id).order_by(UserProfile.created_at.asc()))
+    user_ids = list(user_rows.scalars().all())
+
+    granted_user_ids: list[str] = []
+    skipped_user_count = 0
+    for target_user_id in user_ids:
+        if await repo.has_grant(target_user_id, source="monthly_grant", memo=memo):
+            skipped_user_count += 1
+            continue
+
+        await repo.issue_grant(
+            target_user_id,
+            amount=request.amount,
+            source="monthly_grant",
+            memo=memo,
+            metadata={
+                "grant_period": period_key,
+                "granted_by_external_id": user.external_id,
+                "granted_by_user_id": str(user.id),
+            },
+        )
+        granted_user_ids.append(str(target_user_id))
+
+    await db.commit()
+    logger.warning(
+        "Admin monthly grant refresh issued by %s for period %s: granted=%s skipped=%s",
+        user.external_id,
+        period_key,
+        len(granted_user_ids),
+        skipped_user_count,
+    )
+    return AdminMonthlyGrantResponse(
+        period_key=period_key,
+        amount=request.amount,
+        granted_user_count=len(granted_user_ids),
+        skipped_user_count=skipped_user_count,
+        granted_user_ids=granted_user_ids,
     )

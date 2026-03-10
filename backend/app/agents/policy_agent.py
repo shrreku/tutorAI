@@ -65,6 +65,15 @@ You are the PRIMARY decision-maker for progression.
 - Set `planner_guidance` with a short instruction for the tutor (e.g., "Ask a Socratic question about finite additivity" or "Scaffold with a worked example before assessing").
 - Set `student_intent` to one of: engaged, confused, bored, move_on, asking_question, answer_attempt, off_topic, frustrated.
 
+## Session mode contract
+The session has a `session_mode` that must shape your decision-making:
+- `learn`: teach first, then check understanding. Favor motivate, explain, example, summarize before repeated assessment.
+- `doubt`: resolve the student's confusion fast. Favor clarify, explain, probe, summarize. Keep scope narrow and avoid expanding into a long teaching arc.
+- `practice`: attempt first. Favor question, assess, hint, correct. Explanations should mostly follow learner attempts.
+- `revision`: consolidate and test. Favor summarize, compare, assess, correct, reflect. Focus on recall and weak spots rather than first-pass exposition.
+
+If your action does not fit the session mode, revise it before responding.
+
 ## recommended_strategy (which teaching approach the tutor should use)
 - **direct**: Best for *motivate* and *define* steps, or when introducing a brand-new concept. Also good after incorrect answers to re-teach clearly.
 - **socratic**: Best for *explain* and *practice* when mastery is 0.2–0.6. Probes the student's reasoning to deepen understanding.
@@ -215,7 +224,9 @@ class PolicyAgent(BaseAgent[PolicyState, PolicyOrchestratorOutput]):
                 f"  Misconceptions: {ev.get('misconceptions', [])}"
             )
 
-        return f"""{journey_block}
+        return f"""SESSION MODE: {state.session_mode}
+
+    {journey_block}
 
 {obj_block}
 
@@ -372,6 +383,7 @@ Based on all the above, decide the pedagogical_action and progression_decision f
         decision = ProgressionDecision.CONTINUE_STEP
         strategy = "direct"
         msg = state.student_message.lower()
+        session_mode = (state.session_mode or "learn").strip().lower()
 
         # Compute average mastery of focus concepts
         avg_mastery = 0.0
@@ -387,9 +399,35 @@ Based on all the above, decide the pedagogical_action and progression_decision f
             eval_label = state.latest_evaluation.get("correctness_label", "partial")
 
         step = state.current_step
-        reasoning_parts = [f"step={step}", f"avg_mastery={avg_mastery:.2f}", f"eval={eval_label}({eval_score:.1f})"]
+        reasoning_parts = [f"mode={session_mode}", f"step={step}", f"avg_mastery={avg_mastery:.2f}", f"eval={eval_label}({eval_score:.1f})"]
 
-        if step in {"motivate", "activate_prior"}:
+        if session_mode == "doubt":
+            action = PedagogicalAction.CLARIFY if "?" in msg or "confused" in msg else PedagogicalAction.EXPLAIN
+            strategy = "direct"
+            if eval_label == "correct" or avg_mastery >= 0.55:
+                decision = ProgressionDecision.ADVANCE_STEP
+                reasoning_parts.append("clarification_resolved")
+        elif session_mode == "practice":
+            action = PedagogicalAction.QUESTION
+            strategy = "assessment" if step in {"assess", "practice", "probe"} else "scaffolded"
+            if eval_label in {"incorrect", "partial"} and eval_score < 0.5:
+                action = PedagogicalAction.HINT
+                decision = ProgressionDecision.CONTINUE_STEP
+                reasoning_parts.append("keep_attempting_with_support")
+            elif eval_label == "correct" or avg_mastery >= 0.55:
+                decision = ProgressionDecision.ADVANCE_STEP
+                reasoning_parts.append("practice_checkpoint_met")
+        elif session_mode == "revision":
+            action = PedagogicalAction.SUMMARIZE if step in {"summarize", "connect", "compare_contrast"} else PedagogicalAction.ASSESS
+            strategy = "review" if action == PedagogicalAction.SUMMARIZE else "assessment"
+            if eval_label == "incorrect":
+                action = PedagogicalAction.CORRECT
+                strategy = "review"
+                reasoning_parts.append("repair_before_progression")
+            elif eval_label == "correct" or avg_mastery >= 0.6:
+                decision = ProgressionDecision.ADVANCE_STEP
+                reasoning_parts.append("revision_checkpoint_met")
+        elif step in {"motivate", "activate_prior"}:
             action = PedagogicalAction.MOTIVATE if step == "motivate" else PedagogicalAction.QUESTION
             strategy = "direct" if step == "motivate" else "socratic"
             if eval_label in ("correct", "partial") and eval_score >= 0.6:
