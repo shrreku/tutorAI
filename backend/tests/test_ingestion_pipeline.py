@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 
 import app.services.ingestion.pipeline as pipeline_module
@@ -118,3 +119,44 @@ def test_ingestion_pipeline_merge_job_metrics_preserves_dispatch_state():
     assert merged["async_byok"]["status"] == "disabled"
     assert merged["status"] == "success"
     assert merged["stages"]["persist"]["chunks"] == 2
+
+
+def test_run_parse_stage_materializes_s3_uri_for_docling(monkeypatch):
+    seen = {}
+
+    class _Storage:
+        async def open_file(self, file_uri):
+            assert file_uri == "s3://studyagent-prod/uploads/fixture.pdf"
+            return b"pdf-bytes"
+
+    class _Adapter:
+        async def convert(self, source):
+            path = Path(source)
+            seen["source"] = source
+            seen["exists_during_convert"] = path.exists()
+            seen["bytes"] = path.read_bytes()
+            return SimpleNamespace(
+                sections=[{"heading": "Intro", "text": "Stored remotely"}],
+                status="success",
+                warnings=[],
+                errors=[],
+                metadata={},
+            )
+
+    pipeline = object.__new__(pipeline_module.IngestionPipeline)
+    pipeline.storage = _Storage()
+    pipeline.docling_adapter = _Adapter()
+
+    resource = SimpleNamespace(
+        id=uuid.uuid4(),
+        filename="fixture.pdf",
+        file_path_or_uri="s3://studyagent-prod/uploads/fixture.pdf",
+    )
+
+    result = asyncio.run(pipeline._run_parse_stage(resource))
+
+    assert result.sections
+    assert seen["exists_during_convert"] is True
+    assert seen["bytes"] == b"pdf-bytes"
+    assert seen["source"].endswith(".pdf")
+    assert not Path(seen["source"]).exists()

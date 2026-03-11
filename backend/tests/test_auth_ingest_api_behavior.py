@@ -20,6 +20,49 @@ class _DummyDb:
         return None
 
 
+def test_estimate_retry_credits_uses_cached_file_size_for_s3_uri():
+    class _Meter:
+        def estimate_ingestion_credits(self, **kwargs):
+            assert kwargs["file_size_bytes"] == 4096
+            assert kwargs["filename"] == "notes.pdf"
+            assert kwargs["processing_profile"] == "core_only"
+            return 321
+
+    resource = SimpleNamespace(
+        filename="notes.pdf",
+        file_path_or_uri="s3://studyagent-prod/uploads/notes.pdf",
+        processing_profile="core_only",
+    )
+    latest_job = SimpleNamespace(metrics={"billing": {"file_size_bytes": 4096}})
+
+    estimated = ingest_module._estimate_retry_credits(resource, latest_job, _Meter())
+
+    assert estimated == 321
+
+
+def test_estimate_retry_credits_uses_local_stat_when_path_is_local(tmp_path):
+    file_path = tmp_path / 'notes.pdf'
+    file_path.write_bytes(b'a' * 12)
+
+    captured = {}
+
+    class _Meter:
+        def estimate_ingestion_credits(self, **kwargs):
+            captured.update(kwargs)
+            return 111
+
+    resource = SimpleNamespace(
+        filename='notes.pdf',
+        file_path_or_uri=str(file_path),
+        processing_profile='core_only',
+    )
+
+    estimated = ingest_module._estimate_retry_credits(resource, None, _Meter())
+
+    assert estimated == 111
+    assert captured['file_size_bytes'] == 12
+
+
 def test_register_rejects_existing_email(monkeypatch):
     class _Repo:
         def __init__(self, _db):

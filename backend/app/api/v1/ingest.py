@@ -3,6 +3,7 @@ from pathlib import Path
 from uuid import UUID
 from datetime import datetime, timezone
 import uuid
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
@@ -93,7 +94,9 @@ def _estimate_retry_credits(resource: Resource, latest_job: IngestionJob | None,
         return int(latest_billing["estimated_credits"])
 
     file_size_bytes = 0
-    if resource.file_path_or_uri:
+    if isinstance(latest_billing, dict) and latest_billing.get("file_size_bytes"):
+        file_size_bytes = int(latest_billing["file_size_bytes"])
+    elif resource.file_path_or_uri and urlparse(resource.file_path_or_uri).scheme in {"", "file"}:
         try:
             file_size_bytes = Path(resource.file_path_or_uri).stat().st_size
         except OSError:

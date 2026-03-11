@@ -5,10 +5,13 @@ and persisted for retrieval. Heavier enrichment and knowledge preparation are
 deferred to later job families.
 """
 import logging
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -300,7 +303,31 @@ class IngestionPipeline:
         if not resource.file_path_or_uri:
             raise ValueError(f"Resource {resource.id} has no source path/URI")
 
-        conversion = await self.docling_adapter.convert(resource.file_path_or_uri)
+        source = resource.file_path_or_uri
+        temp_path: Optional[Path] = None
+
+        try:
+            parsed = urlparse(source)
+            if parsed.scheme == "s3":
+                file_bytes = await self.storage.open_file(source)
+                suffix = Path(parsed.path).suffix or Path(resource.filename or "").suffix
+                with tempfile.NamedTemporaryFile(
+                    prefix="studyagent-ingest-",
+                    suffix=suffix,
+                    delete=False,
+                ) as handle:
+                    handle.write(file_bytes)
+                    temp_path = Path(handle.name)
+                source = str(temp_path)
+
+            conversion = await self.docling_adapter.convert(source)
+        finally:
+            if temp_path is not None:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.warning("Failed to clean up temp ingestion file %s: %s", temp_path, exc)
+
         if not conversion.sections:
             raise ValueError("Docling conversion produced no extractable sections")
         return conversion

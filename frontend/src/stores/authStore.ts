@@ -20,6 +20,8 @@ export interface AuthState {
 
 const TOKEN_KEY = 'auth_token';
 const USER_KEY  = 'auth_user';
+const BYOK_API_KEY = 'byok_api_key';
+const BYOK_API_BASE_URL = 'byok_api_base_url';
 
 // ---------------------------------------------------------------------------
 // Read persisted state
@@ -50,6 +52,8 @@ export function persistAuth(token: string, user: AuthUser): void {
 export function clearAuth(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(BYOK_API_KEY);
+  localStorage.removeItem(BYOK_API_BASE_URL);
   window.dispatchEvent(new Event('auth-change'));
 }
 

@@ -8,6 +8,7 @@ Respects the following settings:
   - MINIO_ENDPOINT (if using MinIO / R2)
   - MINIO_ACCESS_KEY / MINIO_SECRET_KEY
 """
+import asyncio
 import logging
 import uuid
 from pathlib import Path
@@ -48,7 +49,12 @@ class S3StorageProvider(StorageProvider):
 
         self._client = boto3.client(
             "s3",
-            config=BotoConfig(signature_version="s3v4"),
+            config=BotoConfig(
+                signature_version="s3v4",
+                connect_timeout=5,
+                read_timeout=30,
+                retries={"max_attempts": 3, "mode": "standard"},
+            ),
             **kwargs,
         )
 
@@ -70,24 +76,41 @@ class S3StorageProvider(StorageProvider):
 
     async def save_file(self, file_bytes: bytes, filename: str) -> str:
         key = self._key(filename)
-        self._client.put_object(Bucket=self.bucket_name, Key=key, Body=file_bytes)
+        await asyncio.to_thread(
+            self._client.put_object,
+            Bucket=self.bucket_name,
+            Key=key,
+            Body=file_bytes,
+        )
         uri = f"s3://{self.bucket_name}/{key}"
         logger.debug(f"Saved {len(file_bytes)} bytes → {uri}")
         return uri
 
     async def open_file(self, file_uri: str) -> bytes:
         bucket, key = self._parse_uri(file_uri)
-        response = self._client.get_object(Bucket=bucket, Key=key)
-        return response["Body"].read()
+        response = await asyncio.to_thread(
+            self._client.get_object,
+            Bucket=bucket,
+            Key=key,
+        )
+        return await asyncio.to_thread(response["Body"].read)
 
     async def delete_file(self, file_uri: str) -> None:
         bucket, key = self._parse_uri(file_uri)
-        self._client.delete_object(Bucket=bucket, Key=key)
+        await asyncio.to_thread(
+            self._client.delete_object,
+            Bucket=bucket,
+            Key=key,
+        )
 
     async def file_exists(self, file_uri: str) -> bool:
         bucket, key = self._parse_uri(file_uri)
         try:
-            self._client.head_object(Bucket=bucket, Key=key)
+            await asyncio.to_thread(
+                self._client.head_object,
+                Bucket=bucket,
+                Key=key,
+            )
             return True
         except ClientError:
             return False

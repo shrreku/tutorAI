@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from './client'
+import { clearAuth } from '../stores/authStore'
 
 afterEach(() => {
   localStorage.clear()
@@ -92,5 +93,19 @@ describe('apiClient', () => {
         message: 'Nope',
       }),
     )
+  })
+
+  it('clearAuth removes persisted byok credentials', () => {
+    localStorage.setItem('auth_token', 'secret-token')
+    localStorage.setItem('auth_user', JSON.stringify({ id: '1' }))
+    localStorage.setItem('byok_api_key', 'byok-key')
+    localStorage.setItem('byok_api_base_url', 'https://example.com/v1')
+
+    clearAuth()
+
+    expect(localStorage.getItem('auth_token')).toBeNull()
+    expect(localStorage.getItem('auth_user')).toBeNull()
+    expect(localStorage.getItem('byok_api_key')).toBeNull()
+    expect(localStorage.getItem('byok_api_base_url')).toBeNull()
   })
 })
