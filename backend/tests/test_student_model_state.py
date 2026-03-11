@@ -2,8 +2,6 @@ from datetime import datetime, timezone
 
 from app.services.student_state import (
     MIN_UNCERTAINTY,
-    DEFAULT_MASTERY_MEAN,
-    DEFAULT_MASTERY_UNCERTAINTY,
     build_student_concept_state,
     apply_uncertainty_aware_updates,
 )

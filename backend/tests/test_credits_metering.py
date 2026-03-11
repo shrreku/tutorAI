@@ -187,11 +187,10 @@ class TestModelImports:
 
     def test_models_init_exports(self):
         from app.models import (
-            ModelPricing,
-            TaskModelAssignment,
             BillingOperation,
             BillingUsageLine,
-            ModelTaskHealth,
+            ModelPricing,
+            TaskModelAssignment,
         )
         assert ModelPricing is not None
 
