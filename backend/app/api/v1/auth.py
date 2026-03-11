@@ -73,6 +73,11 @@ class RequestAccessResponse(BaseModel):
     message: str
 
 
+class AuthConfigResponse(BaseModel):
+    alpha_access_enabled: bool
+    app_base_url: str
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
@@ -95,6 +100,15 @@ class AuthUserInfo(BaseModel):
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+
+@router.get("/config", response_model=AuthConfigResponse, status_code=status.HTTP_200_OK)
+async def auth_config():
+    """Return public auth/onboarding configuration for the frontend."""
+    return AuthConfigResponse(
+        alpha_access_enabled=settings.ALPHA_ACCESS_ENABLED,
+        app_base_url=settings.APP_BASE_URL,
+    )
 
 
 @router.post("/request-access", response_model=RequestAccessResponse, status_code=status.HTTP_200_OK)

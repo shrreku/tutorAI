@@ -157,18 +157,18 @@ class Settings(BaseSettings):
 
     # Credits system (student research defaults)
     CREDITS_ENABLED: bool = False
-    CREDITS_SIGNUP_GRANT: int = 500              # credits issued at account creation
-    CREDITS_DEFAULT_MONTHLY_GRANT: int = 100000  # monthly top-up grant
+    CREDITS_SIGNUP_GRANT: int = 0              # credits issued at account creation
+    CREDITS_DEFAULT_MONTHLY_GRANT: int = 0  # monthly top-up grant
     CREDITS_INPUT_TOKEN_MULTIPLIER: float = 1.0
     CREDITS_OUTPUT_TOKEN_MULTIPLIER: float = 1.5
     CREDITS_OCR_SURCHARGE: int = 250
     CREDITS_WEB_SEARCH_SURCHARGE: int = 100
 
     # Quota / abuse controls
-    CREDITS_DAILY_LIMIT: int = 20000          # hard daily cap per user
+    CREDITS_DAILY_LIMIT: int = 200000          # hard daily cap per user
     CREDITS_MONTHLY_LIMIT: int = 100000       # hard monthly cap per user
     CREDITS_SOFT_LIMIT_PCT: float = 0.8       # warn at 80% of monthly limit
-    CREDITS_TURN_MAX_COST: int = 5000         # reject turns estimated above this
+    CREDITS_TURN_MAX_COST: int = 50000         # reject turns estimated above this
     ADMIN_CREDIT_GRANT_MAX: int = 250000
     CREDITS_INGESTION_BASE_ESTIMATE: int = 500
     CREDITS_INGESTION_PER_MB: int = 250

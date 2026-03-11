@@ -23,6 +23,8 @@ interface RegisterPayload {
   password: string;
   display_name: string;
   consent_training: boolean;
+  invite_token?: string;
+  promo_code?: string;
 }
 
 interface LoginPayload {
@@ -30,8 +32,24 @@ interface LoginPayload {
   password: string;
 }
 
+interface RequestAccessPayload {
+  email: string;
+  display_name: string;
+  promo_code?: string;
+}
+
 interface UserSettingsResponse {
   is_admin: boolean;
+}
+
+interface AuthConfigResponse {
+  alpha_access_enabled: boolean;
+  app_base_url: string;
+}
+
+interface RequestAccessResponse {
+  status: 'submitted' | 'approved';
+  message: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -44,6 +62,14 @@ async function apiRegister(payload: RegisterPayload): Promise<AuthResponse> {
 
 async function apiLogin(payload: LoginPayload): Promise<AuthResponse> {
   return apiClient.postPublic<AuthResponse>('/auth/login', payload);
+}
+
+async function apiRequestAccess(payload: RequestAccessPayload): Promise<RequestAccessResponse> {
+  return apiClient.postPublic<RequestAccessResponse>('/auth/request-access', payload);
+}
+
+export async function apiGetAuthConfig(): Promise<AuthConfigResponse> {
+  return apiClient.get<AuthConfigResponse>('/auth/config');
 }
 
 async function apiGetUserSettings(): Promise<UserSettingsResponse> {
@@ -131,6 +157,7 @@ export function useAuth() {
     isAuthenticated: !!token,
     register,
     login,
+    requestAccess: apiRequestAccess,
     logout,
   };
 }

@@ -37,7 +37,7 @@ export default function LandingPage() {
             Sign in
           </Link>
           <Link
-            to="/register"
+            to="/request-access"
             className="px-5 py-2.5 text-sm font-medium rounded-lg bg-gold/10 border border-gold/20 text-gold hover:bg-gold/20 hover:border-gold/30 transition-all"
           >
             Get started
@@ -76,7 +76,7 @@ export default function LandingPage() {
           style={{ animationDelay: '0.24s' }}
         >
           <Link
-            to="/register"
+            to="/request-access"
             className="group flex items-center gap-2 px-7 py-3.5 rounded-xl bg-gold text-primary-foreground font-semibold text-sm shadow-lg shadow-gold/20 hover:shadow-xl hover:shadow-gold/30 hover:brightness-110 transition-all duration-300"
           >
             Start learning — free
@@ -185,7 +185,10 @@ export default function LandingPage() {
           </div>
           <div className="flex items-center gap-6 text-sm text-muted-foreground">
             <Link to="/register" className="hover:text-foreground transition-colors">
-              Get started
+              Create account
+            </Link>
+            <Link to="/request-access" className="hover:text-foreground transition-colors">
+              Request access
             </Link>
             <a
               href="https://github.com"

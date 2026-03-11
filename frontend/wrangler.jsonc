@@ -9,6 +9,11 @@
       "pattern": "tutorbook.me",
       "zone_name": "tutorbook.me",
       "custom_domain": true
+    },
+    {
+      "pattern": "www.tutorbook.me",
+      "zone_name": "tutorbook.me",
+      "custom_domain": true
     }
   ],
   "assets": {

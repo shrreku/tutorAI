@@ -5,6 +5,7 @@ import { useAuth } from './hooks/useAuth';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import RequestAccessPage from './pages/RequestAccessPage';
 import HomePage from './pages/HomePage';
 import BillingPage from './pages/BillingPage';
 import SettingsPage from './pages/SettingsPage';
@@ -60,6 +61,7 @@ function App() {
         <Route path="/landing" element={<GuestOnly><LandingPage /></GuestOnly>} />
         <Route path="/login" element={<GuestOnly><LoginPage /></GuestOnly>} />
         <Route path="/register" element={<GuestOnly><RegisterPage /></GuestOnly>} />
+        <Route path="/request-access" element={<GuestOnly><RequestAccessPage /></GuestOnly>} />
 
         {/* ── Authenticated app routes ──────────────── */}
         <Route element={<RequireAuth><MainLayout /></RequireAuth>}>
