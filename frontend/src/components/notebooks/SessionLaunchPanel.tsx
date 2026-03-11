@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  AlertCircle,
   BookOpen,
   CheckCircle2,
   Layers3,
@@ -46,6 +47,7 @@ type LaunchResource = {
   label: string;
   subtitle?: string | null;
   status?: string;
+  studyReady?: boolean;
 };
 
 type SessionLaunchPanelProps = {
@@ -127,6 +129,8 @@ export default function SessionLaunchPanel({
   }, [anchorResourceId, resources, scope, selectedResourceIds]);
 
   const includedResources = resources.filter((resource) => includedResourceIds.includes(resource.id));
+  const blockedResources = includedResources.filter((resource) => resource.studyReady === false);
+  const hasBlockedResources = blockedResources.length > 0;
 
   const handleToggleResource = (resourceId: string) => {
     setSelectedResourceIds((current) => {
@@ -273,8 +277,25 @@ export default function SessionLaunchPanel({
                           {active && <CheckCircle2 className="h-3 w-3" />}
                         </span>
                         <div>
-                          <div className="text-sm font-medium text-foreground">{resource.label}</div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-medium text-foreground">{resource.label}</div>
+                            {resource.studyReady === true && (
+                              <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">
+                                Study-ready
+                              </span>
+                            )}
+                            {resource.studyReady === false && (
+                              <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
+                                Not ready yet
+                              </span>
+                            )}
+                          </div>
                           {resource.subtitle && <p className="mt-1 text-xs text-muted-foreground">{resource.subtitle}</p>}
+                          {resource.studyReady === false && (
+                            <p className="mt-1 text-xs text-amber-300">
+                              This resource finished uploading, but concept extraction is not complete enough for tutoring yet.
+                            </p>
+                          )}
                         </div>
                       </div>
                     </button>
@@ -303,7 +324,10 @@ export default function SessionLaunchPanel({
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {includedResources.slice(0, 4).map((resource) => (
-                  <span key={resource.id} className="rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-foreground">
+                  <span
+                    key={resource.id}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] ${resource.studyReady === false ? 'border-amber-500/20 bg-amber-500/10 text-amber-300' : 'border-border bg-background text-foreground'}`}
+                  >
                     {resource.label}
                   </span>
                 ))}
@@ -314,6 +338,21 @@ export default function SessionLaunchPanel({
                 )}
               </div>
             </div>
+
+            {hasBlockedResources && (
+              <div className="mt-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-300">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  Study readiness required
+                </div>
+                <p className="mt-2 text-sm text-amber-100/90">
+                  Remove resources that are still preparing before starting this session. Tutoring only starts after concept extraction succeeds.
+                </p>
+                <p className="mt-2 text-xs text-amber-200/90">
+                  Blocked: {blockedResources.map((resource) => resource.label).join(', ')}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="mt-4 space-y-3">
@@ -331,7 +370,7 @@ export default function SessionLaunchPanel({
 
             <button
               type="button"
-              disabled={pending || !anchorResourceId || includedResourceIds.length === 0}
+              disabled={pending || !anchorResourceId || includedResourceIds.length === 0 || hasBlockedResources}
               onClick={() => void handleLaunch()}
               className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gold px-4 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-60"
             >

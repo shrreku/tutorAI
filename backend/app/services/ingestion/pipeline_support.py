@@ -213,6 +213,7 @@ async def update_resource_status(
     status: str,
     pipeline_version: str,
     error_message: Optional[str] = None,
+    study_ready: bool = True,
 ) -> None:
     """Update resource status fields for ingestion progress."""
     update_data = {
@@ -222,12 +223,16 @@ async def update_resource_status(
 
     if status == "ready":
         update_data["processed_at"] = datetime.utcnow()
-        update_data["study_ready_at"] = datetime.utcnow()
+        update_data["study_ready_at"] = datetime.utcnow() if study_ready else None
+        update_data["tutoring_ready_at"] = datetime.utcnow() if study_ready else None
         update_data["processing_profile"] = "core_only"
 
         current_resource = await db.get(Resource, resource_id)
         existing_capabilities = current_resource.capabilities_json if current_resource else None
-        update_data["capabilities_json"] = study_ready_capabilities(existing_capabilities)
+        update_data["capabilities_json"] = study_ready_capabilities(
+            existing_capabilities,
+            has_concepts=study_ready,
+        )
 
     if error_message:
         update_data["error_message"] = error_message

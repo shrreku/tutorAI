@@ -29,6 +29,16 @@ import type {
   AdminMonthlyGrantRequest,
   AdminMonthlyGrantResponse,
   AsyncByokEscrow,
+  ModelPricing,
+  TaskAssignment,
+  ModelTaskHealth,
+  TaskModelsResponse,
+  UserModelPreferences,
+  UserModelPreferencesUpdate,
+  OperationHistoryResponse,
+  IngestionEstimateRequest,
+  IngestionEstimateResponse,
+  HealthActionRequest,
 } from '../types/api';
 
 // Query keys
@@ -67,6 +77,16 @@ export const queryKeys = {
     adminOverview: (search?: string) => [...queryKeys.billing.all, 'admin-overview', search] as const,
     balance: () => [...queryKeys.billing.all, 'balance'] as const,
     usage: (limit?: number) => [...queryKeys.billing.all, 'usage', limit] as const,
+    operations: (limit?: number, type?: string) => [...queryKeys.billing.all, 'operations', limit, type] as const,
+  },
+  models: {
+    all: ['models'] as const,
+    catalog: () => ['models', 'catalog'] as const,
+    taskModels: (taskType: string) => ['models', 'tasks', taskType] as const,
+    preferences: () => ['models', 'preferences'] as const,
+    adminPricing: () => ['models', 'admin', 'pricing'] as const,
+    adminAssignments: () => ['models', 'admin', 'assignments'] as const,
+    adminHealth: (modelId?: string) => ['models', 'admin', 'health', modelId] as const,
   },
 };
 
@@ -393,5 +413,95 @@ export function useBillingUsage(limit = 50) {
       apiClient.get<CreditUsageHistory>('/billing/usage', {
         limit: limit.toString(),
       }),
+  });
+}
+
+// ---- Model selection & metering hooks (CM tickets) ----
+
+export function useModelCatalog() {
+  return useQuery({
+    queryKey: queryKeys.models.catalog(),
+    queryFn: () => apiClient.get<ModelPricing[]>('/models/catalog'),
+  });
+}
+
+export function useTaskModels(taskType: string) {
+  return useQuery({
+    queryKey: queryKeys.models.taskModels(taskType),
+    queryFn: () => apiClient.get<TaskModelsResponse>(`/models/tasks/${taskType}`),
+    enabled: !!taskType,
+  });
+}
+
+export function useModelPreferences() {
+  return useQuery({
+    queryKey: queryKeys.models.preferences(),
+    queryFn: () => apiClient.get<UserModelPreferences>('/models/preferences'),
+  });
+}
+
+export function useUpdateModelPreferences() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: UserModelPreferencesUpdate) =>
+      apiClient.put<UserModelPreferences>('/models/preferences', request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.models.preferences() });
+    },
+  });
+}
+
+export function useOperationHistory(limit = 50, operationType?: string) {
+  return useQuery({
+    queryKey: queryKeys.billing.operations(limit, operationType),
+    queryFn: () => {
+      const params: Record<string, string> = { limit: limit.toString() };
+      if (operationType) params.operation_type = operationType;
+      return apiClient.get<OperationHistoryResponse>('/models/operations', params);
+    },
+  });
+}
+
+export function useIngestionEstimate() {
+  return useMutation({
+    mutationFn: (request: IngestionEstimateRequest) =>
+      apiClient.post<IngestionEstimateResponse>('/ingest/estimate', request),
+  });
+}
+
+// Admin model hooks
+
+export function useAdminModelPricing() {
+  return useQuery({
+    queryKey: queryKeys.models.adminPricing(),
+    queryFn: () => apiClient.get<ModelPricing[]>('/models/admin/pricing'),
+  });
+}
+
+export function useAdminTaskAssignments() {
+  return useQuery({
+    queryKey: queryKeys.models.adminAssignments(),
+    queryFn: () => apiClient.get<TaskAssignment[]>('/models/admin/assignments'),
+  });
+}
+
+export function useAdminModelHealth(modelId?: string) {
+  return useQuery({
+    queryKey: queryKeys.models.adminHealth(modelId),
+    queryFn: () => {
+      const params = modelId ? { model_id: modelId } : undefined;
+      return apiClient.get<ModelTaskHealth[]>('/models/admin/health', params);
+    },
+  });
+}
+
+export function useAdminHealthAction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ action, ...request }: HealthActionRequest & { action: 'disable' | 'enable' | 'clear-cooldown' }) =>
+      apiClient.post(`/models/admin/health/${action}`, request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.models.adminHealth() });
+    },
   });
 }

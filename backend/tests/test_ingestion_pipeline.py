@@ -6,10 +6,17 @@ import app.services.ingestion.pipeline as pipeline_module
 
 
 def test_ingestion_pipeline_run_completes_with_fixture_resource(monkeypatch):
-    updates: list[tuple[str, str]] = []
+    updates: list[tuple[str, str, bool]] = []
 
-    async def _update_resource_status(db, resource_id, status, pipeline_version, error_message=None):
-        updates.append((str(resource_id), status))
+    async def _update_resource_status(
+        db,
+        resource_id,
+        status,
+        pipeline_version,
+        error_message=None,
+        study_ready=True,
+    ):
+        updates.append((str(resource_id), status, study_ready))
 
     async def _get_resource(self, resource_id):
         return SimpleNamespace(
@@ -76,7 +83,7 @@ def test_ingestion_pipeline_run_completes_with_fixture_resource(monkeypatch):
     assert result["stages"]["persist"]["artifacts_created"] == 1
     assert result["quality"]["chunks_created"] == 2
     assert result["quality"]["concepts_admitted"] == 0
-    assert updates[-1] == (str(resource_id), "ready")
+    assert updates[-1] == (str(resource_id), "ready", False)
 
 
 def test_ingestion_pipeline_merge_job_metrics_preserves_dispatch_state():

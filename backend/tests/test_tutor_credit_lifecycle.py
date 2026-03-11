@@ -60,6 +60,11 @@ def _patch_turn_dependencies(monkeypatch, *, result=None, pipeline_error=None):
             return []
 
     class _Pipeline:
+        def __init__(self):
+            # CM-005: Mock tutor/evaluator LLM providers for token tracking
+            self.tutor = SimpleNamespace(llm=SimpleNamespace(total_tokens_used={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}))
+            self.evaluator = SimpleNamespace(llm=SimpleNamespace(total_tokens_used={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}))
+
         async def execute_turn(self, **_kwargs):
             if pipeline_error is not None:
                 raise pipeline_error
@@ -82,6 +87,10 @@ def test_notebook_turn_platform_key_reserves_and_finalizes(monkeypatch):
     class _Meter:
         def __init__(self, _db):
             pass
+
+        async def estimate_turn_credits(self, model_id, **_kwargs):
+            calls.setdefault("estimate", []).append(model_id)
+            return 450
 
         async def reserve_for_turn(self, user_id, turn_id, estimated_credits):
             calls["reserve"].append((user_id, turn_id, estimated_credits))
@@ -112,7 +121,7 @@ def test_notebook_turn_platform_key_reserves_and_finalizes(monkeypatch):
     assert response.response == "response"
     assert len(calls["reserve"]) == 1
     assert len(calls["finalize"]) == 1
-    assert calls["finalize"][0][-1] == 2000
+    assert calls["finalize"][0][-1] == 450
     assert calls["release"] == []
 
 
@@ -124,6 +133,9 @@ def test_notebook_turn_byok_bypasses_platform_credit_meter(monkeypatch):
     class _Meter:
         def __init__(self, _db):
             pass
+
+        async def estimate_turn_credits(self, *_args, **_kwargs):
+            return 450
 
         async def reserve_for_turn(self, *_args, **_kwargs):
             calls["reserve"] += 1
@@ -162,6 +174,9 @@ def test_notebook_turn_returns_payment_required_on_insufficient_balance(monkeypa
         def __init__(self, _db):
             pass
 
+        async def estimate_turn_credits(self, *_args, **_kwargs):
+            return 450
+
         async def reserve_for_turn(self, *_args, **_kwargs):
             return None
 
@@ -194,8 +209,11 @@ def test_notebook_turn_releases_reservation_on_pipeline_failure(monkeypatch):
         def __init__(self, _db):
             pass
 
+        async def estimate_turn_credits(self, *_args, **_kwargs):
+            return 450
+
         async def reserve_for_turn(self, *_args, **_kwargs):
-            return 2000
+            return 450
 
         async def finalize_turn(self, *_args, **_kwargs):
             raise AssertionError("finalize_turn should not run on failure")

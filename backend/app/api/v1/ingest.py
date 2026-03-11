@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
+from pydantic import BaseModel, Field
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_byok_api_key, require_auth
@@ -239,6 +241,48 @@ async def _mark_dispatch_failure(
         await escrow_service.finalize_job_escrow(escrow_id, reason="dispatch_failure", success=False)
 
     await db.commit()
+
+
+# ---- CM-008: Ingestion estimate v2 preflight ----
+
+class IngestionEstimateRequest(BaseModel):
+    filename: str
+    file_size_bytes: int = Field(ge=1)
+    page_count_estimate: int = Field(default=0, ge=0)
+    token_count_estimate: int = Field(default=0, ge=0)
+    chunk_count_estimate: int = Field(default=0, ge=0)
+    ontology_model_id: Optional[str] = None
+    enrichment_model_id: Optional[str] = None
+
+
+class IngestionEstimateResponse(BaseModel):
+    estimated_credits_low: int
+    estimated_credits_high: int
+    estimated_usd_low: float
+    estimated_usd_high: float
+    page_count_estimate: int
+    token_count_estimate: int
+    chunk_count_estimate: int
+    estimate_confidence: str
+    warnings: list[str]
+
+
+@router.post("/estimate", response_model=IngestionEstimateResponse)
+async def estimate_ingestion(
+    request: IngestionEstimateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(require_auth),
+):
+    """CM-008: Pre-upload credit estimate with ranges."""
+    meter = CreditMeter(db)
+    result = meter.estimate_ingestion_v2(
+        file_size_bytes=request.file_size_bytes,
+        filename=request.filename,
+        page_count_estimate=request.page_count_estimate,
+        token_count_estimate=request.token_count_estimate,
+        chunk_count_estimate=request.chunk_count_estimate,
+    )
+    return IngestionEstimateResponse(**result)
 
 
 @router.post("/upload", response_model=IngestionStatusResponse)
@@ -661,6 +705,9 @@ async def run_ingestion_pipeline(resource_id: str, job_id: str, escrow_id: str |
             embedding_provider = create_embedding_provider(settings)
             storage_provider = create_storage_provider(settings)
 
+            # CM-009: Snapshot token counters before pipeline run
+            llm_tokens_before = dict(getattr(llm_provider, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+
             pipeline = IngestionPipeline(
                 db_session=db,
                 llm_provider=llm_provider,
@@ -670,23 +717,61 @@ async def run_ingestion_pipeline(resource_id: str, job_id: str, escrow_id: str |
 
             result = await pipeline.run(resource_uuid, job_uuid)
 
+            # CM-009: Compute actual token usage from measured totals
+            llm_tokens_after = dict(getattr(llm_provider, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+            measured_prompt = llm_tokens_after.get("prompt_tokens", 0) - llm_tokens_before.get("prompt_tokens", 0)
+            measured_completion = llm_tokens_after.get("completion_tokens", 0) - llm_tokens_before.get("completion_tokens", 0)
+
             if job and job.owner_user_id:
                 billing = _get_billing_state(job)
                 reserved_credits = int(billing.get("reserved_credits") or 0)
                 if reserved_credits > 0 and billing.get("status") == "reserved":
                     meter = CreditMeter(db)
-                    actual_credits = int(billing.get("actual_credits") or billing.get("estimated_credits") or reserved_credits)
-                    await meter.finalize_ingestion(
-                        job.owner_user_id,
-                        job_id,
-                        actual_credits,
-                        reserved_credits,
-                    )
+
+                    # CM-009: Use operation-based metering with measured token totals
+                    if settings.OPERATION_METERING_ENABLED and (measured_prompt > 0 or measured_completion > 0):
+                        op = await meter.create_operation(
+                            job.owner_user_id, "ingestion_upload",
+                            resource_id=resource_id,
+                            selected_model_id=settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
+                            estimate_credits_low=int(billing.get("estimated_credits") or 0),
+                            estimate_credits_high=int(billing.get("estimated_credits") or 0),
+                        )
+                        # Ontology usage line (majority of tokens)
+                        await meter.append_usage_line(
+                            op.id, "ingestion_ontology",
+                            settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
+                            input_tokens=int(measured_prompt * 0.6),
+                            output_tokens=int(measured_completion * 0.4),
+                        )
+                        # Enrichment usage line
+                        enrichment_model = settings.LLM_MODEL_ENRICHMENT or settings.LLM_MODEL
+                        await meter.append_usage_line(
+                            op.id, "ingestion_enrichment",
+                            enrichment_model,
+                            input_tokens=int(measured_prompt * 0.4),
+                            output_tokens=int(measured_completion * 0.6),
+                        )
+                        actual_credits = await meter.finalize_operation(
+                            job.owner_user_id, op.id, reserved_credits,
+                            reference_id=job_id, reference_type="ingestion",
+                        )
+                    else:
+                        # Fallback to estimate-based finalization
+                        actual_credits = int(billing.get("actual_credits") or billing.get("estimated_credits") or reserved_credits)
+                        await meter.finalize_ingestion(
+                            job.owner_user_id,
+                            job_id,
+                            actual_credits,
+                            reserved_credits,
+                        )
                     job.metrics = {
                         **(job.metrics or {}),
                         "billing": {
                             **billing,
                             "actual_credits": actual_credits,
+                            "measured_prompt_tokens": measured_prompt,
+                            "measured_completion_tokens": measured_completion,
                             "status": "finalized",
                         },
                     }

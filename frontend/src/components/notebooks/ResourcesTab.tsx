@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, Trash2, Loader2, Upload, FileText,
   CheckCircle2, AlertCircle, Clock, Coins, ShieldCheck,
@@ -9,10 +9,10 @@ import {
   useNotebookResources, useResources,
   useAttachNotebookResource, useDetachNotebookResource,
   useUserSettings, useUploadResource, useIngestionStatus,
+  useIngestionEstimate,
 } from '../../api/hooks';
-import type { IngestionBillingStatus, IngestionAsyncByokStatus } from '../../types/api';
-
-function formatCredits(n: number) { return n.toLocaleString(); }
+import { formatCredits } from '../../lib/credits';
+import type { IngestionBillingStatus, IngestionAsyncByokStatus, IngestionEstimateResponse } from '../../types/api';
 
 function ResourceStatusBadge({ status }: { status: string }) {
   const cfg: Record<string, { icon: typeof CheckCircle2; cls: string; label: string }> = {
@@ -99,7 +99,20 @@ export default function ResourcesTab({ notebookId }: { notebookId: string }) {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [lastBilling, setLastBilling] = useState<IngestionBillingStatus | null>(null);
   const [lastAsyncByok, setLastAsyncByok] = useState<IngestionAsyncByokStatus | null>(null);
+  const [uploadEstimate, setUploadEstimate] = useState<IngestionEstimateResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const estimateMutation = useIngestionEstimate();
+
+  // CM-014: Trigger cost estimate when file is selected
+  useEffect(() => {
+    if (!selectedFile) { setUploadEstimate(null); return; }
+    estimateMutation.mutate(
+      { filename: selectedFile.name, file_size_bytes: selectedFile.size },
+      { onSuccess: (data) => setUploadEstimate(data), onError: () => setUploadEstimate(null) },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFile]);
 
   const hasLocalByok = typeof window !== 'undefined' && Boolean(window.localStorage.getItem('byok_api_key'));
   const asyncByokAvailable = Boolean(userSettings?.async_byok_escrow_enabled && hasLocalByok);
@@ -206,6 +219,22 @@ export default function ResourcesTab({ notebookId }: { notebookId: string }) {
                   <p className="text-xs text-muted-foreground mt-0.5">Creates encrypted server-side escrow for up to {userSettings.async_byok_escrow_ttl_minutes} min.{!asyncByokAvailable && ' Save a BYOK key in Settings first.'}</p>
                 </div>
               </label>
+            )}
+
+            {/* CM-014: Upload cost estimate */}
+            {uploadEstimate && (
+              <div className="rounded-lg border border-gold/15 bg-gold/[0.04] px-3.5 py-2.5 text-sm space-y-1">
+                <div className="flex items-center gap-2 text-foreground font-medium">
+                  <Coins className="w-3.5 h-3.5 text-gold" />
+                  Estimated cost: {formatCredits(uploadEstimate.estimated_credits_low)}–{formatCredits(uploadEstimate.estimated_credits_high)} credits
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  ~{uploadEstimate.page_count_estimate} pages · ~{uploadEstimate.chunk_count_estimate} chunks · {uploadEstimate.estimate_confidence} confidence
+                </p>
+                {uploadEstimate.warnings?.length > 0 && (
+                  <p className="text-xs text-amber-400">{uploadEstimate.warnings.join('; ')}</p>
+                )}
+              </div>
             )}
 
             <div className="flex items-center gap-3">

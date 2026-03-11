@@ -146,9 +146,19 @@ class Settings(BaseSettings):
     FEATURE_OCR_ENABLED: bool = True
     FEATURE_NOTEBOOKS_ENABLED: bool = True
 
+    # Alpha access gate
+    ALPHA_ACCESS_ENABLED: bool = False   # when True, registration requires invite_token or promo code
+    ALPHA_PROMO_CODES: str = ""          # comma-separated valid promo codes (bypass invite flow)
+
+    # Email (Resend.com) — used for alpha invite emails
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = "noreply@tutorbook.me"
+    APP_BASE_URL: str = "https://tutorbook.me"
+
     # Credits system (student research defaults)
     CREDITS_ENABLED: bool = False
-    CREDITS_DEFAULT_MONTHLY_GRANT: int = 100000
+    CREDITS_SIGNUP_GRANT: int = 500              # credits issued at account creation
+    CREDITS_DEFAULT_MONTHLY_GRANT: int = 100000  # monthly top-up grant
     CREDITS_INPUT_TOKEN_MULTIPLIER: float = 1.0
     CREDITS_OUTPUT_TOKEN_MULTIPLIER: float = 1.5
     CREDITS_OCR_SURCHARGE: int = 250
@@ -163,6 +173,22 @@ class Settings(BaseSettings):
     CREDITS_INGESTION_BASE_ESTIMATE: int = 500
     CREDITS_INGESTION_PER_MB: int = 250
     CREDITS_INGESTION_PDF_SURCHARGE: int = 250
+
+    # Credits model selection & metering (CM tickets)
+    CREDITS_USD_PER_CREDIT: float = 0.008
+    MODEL_SELECTION_ENABLED: bool = True
+    MODEL_SELECTION_FRONTEND_ENABLED: bool = True
+    OPERATION_METERING_ENABLED: bool = True
+    INGESTION_ESTIMATION_V2_ENABLED: bool = True
+    MODEL_TASK_HEALTH_ROUTING_ENABLED: bool = True
+    ADMIN_MODEL_CONTROL_ENABLED: bool = True
+    ARTIFACT_MODEL_SELECTION_ENABLED: bool = True
+    SESSION_PREPARATION_METERING_ENABLED: bool = True
+
+    # Model-task health thresholds
+    HEALTH_CONSECUTIVE_ERROR_THRESHOLD: int = 3
+    HEALTH_COOLDOWN_SECONDS: int = 300
+    HEALTH_RECOVERY_SUCCESSES: int = 5
     
     model_config = {
         "env_file": ".env",

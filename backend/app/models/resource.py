@@ -51,19 +51,25 @@ def default_resource_capabilities() -> dict:
     }
 
 
-def study_ready_capabilities(existing: Optional[dict] = None) -> dict:
+def study_ready_capabilities(existing: Optional[dict] = None, *, has_concepts: bool = True) -> dict:
     capabilities = default_resource_capabilities()
     if existing:
         capabilities.update(existing)
     capabilities.update(
         {
-            "study_ready": True,
             "vector_search_ready": True,
-            "basic_tutoring_ready": True,
             "can_search": True,
-            "can_answer_doubts": True,
-            "can_generate_basic_practice": True,
-            "can_tutor_basic": True,
+        }
+    )
+    capabilities.update(
+        {
+            "study_ready": has_concepts,
+            "basic_tutoring_ready": has_concepts,
+            "can_answer_doubts": has_concepts,
+            "can_generate_basic_practice": has_concepts,
+            "can_tutor_basic": has_concepts,
+            "concepts_ready": has_concepts,
+            "has_concepts": has_concepts,
         }
     )
     return capabilities

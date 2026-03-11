@@ -18,7 +18,17 @@ from app.models.ingestion import IngestionJob
 from app.models.feedback import SessionFeedbackEntry
 from app.models.auth import ApiKey
 from app.models.async_byok import AsyncByokEscrow
-from app.models.credits import CreditAccount, CreditGrant, CreditLedgerEntry, ModelMultiplier
+from app.models.credits import (
+    CreditAccount,
+    CreditGrant,
+    CreditLedgerEntry,
+    ModelMultiplier,
+    ModelPricing,
+    TaskModelAssignment,
+    BillingOperation,
+    BillingUsageLine,
+    ModelTaskHealth,
+)
 from app.models.notebook import (
     Notebook,
     NotebookResource,
@@ -55,6 +65,11 @@ __all__ = [
     "CreditGrant",
     "CreditLedgerEntry",
     "ModelMultiplier",
+    "ModelPricing",
+    "TaskModelAssignment",
+    "BillingOperation",
+    "BillingUsageLine",
+    "ModelTaskHealth",
     "Notebook",
     "NotebookResource",
     "NotebookSession",

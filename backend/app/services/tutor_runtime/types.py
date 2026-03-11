@@ -34,6 +34,10 @@ class TurnResult:
     telemetry_contract: dict[str, Any] = field(default_factory=dict)
     # Session summary data (populated on session_complete)
     session_summary: Optional[dict[str, Any]] = None
+    # Token usage tracking (CM-005)
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    stage_token_usage: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
 @dataclass

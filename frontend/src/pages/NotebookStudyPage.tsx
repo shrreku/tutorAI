@@ -13,6 +13,7 @@ import {
   useResources,
   useSendNotebookMessage,
   useTurns,
+  useModelPreferences,
 } from '../api/hooks';
 import SessionLaunchPanel from '../components/notebooks/SessionLaunchPanel';
 import type { NotebookSessionCreateRequest } from '../types/api';
@@ -99,10 +100,12 @@ export default function NotebookStudyPage() {
   const createNotebookSession = useCreateNotebookSession(notebookId);
   const { data: turnsData, isLoading: turnsLoading } = useTurns(sessionId);
   const sendNotebookMessage = useSendNotebookMessage(notebookId);
+  const { data: modelPrefs } = useModelPreferences();
 
   const [input, setInput] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showSessionPicker, setShowSessionPicker] = useState(false);
+  const [rerouteNotice, setRerouteNotice] = useState<{ selected: string; routed: string; reason: string | null } | null>(null);
   const [launchSummary, setLaunchSummary] = useState<Record<string, unknown> | null>(
     ((location.state as { launchSummary?: Record<string, unknown> } | null)?.launchSummary) ?? null,
   );
@@ -143,7 +146,13 @@ export default function NotebookStudyPage() {
     setErrorMessage(null);
     try {
       setInput('');
-      await sendNotebookMessage.mutateAsync({ session_id: activeSessionId, message });
+      const turnResponse = await sendNotebookMessage.mutateAsync({ session_id: activeSessionId, message });
+      // CM-015: Detect model reroute
+      if (turnResponse.routed_model_id && turnResponse.selected_model_id && turnResponse.routed_model_id !== turnResponse.selected_model_id) {
+        setRerouteNotice({ selected: turnResponse.selected_model_id, routed: turnResponse.routed_model_id, reason: turnResponse.reroute_reason });
+      } else {
+        setRerouteNotice(null);
+      }
     } catch (error) {
       setInput(message);
       setErrorMessage(getApiErrorMessage(error, 'Failed to send notebook message.'));
@@ -160,11 +169,17 @@ export default function NotebookStudyPage() {
     ? 'Start with a learn session to establish the objective sequence and baseline understanding.'
     : 'Use the launcher to open a fresh branch when you want a different scope or topic than your current thread.';
 
-  const launchResources = (notebookResources?.items ?? []).map((resource) => ({
-    id: resource.resource_id,
-    label: resourceMap.get(resource.resource_id)?.filename ?? resource.resource_id,
-    subtitle: resourceMap.get(resource.resource_id)?.topic || 'Attached notebook resource',
-  }));
+  const launchResources = (notebookResources?.items ?? []).map((resource) => {
+    const fullResource = resourceMap.get(resource.resource_id);
+    return {
+      id: resource.resource_id,
+      label: fullResource?.filename ?? resource.resource_id,
+      subtitle: fullResource?.topic || 'Attached notebook resource',
+      status: fullResource?.status,
+      studyReady: Boolean(fullResource?.capabilities?.study_ready),
+    };
+  });
+  const notReadyResources = launchResources.filter((resource) => !resource.studyReady);
 
   const quickActions = activeNotebookSession?.mode === 'practice'
     ? ['Give me one harder question.', 'Check my reasoning step by step.', 'Turn this into a mini quiz.']
@@ -198,6 +213,9 @@ export default function NotebookStudyPage() {
               <span className="capitalize text-foreground font-medium">{activeNotebookSession.mode}</span>
               <span className="text-muted-foreground">·</span>
               <span className="text-muted-foreground">{new Date(activeNotebookSession.started_at).toLocaleDateString()}</span>
+              {modelPrefs?.preferences?.tutoring_model_id && (
+                <span className="text-muted-foreground/60 text-[10px] truncate max-w-[80px]">{modelPrefs.preferences.tutoring_model_id.split('/').pop()}</span>
+              )}
               <ChevronDown className="w-3 h-3 text-muted-foreground" />
             </button>
 
@@ -250,6 +268,24 @@ export default function NotebookStudyPage() {
           <div className="mt-3 p-3 rounded-lg border border-red-500/20 bg-red-500/[0.06] text-sm text-red-300 flex items-start gap-2">
             <span className="flex-1">{errorMessage}</span>
             <button onClick={() => setErrorMessage(null)} className="text-red-400 hover:text-red-200 text-xs shrink-0">dismiss</button>
+          </div>
+        )}
+        {/* CM-015: Model reroute notice */}
+        {rerouteNotice && (
+          <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] text-xs text-amber-200 flex items-center gap-2">
+            <Layers3 className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+            <span>
+              Your preferred model <strong className="text-amber-100">{rerouteNotice.selected.split('/').pop()}</strong> was unavailable
+              {rerouteNotice.reason ? ` (${rerouteNotice.reason})` : ''} — routed to <strong className="text-amber-100">{rerouteNotice.routed.split('/').pop()}</strong>.
+            </span>
+            <button onClick={() => setRerouteNotice(null)} className="text-amber-400 hover:text-amber-200 text-[10px] ml-auto shrink-0">dismiss</button>
+          </div>
+        )}
+        {hasResources && notReadyResources.length > 0 && (
+          <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.08] text-sm text-amber-100">
+            {notReadyResources.length === 1
+              ? `${notReadyResources[0].label} is still preparing and cannot start a tutoring session yet.`
+              : `${notReadyResources.length} attached resources are still preparing and cannot be used for tutoring yet.`}
           </div>
         )}
       </div>

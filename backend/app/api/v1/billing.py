@@ -10,10 +10,12 @@ from app.api.deps import require_auth, require_admin, get_configured_admin_exter
 from app.config import settings
 from app.db.database import get_db
 from app.db.repositories.credits_repo import CreditAccountRepository
+from app.models.alpha import AlphaAccessRequest
 from app.models.credits import CreditAccount
 from app.models.session import UserProfile
 from app.schemas.api import CreditEstimateRequest, CreditEstimateResponse
 from app.services.credits.meter import CreditMeter
+from app.services.email import send_email, build_alpha_invite_email
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 logger = logging.getLogger(__name__)
@@ -94,6 +96,30 @@ class AdminMonthlyGrantResponse(BaseModel):
     granted_user_count: int
     skipped_user_count: int
     granted_user_ids: list[str] = []
+
+
+class AccessRequestSummary(BaseModel):
+    id: str
+    email: str
+    display_name: str
+    status: str
+    invite_used: bool
+    promo_code_used: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: str
+
+
+class AdminAccessRequestsResponse(BaseModel):
+    total: int
+    requests: list[AccessRequestSummary] = []
+
+
+class AdminApproveAccessRequest(BaseModel):
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class AdminRejectAccessRequest(BaseModel):
+    notes: Optional[str] = Field(default=None, max_length=500)
 
 
 # ---- Endpoints ----
@@ -328,3 +354,131 @@ async def admin_issue_monthly_grant(
         skipped_user_count=skipped_user_count,
         granted_user_ids=granted_user_ids,
     )
+
+
+# ---------------------------------------------------------------------------
+# Alpha access request admin endpoints
+# ---------------------------------------------------------------------------
+
+@router.get("/admin/access-requests", response_model=AdminAccessRequestsResponse)
+async def admin_list_access_requests(
+    status_filter: Optional[str] = Query(default=None, alias="status", pattern=r"^(pending|approved|rejected)$"),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(require_admin),
+):
+    """List alpha access requests (filterable by status)."""
+    del user
+    query = select(AlphaAccessRequest).order_by(AlphaAccessRequest.created_at.desc()).limit(limit)
+    if status_filter:
+        query = query.where(AlphaAccessRequest.status == status_filter)
+    rows = (await db.execute(query)).scalars().all()
+    return AdminAccessRequestsResponse(
+        total=len(rows),
+        requests=[
+            AccessRequestSummary(
+                id=str(r.id),
+                email=r.email,
+                display_name=r.display_name,
+                status=r.status,
+                invite_used=r.invite_used,
+                promo_code_used=r.promo_code_used,
+                notes=r.notes,
+                created_at=r.created_at.isoformat() if r.created_at else "",
+            )
+            for r in rows
+        ],
+    )
+
+
+@router.post("/admin/access-requests/{request_id}/approve", response_model=AccessRequestSummary)
+async def admin_approve_access_request(
+    request_id: str,
+    body: AdminApproveAccessRequest,
+    db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(require_admin),
+):
+    """Approve an alpha access request and send the invite email."""
+    import uuid as _uuid
+
+    result = await db.execute(
+        select(AlphaAccessRequest).where(AlphaAccessRequest.id == _uuid.UUID(request_id))
+    )
+    req = result.scalar_one_or_none()
+    if req is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access request not found")
+    if req.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Request is already {req.status}",
+        )
+
+    req.status = "approved"
+    req.invite_token = AlphaAccessRequest.generate_token()
+    if body.notes:
+        req.notes = body.notes
+    await db.commit()
+    await db.refresh(req)
+
+    email_subject, email_html = build_alpha_invite_email(req.display_name, req.invite_token)
+    await send_email(req.email, email_subject, email_html)
+
+    logger.warning(
+        "Admin %s approved alpha access for %s (request %s)",
+        user.external_id, req.email, request_id,
+    )
+    return AccessRequestSummary(
+        id=str(req.id),
+        email=req.email,
+        display_name=req.display_name,
+        status=req.status,
+        invite_used=req.invite_used,
+        promo_code_used=req.promo_code_used,
+        notes=req.notes,
+        created_at=req.created_at.isoformat() if req.created_at else "",
+    )
+
+
+@router.post("/admin/access-requests/{request_id}/reject", response_model=AccessRequestSummary)
+async def admin_reject_access_request(
+    request_id: str,
+    body: AdminRejectAccessRequest,
+    db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(require_admin),
+):
+    """Reject an alpha access request."""
+    import uuid as _uuid
+
+    result = await db.execute(
+        select(AlphaAccessRequest).where(AlphaAccessRequest.id == _uuid.UUID(request_id))
+    )
+    req = result.scalar_one_or_none()
+    if req is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access request not found")
+    if req.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Request is already {req.status}",
+        )
+
+    req.status = "rejected"
+    if body.notes:
+        req.notes = body.notes
+    await db.commit()
+    await db.refresh(req)
+
+    logger.warning(
+        "Admin %s rejected alpha access for %s (request %s)",
+        user.external_id, req.email, request_id,
+    )
+    return AccessRequestSummary(
+        id=str(req.id),
+        email=req.email,
+        display_name=req.display_name,
+        status=req.status,
+        invite_used=req.invite_used,
+        promo_code_used=req.promo_code_used,
+        notes=req.notes,
+        created_at=req.created_at.isoformat() if req.created_at else "",
+    )
+

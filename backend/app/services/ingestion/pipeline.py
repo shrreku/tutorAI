@@ -229,7 +229,13 @@ class IngestionPipeline:
             metrics["status"] = "success"
 
             # Mark complete
-            await update_resource_status(self.db, resource_id, "ready", PIPELINE_VERSION)
+            await update_resource_status(
+                self.db,
+                resource_id,
+                "ready",
+                PIPELINE_VERSION,
+                study_ready=metrics["quality"].get("concepts_admitted", 0) > 0,
+            )
 
             metrics = await self._merge_job_metrics(job_id, metrics)
 

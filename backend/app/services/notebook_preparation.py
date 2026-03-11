@@ -92,7 +92,11 @@ class NotebookPreparationService:
                 raise ValueError("Selected resource is not accessible")
 
             capabilities = dict(resource.capabilities_json or {})
-            if not capabilities.get("study_ready", resource.status == "ready"):
+            is_study_ready = bool(capabilities.get("study_ready"))
+            if not is_study_ready:
+                is_study_ready = bool(capabilities.get("has_concepts")) or resource.tutoring_ready_at is not None
+
+            if not is_study_ready:
                 blocking_resources.append(
                     {
                         "resource_id": str(resource.id),

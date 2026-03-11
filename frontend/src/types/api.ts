@@ -434,6 +434,10 @@ export interface TutorTurnResponse {
   session_complete: boolean;
   awaiting_evaluation: boolean;
   session_summary: SessionSummary | null;
+  // CM-015: Model routing transparency
+  selected_model_id: string | null;
+  routed_model_id: string | null;
+  reroute_reason: string | null;
 }
 
 export interface SessionSummary {
@@ -590,4 +594,111 @@ export interface QuizPerQuestion {
   score: number;
   correct_answer: string;
   explanation: string;
+}
+
+// ---- Credits, Model Selection, Metering (CM tickets) ----
+
+export interface ModelPricing {
+  model_id: string;
+  provider_name: string;
+  display_name: string;
+  model_class: string;
+  input_usd_per_million: number;
+  output_usd_per_million: number;
+  cache_write_usd_per_million: number | null;
+  cache_read_usd_per_million: number | null;
+  is_active: boolean;
+  is_user_selectable: boolean;
+  supports_structured_output: boolean;
+  supports_long_context: boolean;
+  notes: string | null;
+}
+
+export interface TaskAssignment {
+  task_type: string;
+  default_model_id: string;
+  fallback_model_ids: string[];
+  allowed_model_ids: string[];
+  user_override_allowed: boolean;
+  rollout_state: string;
+  beta_only: boolean;
+}
+
+export interface ModelTaskHealth {
+  model_id: string;
+  task_type: string;
+  status: string;
+  consecutive_errors: number;
+  rolling_error_rate: number;
+  cooldown_until: string | null;
+  last_success_at: string | null;
+  last_error_at: string | null;
+  last_error_code: string | null;
+  last_error_summary: string | null;
+  manual_override_reason: string | null;
+}
+
+export interface TaskModelsResponse {
+  task_type: string;
+  allowed_models: ModelPricing[];
+  default_model_id: string;
+  user_override_allowed: boolean;
+}
+
+export interface UserModelPreferences {
+  model_selection_enabled: boolean;
+  preferences: Record<string, string>;
+}
+
+export interface UserModelPreferencesUpdate {
+  tutoring_model_id?: string;
+  artifact_model_id?: string;
+  upload_model_id?: string;
+}
+
+export interface BillingOperation {
+  id: string;
+  operation_type: string;
+  status: string;
+  selected_model_id: string | null;
+  routed_model_id: string | null;
+  reroute_reason: string | null;
+  estimate_credits_low: number | null;
+  estimate_credits_high: number | null;
+  reserved_credits: number;
+  final_credits: number | null;
+  final_usd: number | null;
+  created_at: string;
+}
+
+export interface OperationHistoryResponse {
+  operations: BillingOperation[];
+}
+
+export interface IngestionEstimateRequest {
+  filename: string;
+  file_size_bytes: number;
+  page_count_estimate?: number;
+  token_count_estimate?: number;
+  chunk_count_estimate?: number;
+  ontology_model_id?: string;
+  enrichment_model_id?: string;
+}
+
+export interface IngestionEstimateResponse {
+  estimated_credits_low: number;
+  estimated_credits_high: number;
+  estimated_usd_low: number;
+  estimated_usd_high: number;
+  page_count_estimate: number;
+  token_count_estimate: number;
+  chunk_count_estimate: number;
+  estimate_confidence: string;
+  warnings: string[];
+}
+
+export interface HealthActionRequest {
+  model_id: string;
+  task_type: string;
+  reason?: string;
 }

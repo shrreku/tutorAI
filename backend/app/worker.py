@@ -276,6 +276,70 @@ async def process_job(payload: dict, attempt: int = 1) -> bool:
                             "status": "finalized",
                         },
                     }
+
+                    # CM-009: Create operation-based metering for measured ingestion
+                    if settings.OPERATION_METERING_ENABLED:
+                        try:
+                            op = await meter.create_operation(
+                                job.owner_user_id, "ingestion",
+                                resource_id=resource_id,
+                                selected_model_id=settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
+                                metadata={"job_id": job_id},
+                            )
+                            pipeline_metrics = result if isinstance(result, dict) else {}
+                            total_tokens = int(pipeline_metrics.get("total_tokens", 0))
+                            ontology_tokens = int(pipeline_metrics.get("ontology_tokens", 0))
+                            enrichment_tokens = int(pipeline_metrics.get("enrichment_tokens", 0))
+                            embed_tokens = int(pipeline_metrics.get("embed_tokens", 0))
+                            has_usage_metrics = any(
+                                value > 0
+                                for value in (total_tokens, ontology_tokens, enrichment_tokens, embed_tokens)
+                            )
+                            if has_usage_metrics:
+                                if ontology_tokens or total_tokens:
+                                    await meter.append_usage_line(
+                                        op.id, "ontology_extraction",
+                                        settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
+                                        input_tokens=int((ontology_tokens or total_tokens * 0.4) * 0.8),
+                                        output_tokens=int((ontology_tokens or total_tokens * 0.4) * 0.2),
+                                    )
+                                if enrichment_tokens or total_tokens:
+                                    await meter.append_usage_line(
+                                        op.id, "chunk_enrichment",
+                                        settings.LLM_MODEL_ENRICHMENT or settings.LLM_MODEL,
+                                        input_tokens=int((enrichment_tokens or total_tokens * 0.5) * 0.7),
+                                        output_tokens=int((enrichment_tokens or total_tokens * 0.5) * 0.3),
+                                    )
+                                if embed_tokens or total_tokens:
+                                    await meter.append_usage_line(
+                                        op.id, "embedding",
+                                        settings.EMBEDDING_MODEL_ID or "text-embedding-3-small",
+                                        input_tokens=embed_tokens or int(total_tokens * 0.1),
+                                        output_tokens=0,
+                                    )
+                                await meter.finalize_operation(
+                                    job.owner_user_id, op.id, 0,
+                                    reference_id=job_id,
+                                    reference_type="ingestion",
+                                )
+                            else:
+                                await meter.metering_repo.update_operation_status(
+                                    op.id,
+                                    "finalized",
+                                    final_credits=actual_credits,
+                                    final_usd=round(actual_credits * settings.CREDITS_USD_PER_CREDIT, 6),
+                                    metadata={
+                                        "job_id": job_id,
+                                        "finalized_from_job_billing": True,
+                                    },
+                                )
+                                logger.info(
+                                    "Finalized ingestion operation %s from job billing metrics: %s credits",
+                                    op.id,
+                                    actual_credits,
+                                )
+                        except Exception:
+                            logger.warning("CM-009: Failed to create operation-based ingestion metering for job %s", job_id, exc_info=True)
                 if escrow_id:
                     escrow_service = AsyncByokEscrowService(AsyncByokEscrowRepository(db))
                     await escrow_service.finalize_job_escrow(

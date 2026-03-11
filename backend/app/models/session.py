@@ -20,6 +20,7 @@ class UserProfile(Base, UUIDMixin, TimestampMixin):
     password_hash: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     global_mastery: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     preferences: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    model_preferences: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Relationships
     sessions: Mapped[List["UserSession"]] = relationship(

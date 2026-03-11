@@ -61,6 +61,7 @@ from app.services.notebook_artifacts import NotebookArtifactService
 from app.services.notebook_preparation import NotebookPreparationService
 from app.services.telemetry.notebook_events import emit_notebook_event
 from app.services.tutor.session_service import SessionService
+from app.services.credits.meter import CreditMeter
 
 logger = logging.getLogger(__name__)
 
@@ -427,6 +428,16 @@ async def create_notebook_session(
     notebook_session_repo = NotebookSessionRepository(db)
     user_repo = UserProfileRepository(db)
     preparation_service = NotebookPreparationService(db)
+    meter = CreditMeter(db)
+    supports_operation_metering = (
+        settings.OPERATION_METERING_ENABLED
+        and hasattr(db, "add")
+        and hasattr(db, "flush")
+        and all(
+            hasattr(meter, method_name)
+            for method_name in ("create_operation", "append_usage_line", "finalize_operation")
+        )
+    )
 
     await verify_notebook_owner(notebook_id, user, db)
 
@@ -436,6 +447,18 @@ async def create_notebook_session(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Resource is not attached to this notebook",
         )
+
+    # CM-006: Create billing operation for session launch when a full DB session is available.
+    operation_id = None
+    if supports_operation_metering:
+        op = await meter.create_operation(
+            user.id, "session_launch",
+            session_id=None,
+            resource_id=str(request.resource_id),
+            selected_model_id=settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
+            metadata={"mode": request.mode, "notebook_id": str(notebook_id)},
+        )
+        operation_id = getattr(op, "id", None)
 
     try:
         preparation_summary = await preparation_service.prepare_session_context(
@@ -479,6 +502,24 @@ async def create_notebook_session(
             curriculum_summary = await curriculum_preparation.ensure_curriculum_ready(request.resource_id)
             if curriculum_summary:
                 preparation_summary["curriculum_preparation"] = curriculum_summary
+                # CM-006: Record ontology + enrichment usage lines
+                if operation_id and supports_operation_metering:
+                    ontology_tokens = curriculum_summary.get("ontology_tokens", 0)
+                    enrichment_tokens = curriculum_summary.get("enrichment_tokens", 0)
+                    if ontology_tokens:
+                        await meter.append_usage_line(
+                            operation_id, "ontology_extraction",
+                            settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
+                            input_tokens=int(ontology_tokens * 0.8),
+                            output_tokens=int(ontology_tokens * 0.2),
+                        )
+                    if enrichment_tokens:
+                        await meter.append_usage_line(
+                            operation_id, "chunk_enrichment",
+                            settings.LLM_MODEL_ENRICHMENT or settings.LLM_MODEL,
+                            input_tokens=int(enrichment_tokens * 0.7),
+                            output_tokens=int(enrichment_tokens * 0.3),
+                        )
         except ValueError as exc:
             detail = str(exc)
             if "not found" in detail or "no chunks available" in detail:
@@ -516,6 +557,21 @@ async def create_notebook_session(
         if "not found" in msg:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
+
+    # CM-006: Record curriculum planning usage line
+    if operation_id and supports_operation_metering:
+        await meter.append_usage_line(
+            operation_id, "curriculum_planning",
+            settings.LLM_MODEL_CURRICULUM or settings.LLM_MODEL,
+            input_tokens=2000,
+            output_tokens=1500,
+        )
+        # CM-006: Finalize session launch operation
+        await meter.finalize_operation(
+            user.id, operation_id, 0,
+            reference_id=str(request.resource_id),
+            reference_type="session_launch",
+        )
 
     existing_link = await notebook_session_repo.get_by_pair(notebook_id, session.id)
     reused_existing = bool(getattr(session, "_reused_existing", False))
@@ -721,6 +777,28 @@ async def generate_notebook_artifact(
 
     progress = await _compute_and_persist_notebook_progress(notebook_id, db)
 
+    # CM-007: Create billing operation for artifact generation
+    meter = CreditMeter(db)
+    supports_operation_metering = (
+        settings.OPERATION_METERING_ENABLED
+        and hasattr(db, "add")
+        and hasattr(db, "flush")
+        and all(
+            hasattr(meter, method_name)
+            for method_name in ("create_operation", "append_usage_line", "finalize_operation")
+        )
+    )
+    artifact_model_id = settings.LLM_MODEL_TUTORING or settings.LLM_MODEL
+    operation_id = None
+    if supports_operation_metering:
+        op = await meter.create_operation(
+            user.id, "artifact_generation",
+            resource_id=str(notebook_id),
+            selected_model_id=artifact_model_id,
+            metadata={"artifact_type": request.artifact_type, "notebook_id": str(notebook_id)},
+        )
+        operation_id = getattr(op, "id", None)
+
     artifact_llm = None
     try:
         artifact_llm = create_llm_provider(
@@ -745,6 +823,24 @@ async def generate_notebook_artifact(
         "sessions": len(valid_session_ids),
         "resources": len(valid_resource_ids),
     }
+
+    # CM-007: Record artifact generation usage line
+    if operation_id and supports_operation_metering:
+        # Estimate tokens based on payload size
+        payload_chars = len(str(payload))
+        est_output_tokens = max(500, payload_chars // 4)
+        est_input_tokens = max(1000, est_output_tokens * 2)
+        await meter.append_usage_line(
+            operation_id, "artifact_generation",
+            artifact_model_id,
+            input_tokens=est_input_tokens,
+            output_tokens=est_output_tokens,
+        )
+        await meter.finalize_operation(
+            user.id, operation_id, 0,
+            reference_id=str(notebook_id),
+            reference_type="artifact",
+        )
 
     artifact = NotebookArtifact(
         notebook_id=notebook_id,

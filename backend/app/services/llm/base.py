@@ -41,3 +41,8 @@ class BaseLLMProvider(ABC):
     def model_id(self) -> str:
         """Get the current model ID."""
         pass
+
+    @property
+    def total_tokens_used(self) -> dict:
+        """Return cumulative token usage. Override in subclass."""
+        return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}

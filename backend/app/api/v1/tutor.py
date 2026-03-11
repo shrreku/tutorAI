@@ -37,6 +37,17 @@ _DEFAULT_EVALUATION_LLM = None
 _DEFAULT_EMBEDDING_PROVIDER = None
 
 
+def _supports_operation_metering(db: AsyncSession, meter: object) -> bool:
+    if not settings.OPERATION_METERING_ENABLED:
+        return False
+    if not hasattr(db, "add") or not hasattr(db, "flush"):
+        return False
+    return all(
+        hasattr(meter, method_name)
+        for method_name in ("create_operation", "append_usage_line", "finalize_operation", "release_operation")
+    )
+
+
 def _serialize_turn(turn: TutorTurn) -> dict:
     """Serialize TutorTurn into API-friendly payload with evidence fields."""
     return {
@@ -177,11 +188,22 @@ async def execute_notebook_turn(
 
     turn_id = str(uuid4())
     reserved_credits = 0
+    operation_id = None
     meter = CreditMeter(db)
     uses_platform_credits = _uses_platform_credits(byok)
+    supports_operation_metering = _supports_operation_metering(db, meter)
 
     if uses_platform_credits:
-        estimated = 2000
+        estimated = await meter.estimate_turn_credits(
+            settings.LLM_MODEL_TUTORING or settings.LLM_MODEL,
+        )
+        if supports_operation_metering:
+            op = await meter.create_operation(
+                user.id, "tutor_turn",
+                session_id=str(request.session_id),
+                selected_model_id=settings.LLM_MODEL_TUTORING or settings.LLM_MODEL,
+            )
+            operation_id = op.id
         reserved = await meter.reserve_for_turn(user.id, turn_id, estimated)
         if reserved is None:
             raise HTTPException(
@@ -189,6 +211,10 @@ async def execute_notebook_turn(
                 detail="Insufficient credits. Check your balance in Settings.",
             )
         reserved_credits = reserved
+        if operation_id and hasattr(meter, "metering_repo"):
+            await meter.metering_repo.update_operation_status(
+                operation_id, "reserved", reserved_credits=reserved_credits,
+            )
 
     try:
         tutoring_override = None
@@ -204,6 +230,13 @@ async def execute_notebook_turn(
             byok_api_key=byok.get("api_key"),
             byok_api_base_url=byok.get("api_base_url"),
         )
+
+        # CM-005: Snapshot LLM token counters before turn execution
+        tutoring_llm = pipeline.tutor.llm
+        eval_llm = pipeline.evaluator.llm
+        tutor_tokens_before = dict(getattr(tutoring_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+        eval_tokens_before = dict(getattr(eval_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+
         result = await pipeline.execute_turn(
             session_id=request.session_id,
             student_message=request.message,
@@ -215,19 +248,62 @@ async def execute_notebook_turn(
 
         if uses_platform_credits:
             model_id = settings.LLM_MODEL_TUTORING or settings.LLM_MODEL
-            prompt_tokens = getattr(result, "prompt_tokens", 0) or 0
-            completion_tokens = getattr(result, "completion_tokens", 0) or 0
+
+            # CM-005: Compute actual token deltas from LLM providers
+            tutor_tokens_after = dict(getattr(tutoring_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+            eval_tokens_after = dict(getattr(eval_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+            tutor_prompt_delta = tutor_tokens_after.get("prompt_tokens", 0) - tutor_tokens_before.get("prompt_tokens", 0)
+            tutor_completion_delta = tutor_tokens_after.get("completion_tokens", 0) - tutor_tokens_before.get("completion_tokens", 0)
+            eval_prompt_delta = eval_tokens_after.get("prompt_tokens", 0) - eval_tokens_before.get("prompt_tokens", 0)
+            eval_completion_delta = eval_tokens_after.get("completion_tokens", 0) - eval_tokens_before.get("completion_tokens", 0)
+
+            prompt_tokens = tutor_prompt_delta + eval_prompt_delta
+            completion_tokens = tutor_completion_delta + eval_completion_delta
+
+            # Fallback to estimate if providers didn't report usage
             if prompt_tokens == 0 and completion_tokens == 0:
                 prompt_tokens = 800
                 completion_tokens = 400
-            await meter.finalize_turn(
-                user.id,
-                turn_id,
-                model_id,
-                prompt_tokens,
-                completion_tokens,
-                reserved_credits,
-            )
+
+            # CM-005: Record usage lines for the turn subcalls using measured token deltas
+            if operation_id and supports_operation_metering:
+                eval_model = settings.LLM_MODEL_EVALUATION or model_id
+                # Policy + tutor response usage (tutoring LLM)
+                await meter.append_usage_line(
+                    operation_id, "tutor_response", model_id,
+                    input_tokens=max(0, int(tutor_prompt_delta * 0.85)),
+                    output_tokens=max(0, int(tutor_completion_delta * 0.85)),
+                )
+                # Policy usage line (tutoring LLM)
+                await meter.append_usage_line(
+                    operation_id, "tutor_policy", model_id,
+                    input_tokens=max(0, int(tutor_prompt_delta * 0.15)),
+                    output_tokens=max(0, int(tutor_completion_delta * 0.15)),
+                )
+                # Evaluator usage line (evaluation LLM)
+                await meter.append_usage_line(
+                    operation_id, "tutor_evaluation", eval_model,
+                    input_tokens=max(0, int(eval_prompt_delta * 0.7)),
+                    output_tokens=max(0, int(eval_completion_delta * 0.7)),
+                )
+                # Safety critic usage line (evaluation LLM)
+                await meter.append_usage_line(
+                    operation_id, "tutor_safety", eval_model,
+                    input_tokens=max(0, int(eval_prompt_delta * 0.3)),
+                    output_tokens=max(0, int(eval_completion_delta * 0.3)),
+                )
+
+                # Finalize through operation-based path
+                final_credits = await meter.finalize_operation(
+                    user.id, operation_id, reserved_credits,
+                    reference_id=turn_id, reference_type="turn",
+                )
+            else:
+                await meter.finalize_turn(
+                    user.id, turn_id, model_id,
+                    prompt_tokens, completion_tokens,
+                    reserved_credits,
+                )
         elif byok.get("api_key"):
             logger.info("Notebook turn %s used BYOK and bypassed platform credits", turn_id)
 
@@ -246,9 +322,13 @@ async def execute_notebook_turn(
             focus_concepts=result.focus_concepts,
             awaiting_evaluation=result.awaiting_evaluation,
             session_summary=result.session_summary,
+            selected_model_id=settings.LLM_MODEL_TUTORING or settings.LLM_MODEL,
         )
     except Exception as e:
-        await meter.release_turn(user.id, turn_id, reserved_credits)
+        if operation_id and supports_operation_metering:
+            await meter.release_operation(user.id, operation_id, reserved_credits, reference_id=turn_id, reference_type="turn")
+        else:
+            await meter.release_turn(user.id, turn_id, reserved_credits)
         logger.error(f"Notebook turn pipeline failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

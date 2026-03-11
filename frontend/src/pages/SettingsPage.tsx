@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Key, Loader2, Save, Settings2, ShieldAlert, Trash2 } from 'lucide-react';
+import { CheckCircle2, Key, Loader2, Save, Settings2, ShieldAlert, Trash2, Cpu } from 'lucide-react';
 import { getApiErrorMessage } from '../api/client';
-import { useAsyncByokEscrows, useRevokeAsyncByokEscrow, useUserSettings, useUpdateUserSettings } from '../api/hooks';
+import { useAsyncByokEscrows, useRevokeAsyncByokEscrow, useUserSettings, useUpdateUserSettings, useModelCatalog, useModelPreferences, useUpdateModelPreferences } from '../api/hooks';
 
 export default function SettingsPage() {
   const { data, isLoading } = useUserSettings();
@@ -17,6 +17,15 @@ export default function SettingsPage() {
   const [byokError, setByokError] = useState<string | null>(null);
   const [asyncByokFeedback, setAsyncByokFeedback] = useState<string | null>(null);
 
+  // Model selection state (CM-013)
+  const { data: modelCatalog } = useModelCatalog();
+  const { data: modelPrefs } = useModelPreferences();
+  const updateModelPrefs = useUpdateModelPreferences();
+  const [selectedTutoringModel, setSelectedTutoringModel] = useState('');
+  const [selectedArtifactModel, setSelectedArtifactModel] = useState('');
+  const [selectedUploadModel, setSelectedUploadModel] = useState('');
+  const [modelSaved, setModelSaved] = useState(false);
+
   useEffect(() => {
     if (data) {
       setConsentTrainingGlobal(Boolean(data.consent_training_global));
@@ -30,6 +39,15 @@ export default function SettingsPage() {
       setByokBaseUrl(localStorage.getItem('byok_api_base_url') ?? '');
     } catch { /* noop */ }
   }, []);
+
+  // Load model preferences
+  useEffect(() => {
+    if (modelPrefs?.preferences) {
+      setSelectedTutoringModel(modelPrefs.preferences.tutoring_model_id || '');
+      setSelectedArtifactModel(modelPrefs.preferences.artifact_model_id || '');
+      setSelectedUploadModel(modelPrefs.preferences.upload_model_id || '');
+    }
+  }, [modelPrefs]);
 
   const isSaving = updateSettings.isPending;
 
@@ -71,6 +89,20 @@ export default function SettingsPage() {
       setByokSaved(true);
       setTimeout(() => setByokSaved(false), 2000);
     } catch { /* noop */ }
+  };
+
+  const handleSaveModelPrefs = async () => {
+    try {
+      await updateModelPrefs.mutateAsync({
+        tutoring_model_id: selectedTutoringModel || undefined,
+        artifact_model_id: selectedArtifactModel || undefined,
+        upload_model_id: selectedUploadModel || undefined,
+      });
+      setModelSaved(true);
+      setTimeout(() => setModelSaved(false), 2000);
+    } catch (err) {
+      console.error('Failed to save model preferences', err);
+    }
   };
 
   const handleRevokeAsyncByokEscrow = async (escrowId: string) => {
@@ -296,6 +328,80 @@ export default function SettingsPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Model Selection Section (CM-013) */}
+        {modelCatalog && modelCatalog.length > 0 && (
+          <div className="rounded-xl border border-border bg-card p-6 mt-6 animate-fade-up" style={{ animationDelay: '0.2s' }}>
+            <div className="flex items-start gap-3 mb-5">
+              <div className="w-10 h-10 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center flex-shrink-0">
+                <Cpu className="w-5 h-5 text-gold" />
+              </div>
+              <div>
+                <h2 className="font-display text-lg font-semibold text-card-foreground">
+                  Model preferences
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
+                  Choose which AI model to use for each task. Economy models use fewer credits; premium models offer higher quality.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {[
+                { label: 'Tutoring model', value: selectedTutoringModel, setter: setSelectedTutoringModel },
+                { label: 'Artifact generation model', value: selectedArtifactModel, setter: setSelectedArtifactModel },
+                { label: 'Upload processing model', value: selectedUploadModel, setter: setSelectedUploadModel },
+              ].map(({ label, value, setter }) => (
+                <div key={label}>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">{label}</label>
+                  <select
+                    value={value}
+                    onChange={(e) => setter(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background/30 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold/40"
+                  >
+                    <option value="">System default</option>
+                    {['economy', 'standard', 'premium_small'].map((cls) => {
+                      const models = modelCatalog.filter((m) => m.model_class === cls && m.is_active);
+                      if (!models.length) return null;
+                      return (
+                        <optgroup key={cls} label={cls.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())}>
+                          {models.map((m) => (
+                            <option key={m.model_id} value={m.model_id}>
+                              {m.display_name} — {cls.replace('_', ' ')} · ~{(m.input_usd_per_million / 1000 * 100).toFixed(2)}¢/1K in
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                </div>
+              ))}
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleSaveModelPrefs}
+                  disabled={updateModelPrefs.isPending}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gold text-primary-foreground text-sm font-medium hover:bg-gold/90 transition-colors disabled:opacity-60"
+                >
+                  {updateModelPrefs.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Save model preferences
+                </button>
+
+                {modelSaved && (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Saved
+                  </span>
+                )}
+              </div>
+
+              <div className="rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
+                Model selection affects credit consumption. Economy models use fewer credits per request.
+                The system may automatically route to a fallback model if your selected model is temporarily unavailable.
+              </div>
+            </div>
           </div>
         )}
       </div>

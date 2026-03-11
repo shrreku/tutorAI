@@ -101,3 +101,43 @@ def test_prepare_session_context_backfills_missing_profiles_and_returns_summary(
     assert summary["topic_artifacts_created"] == 1
     assert summary["topic_scope_keys"]
     assert summary["resource_profiles_ready"] is True
+
+
+def test_prepare_session_context_rejects_ready_resource_without_study_ready_capability():
+    notebook_id = uuid4()
+    user_id = uuid4()
+    resource_id = uuid4()
+    request = SimpleNamespace(
+        resource_id=resource_id,
+        selected_resource_ids=[],
+        notebook_wide=False,
+        selected_topics=[],
+        mode="learn",
+        topic=None,
+    )
+    resource = SimpleNamespace(
+        id=resource_id,
+        owner_user_id=user_id,
+        filename="outline.md",
+        topic="physics",
+        status="ready",
+        tutoring_ready_at=None,
+        capabilities_json={"study_ready": False, "has_concepts": False},
+    )
+
+    service = NotebookPreparationService(_FakeDb())
+    service.notebook_resource_repo = SimpleNamespace(list_active_resource_ids=lambda _notebook_id: asyncio.sleep(0, result=[resource_id]))
+    service.resource_repo = SimpleNamespace(get_by_id=lambda _resource_id: asyncio.sleep(0, result=resource))
+
+    try:
+        asyncio.run(
+            service.prepare_session_context(
+                notebook_id=notebook_id,
+                request=request,
+                user_id=user_id,
+            )
+        )
+    except ValueError as exc:
+        assert str(exc) == "Some selected resources are not study-ready yet"
+    else:
+        raise AssertionError("Expected prepare_session_context to reject non-study-ready resource")

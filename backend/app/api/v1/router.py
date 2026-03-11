@@ -10,6 +10,7 @@ from app.api.v1.users import router as users_router
 from app.api.v1.billing import router as billing_router
 from app.api.v1.quiz import router as quiz_router
 from app.api.v1.notebooks import router as notebooks_router
+from app.api.v1.models_api import router as models_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router)
@@ -22,3 +23,4 @@ api_router.include_router(users_router)
 api_router.include_router(billing_router)
 api_router.include_router(quiz_router)
 api_router.include_router(notebooks_router)
+api_router.include_router(models_router)

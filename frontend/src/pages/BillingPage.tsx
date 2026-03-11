@@ -9,8 +9,11 @@ import {
   Download,
   Gauge,
   Coins,
+  Activity,
 } from 'lucide-react';
-import { useBillingBalance, useBillingUsage } from '../api/hooks';
+import { useState } from 'react';
+import { useBillingBalance, useBillingUsage, useOperationHistory } from '../api/hooks';
+import { formatBilledUsd, formatCredits, formatRawUsd, usesMinimumChargeFloor } from '../lib/credits';
 import type { CreditLedgerEntry } from '../types/api';
 
 function entryTypeLabel(t: string) {
@@ -31,8 +34,14 @@ function entryTypeColor(t: string) {
   return 'text-muted-foreground';
 }
 
-function formatNumber(n: number) {
-  return n.toLocaleString();
+function isVisibleLedgerEntry(entry: CreditLedgerEntry) {
+  if (entry.delta === 0) {
+    return false;
+  }
+  if (entry.entry_type === 'reserve' || entry.entry_type === 'release') {
+    return false;
+  }
+  return true;
 }
 
 function downloadCsv(entries: CreditLedgerEntry[]) {
@@ -53,6 +62,9 @@ function downloadCsv(entries: CreditLedgerEntry[]) {
 export default function BillingPage() {
   const { data: balance, isLoading: balanceLoading } = useBillingBalance();
   const { data: usage, isLoading: usageLoading } = useBillingUsage();
+  const [activeTab, setActiveTab] = useState<'ledger' | 'operations'>('ledger');
+  const { data: operations } = useOperationHistory(50);
+  const visibleEntries = (usage?.entries ?? []).filter(isVisibleLedgerEntry);
 
   if (balanceLoading || usageLoading) {
     return (
@@ -110,7 +122,7 @@ export default function BillingPage() {
                 </span>
               </div>
               <p className="text-2xl font-display font-semibold text-foreground">
-                {formatNumber(balance.balance)}
+                {formatCredits(balance.balance)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 {balance.plan_tier.replace('_', ' ')} tier
@@ -125,7 +137,7 @@ export default function BillingPage() {
                 </span>
               </div>
               <p className="text-2xl font-display font-semibold text-foreground">
-                {formatNumber(balance.lifetime_granted)}
+                {formatCredits(balance.lifetime_granted)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">lifetime total</p>
             </div>
@@ -138,7 +150,7 @@ export default function BillingPage() {
                 </span>
               </div>
               <p className="text-2xl font-display font-semibold text-foreground">
-                {formatNumber(balance.lifetime_used)}
+                {formatCredits(balance.lifetime_used)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">lifetime total</p>
             </div>
@@ -151,7 +163,7 @@ export default function BillingPage() {
                 </span>
               </div>
               <p className="text-2xl font-display font-semibold text-foreground">
-                {formatNumber(balance.default_monthly_grant)}
+                {formatCredits(balance.default_monthly_grant)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">operator-managed refresh amount</p>
             </div>
@@ -166,11 +178,11 @@ export default function BillingPage() {
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Daily cap</span>
-                  <span className="text-foreground font-medium">{formatNumber(balance.daily_limit)}</span>
+                  <span className="text-foreground font-medium">{formatCredits(balance.daily_limit)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Monthly cap</span>
-                  <span className="text-foreground font-medium">{formatNumber(balance.monthly_limit)}</span>
+                  <span className="text-foreground font-medium">{formatCredits(balance.monthly_limit)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Soft-limit warning</span>
@@ -200,8 +212,8 @@ export default function BillingPage() {
               <div>
                 <p className="text-sm font-medium text-foreground">Low credit balance</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Your balance is running low. You have {formatNumber(balance.balance)} credits
-                  remaining. Monthly limit: {formatNumber(balance.monthly_limit)}.
+                  Your balance is running low. You have {formatCredits(balance.balance)} credits
+                  remaining. Monthly limit: {formatCredits(balance.monthly_limit)}.
                 </p>
               </div>
             </div>
@@ -212,15 +224,24 @@ export default function BillingPage() {
             run on platform infrastructure so they can complete outside the browser request lifecycle.
           </div>
 
-          {/* Usage history */}
+          <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
+            Billing display: balances are shown in credits while the ledger stores 100 internal units per credit. Small operations may bill at the model-tier minimum, so billed credits can be higher than raw provider cost.
+          </div>
+
+          {/* Usage history with tabs */}
           <div className="rounded-xl border border-border bg-card">
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <h2 className="font-display text-lg font-semibold text-card-foreground">
-                Recent activity
-              </h2>
-              {usage?.entries && usage.entries.length > 0 && (
+              <div className="flex items-center gap-4">
+                <button onClick={() => setActiveTab('ledger')} className={`font-display text-sm font-semibold transition-colors ${activeTab === 'ledger' ? 'text-card-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                  Recent activity
+                </button>
+                <button onClick={() => setActiveTab('operations')} className={`font-display text-sm font-semibold transition-colors flex items-center gap-1.5 ${activeTab === 'operations' ? 'text-card-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+                  <Activity className="w-3.5 h-3.5" /> Operations
+                </button>
+              </div>
+              {activeTab === 'ledger' && visibleEntries.length > 0 && (
                 <button
-                  onClick={() => downloadCsv(usage.entries)}
+                  onClick={() => downloadCsv(visibleEntries)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
                 >
                   <Download className="w-3.5 h-3.5" />
@@ -229,13 +250,13 @@ export default function BillingPage() {
               )}
             </div>
 
-            {(!usage?.entries || usage.entries.length === 0) ? (
+            {activeTab === 'ledger' && (visibleEntries.length === 0 ? (
               <div className="px-5 py-8 text-center text-sm text-muted-foreground">
                 No usage activity yet.
               </div>
             ) : (
               <div className="divide-y divide-border">
-                {usage.entries.map((entry) => (
+                {visibleEntries.map((entry) => (
                   <div key={entry.id} className="px-5 py-3 flex items-center gap-4">
                     <div className="flex-shrink-0">
                       {entry.delta >= 0 ? (
@@ -261,16 +282,55 @@ export default function BillingPage() {
                     <div className="text-right">
                       <p className={`text-sm font-medium ${entryTypeColor(entry.entry_type)}`}>
                         {entry.delta >= 0 ? '+' : ''}
-                        {formatNumber(entry.delta)}
+                        {formatCredits(entry.delta)}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        bal: {formatNumber(entry.balance_after)}
+                        bal: {formatCredits(entry.balance_after)}
                       </p>
                     </div>
                   </div>
                 ))}
               </div>
-            )}
+            ))}
+
+            {activeTab === 'operations' && ((!operations?.operations || operations.operations.length === 0) ? (
+              <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                No billing operations yet.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {operations.operations.map((op) => (
+                  <div key={op.id} className="px-5 py-3 flex items-center gap-4">
+                    <div className="flex-shrink-0">
+                      <Activity className={`w-4 h-4 ${op.status === 'finalized' ? 'text-emerald-500' : op.status === 'released' ? 'text-amber-400' : 'text-muted-foreground'}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground">
+                        {op.operation_type.replace('_', ' ')}
+                        <span className="text-muted-foreground font-normal"> &middot; {op.status}</span>
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {op.routed_model_id || op.selected_model_id || '—'} &middot; {new Date(op.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-medium text-foreground">
+                        {op.final_credits != null ? formatCredits(op.final_credits) : op.reserved_credits != null ? `~${formatCredits(op.reserved_credits)}` : '—'} cr
+                      </p>
+                      {op.final_credits != null && (
+                        <p className="text-xs text-muted-foreground">billed {formatBilledUsd(op.final_credits)}</p>
+                      )}
+                      {op.final_usd != null && (
+                        <p className="text-xs text-muted-foreground">raw {formatRawUsd(op.final_usd)}</p>
+                      )}
+                      {op.final_credits != null && usesMinimumChargeFloor(op.final_credits, op.final_usd) && (
+                        <p className="text-[11px] text-amber-300">minimum applied</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         </div>
       )}

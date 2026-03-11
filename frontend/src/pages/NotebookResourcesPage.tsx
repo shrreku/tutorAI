@@ -10,10 +10,10 @@ import {
   useNotebook, useNotebookResources, useResources,
   useAttachNotebookResource, useDetachNotebookResource,
   useUserSettings, useUploadResource, useIngestionStatus,
+  useIngestionEstimate,
 } from '../api/hooks';
-import type { IngestionBillingStatus, IngestionAsyncByokStatus } from '../types/api';
-
-function formatCredits(n: number) { return n.toLocaleString(); }
+import { formatCredits } from '../lib/credits';
+import type { IngestionBillingStatus, IngestionAsyncByokStatus, IngestionEstimateResponse } from '../types/api';
 
 function ResourceStatusBadge({ status }: { status: string }) {
   const cfg: Record<string, { icon: typeof CheckCircle2; cls: string; label: string }> = {
@@ -91,6 +91,7 @@ export default function NotebookResourcesPage() {
   const attach = useAttachNotebookResource(notebookId);
   const detach = useDetachNotebookResource(notebookId);
   const uploadResource = useUploadResource();
+  const estimateIngestion = useIngestionEstimate();
 
   const [selectedResourceId, setSelectedResourceId] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -103,6 +104,7 @@ export default function NotebookResourcesPage() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [lastBilling, setLastBilling] = useState<IngestionBillingStatus | null>(null);
   const [lastAsyncByok, setLastAsyncByok] = useState<IngestionAsyncByokStatus | null>(null);
+  const [uploadEstimate, setUploadEstimate] = useState<IngestionEstimateResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const hasLocalByok = typeof window !== 'undefined' && Boolean(window.localStorage.getItem('byok_api_key'));
@@ -116,6 +118,30 @@ export default function NotebookResourcesPage() {
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }, []);
   const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }, []);
   const handleDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); const f = e.dataTransfer.files?.[0]; if (f) setSelectedFile(f); }, []);
+
+  // CM-014: Auto-estimate credits when a file is selected
+  const fetchEstimate = useCallback(async (file: File) => {
+    try {
+      const result = await estimateIngestion.mutateAsync({
+        filename: file.name,
+        file_size_bytes: file.size,
+      });
+      setUploadEstimate(result);
+    } catch {
+      setUploadEstimate(null);
+    }
+  }, [estimateIngestion]);
+
+  // Trigger estimate when file changes
+  const prevFileRef = useRef<File | null>(null);
+  if (selectedFile !== prevFileRef.current) {
+    prevFileRef.current = selectedFile;
+    if (selectedFile) {
+      void fetchEstimate(selectedFile);
+    } else {
+      setUploadEstimate(null);
+    }
+  }
 
   const handleUpload = async () => {
     if (!selectedFile) return;
@@ -224,6 +250,36 @@ export default function NotebookResourcesPage() {
                     <p className="text-xs text-muted-foreground mt-0.5">Creates encrypted server-side escrow for up to {userSettings.async_byok_escrow_ttl_minutes} min.{!asyncByokAvailable && ' Save a BYOK key in Settings first.'}</p>
                   </div>
                 </label>
+              )}
+
+              {/* CM-014: Pre-upload credit estimate */}
+              {estimateIngestion.isPending && selectedFile && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-gold" />
+                  <span>Estimating processing cost…</span>
+                </div>
+              )}
+              {uploadEstimate && selectedFile && !estimateIngestion.isPending && (
+                <div className="rounded-lg border border-gold/15 bg-gold/[0.04] px-4 py-3 space-y-1.5">
+                  <div className="flex items-center gap-2 text-xs font-medium text-foreground">
+                    <Coins className="w-3.5 h-3.5 text-gold" />
+                    <span>Estimated processing cost</span>
+                    <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded ${uploadEstimate.estimate_confidence === 'high' ? 'bg-emerald-500/10 text-emerald-400' : uploadEstimate.estimate_confidence === 'medium' ? 'bg-gold/10 text-gold' : 'bg-orange-500/10 text-orange-400'}`}>
+                      {uploadEstimate.estimate_confidence} confidence
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
+                    <span>{formatCredits(uploadEstimate.estimated_credits_low)}–{formatCredits(uploadEstimate.estimated_credits_high)} credits</span>
+                    <span>${uploadEstimate.estimated_usd_low.toFixed(4)}–${uploadEstimate.estimated_usd_high.toFixed(4)} USD</span>
+                    <span>~{uploadEstimate.chunk_count_estimate} chunks</span>
+                  </div>
+                  {uploadEstimate.warnings.length > 0 && (
+                    <div className="flex items-start gap-1.5 text-[11px] text-orange-400">
+                      <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
+                      <span>{uploadEstimate.warnings.join('. ')}</span>
+                    </div>
+                  )}
+                </div>
               )}
 
               <div className="flex items-center gap-3">

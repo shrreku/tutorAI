@@ -30,6 +30,10 @@ interface LoginPayload {
   password: string;
 }
 
+interface UserSettingsResponse {
+  is_admin: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Raw API calls (no auth header needed — these are public)
 // ---------------------------------------------------------------------------
@@ -40,6 +44,10 @@ async function apiRegister(payload: RegisterPayload): Promise<AuthResponse> {
 
 async function apiLogin(payload: LoginPayload): Promise<AuthResponse> {
   return apiClient.postPublic<AuthResponse>('/auth/login', payload);
+}
+
+async function apiGetUserSettings(): Promise<UserSettingsResponse> {
+  return apiClient.get<UserSettingsResponse>('/users/me/settings');
 }
 
 // ---------------------------------------------------------------------------
@@ -63,6 +71,37 @@ export function useAuth() {
       window.removeEventListener('storage', sync);
     };
   }, []);
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void apiGetUserSettings()
+      .then((settings) => {
+        if (cancelled) {
+          return;
+        }
+
+        setUser((current) => {
+          if (!current || current.is_admin === settings.is_admin) {
+            return current;
+          }
+          const nextUser = { ...current, is_admin: settings.is_admin };
+          persistAuth(token, nextUser);
+          return nextUser;
+        });
+      })
+      .catch(() => {
+        // Ignore background refresh failures; auth state will still follow login/logout flows.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const register = useCallback(async (payload: RegisterPayload) => {
     const data = await apiRegister(payload);

@@ -166,6 +166,16 @@ export const apiClient = {
 
     return handleResponse<T>(response);
   },
+
+  async put<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: 'PUT',
+      headers: buildHeaders(options),
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    return handleResponse<T>(response);
+  },
   
   async postForm<T>(path: string, formData: FormData, options?: RequestOptions): Promise<T> {
     const response = await fetch(`${API_BASE_URL}${path}`, {

@@ -547,6 +547,10 @@ class TutorTurnResponse(BaseModel):
         default=None,
         description="Session summary data when session_complete=True. Contains summary_text, concepts_strong/developing/to_revisit, objectives, mastery_snapshot.",
     )
+    # CM-015: Model routing transparency
+    selected_model_id: Optional[str] = None
+    routed_model_id: Optional[str] = None
+    reroute_reason: Optional[str] = None
 
 
 class SessionSummaryResponse(BaseModel):
