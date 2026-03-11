@@ -13,18 +13,18 @@ billing admin API which sends an email with a one-time registration link.
 import logging
 from typing import Optional
 
+import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-import bcrypt
 
+from app.api.deps import check_auth_rate_limit, create_access_token, is_admin_user
 from app.config import settings
 from app.db.database import get_db
 from app.db.repositories.session_repo import UserProfileRepository
 from app.models.alpha import AlphaAccessRequest
 from app.models.session import UserProfile
-from app.api.deps import check_auth_rate_limit, create_access_token, is_admin_user
 from app.services.credits.meter import CreditMeter
 
 logger = logging.getLogger(__name__)
