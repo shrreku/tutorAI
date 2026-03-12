@@ -188,3 +188,72 @@ def test_curriculum_preparation_skips_already_ready_resource():
     summary = asyncio.run(service.ensure_curriculum_ready(resource_id))
 
     assert summary == {"prepared": False, "reason": "already_ready"}
+
+
+def test_curriculum_preparation_reports_progress(monkeypatch):
+    resource_id = uuid4()
+    resource = SimpleNamespace(
+        id=resource_id,
+        filename="heat.pdf",
+        capabilities_json={"curriculum_ready": False, "has_topic_bundles": False},
+        curriculum_ready_at=None,
+        tutoring_ready_at=None,
+        graph_ready_at=None,
+        processing_profile="core_only",
+    )
+    chunks = [
+        SimpleNamespace(
+            id=uuid4(),
+            chunk_index=0,
+            text="Conduction transfers heat through matter.",
+            section_heading="Conduction",
+            page_start=1,
+            page_end=1,
+            enrichment_metadata={},
+            pedagogy_role=None,
+            difficulty=None,
+        ),
+    ]
+    db = _FakeDb(resource)
+    service = CurriculumPreparationService(
+        db,
+        ontology_extractor=_FakeExtractor(),
+        enricher=_FakeEnricher(),
+        kb_builder=_FakeKBBuilder(),
+        graph_builder=_FakeGraphBuilder(),
+    )
+    progress_events = []
+
+    async def _get_chunks(_resource_id):
+        return chunks
+
+    async def _persist_enrichments(_chunks, _enrichments):
+        return None
+
+    async def _build_bundles(_resource_id):
+        return {"bundles_created": 1, "topic_bundles_created": 1}
+
+    async def _upsert_curriculum_artifact(_resource, kb_result, graph_result, bundle_result, source_chunk_ids):
+        return SimpleNamespace(id=uuid4())
+
+    async def _save_ontology_data(*_args, **_kwargs):
+        return None
+
+    async def _progress(stage: str, progress: int):
+        progress_events.append((stage, progress))
+
+    monkeypatch.setattr(service, "_get_chunks", _get_chunks)
+    monkeypatch.setattr(service, "_persist_enrichments", _persist_enrichments)
+    monkeypatch.setattr(service, "_build_bundles", _build_bundles)
+    monkeypatch.setattr(service, "_upsert_curriculum_artifact", _upsert_curriculum_artifact)
+    monkeypatch.setattr("app.services.curriculum_preparation.save_ontology_data", _save_ontology_data)
+
+    asyncio.run(service.ensure_curriculum_ready(resource_id, progress_callback=_progress))
+
+    assert progress_events == [
+        ("curriculum_ontology", 78),
+        ("curriculum_enrichment", 86),
+        ("curriculum_kb", 92),
+        ("curriculum_bundles", 96),
+        ("curriculum_finalize", 99),
+    ]

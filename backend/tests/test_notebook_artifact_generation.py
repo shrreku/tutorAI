@@ -90,3 +90,39 @@ def test_build_artifact_payload_rejects_unsupported_type():
                 options={},
             )
         )
+
+
+def test_build_artifact_payload_skips_llm_when_no_sessions():
+    called = {"llm": 0}
+
+    class _LLM:
+        model_id = "test-model"
+
+        async def generate_json(self, **_kwargs):
+            called["llm"] += 1
+            raise AssertionError("LLM path should not run without session context")
+
+    service = NotebookArtifactService(_LLM())
+    payload = asyncio.run(
+        service.generate_payload(
+            artifact_type="notes",
+            notebook=SimpleNamespace(title="Physics Notebook", goal="Prepare for exam"),
+            sessions=[],
+            turns_by_session={},
+            progress=NotebookProgressResponse(
+                notebook_id=uuid4(),
+                mastery_snapshot={},
+                objective_progress_snapshot={},
+                weak_concepts_snapshot=[],
+                sessions_count=0,
+                completed_sessions_count=0,
+            ),
+            source_resource_names=["thermo.pdf"],
+            options={},
+        )
+    )
+
+    assert called["llm"] == 0
+    assert payload["generation"]["strategy"] == "deterministic_fallback"
+    assert payload["generation"]["fallback_reason"] == "insufficient_session_context"
+    assert "No tutoring sessions" in payload["summary"]

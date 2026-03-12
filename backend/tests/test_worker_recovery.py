@@ -209,6 +209,9 @@ async def test_process_job_finalizes_reserved_ingestion_credits(monkeypatch):
         async def run(self, *_args, **_kwargs):
             return {}
 
+    async def _fake_continue_background_curriculum_preparation(**_kwargs):
+        return {}
+
     monkeypatch.setattr(worker_module, "CreditMeter", _Meter)
     monkeypatch.setattr(worker_module, "IngestionJobRepository", _FakeJobRepo)
     monkeypatch.setattr(worker_module, "async_session_factory", _FakeSequencedSessionFactory([fake_session]))
@@ -216,6 +219,7 @@ async def test_process_job_finalizes_reserved_ingestion_credits(monkeypatch):
     monkeypatch.setattr(worker_module, "create_embedding_provider", lambda *_args, **_kwargs: SimpleNamespace())
     monkeypatch.setattr(worker_module, "create_storage_provider", lambda *_args, **_kwargs: SimpleNamespace())
     monkeypatch.setattr(worker_module, "IngestionPipeline", _Pipeline)
+    monkeypatch.setattr(worker_module, "_continue_background_curriculum_preparation", _fake_continue_background_curriculum_preparation)
 
     result = await worker_module.process_job({"resource_id": str(job.resource_id), "job_id": str(job.id)})
 
@@ -322,6 +326,9 @@ async def test_process_job_uses_async_byok_escrow_when_present(monkeypatch):
         async def run(self, *_args, **_kwargs):
             return {}
 
+    async def _fake_continue_background_curriculum_preparation(**_kwargs):
+        return {}
+
     def _fake_create_llm_provider(_settings, **kwargs):
         create_calls.append(kwargs)
         return SimpleNamespace()
@@ -334,6 +341,7 @@ async def test_process_job_uses_async_byok_escrow_when_present(monkeypatch):
     monkeypatch.setattr(worker_module, "create_embedding_provider", lambda *_args, **_kwargs: SimpleNamespace())
     monkeypatch.setattr(worker_module, "create_storage_provider", lambda *_args, **_kwargs: SimpleNamespace())
     monkeypatch.setattr(worker_module, "IngestionPipeline", _Pipeline)
+    monkeypatch.setattr(worker_module, "_continue_background_curriculum_preparation", _fake_continue_background_curriculum_preparation)
 
     result = await worker_module.process_job(
         {"resource_id": str(job.resource_id), "job_id": str(job.id), "escrow_id": job.metrics["async_byok"]["escrow_id"]}

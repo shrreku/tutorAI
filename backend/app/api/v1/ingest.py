@@ -20,10 +20,20 @@ from app.models.resource import Resource
 from app.models.ingestion import IngestionJob
 from app.models.resource import default_resource_capabilities
 from app.models.session import UserProfile
-from app.schemas.api import IngestionAsyncByokStatusResponse, IngestionBillingStatusResponse, IngestionStatusResponse
+from app.schemas.api import (
+    IngestionAsyncByokStatusResponse,
+    IngestionBillingStatusResponse,
+    IngestionCurriculumBillingStatusResponse,
+    IngestionStatusResponse,
+)
 from app.services.async_byok_escrow import AsyncByokEscrowService, async_byok_feature_available
 from app.services.credits.meter import CreditMeter
-from app.services.llm.factory import get_missing_platform_llm_config
+from app.services.curriculum_preparation import CurriculumPreparationService
+from app.services.embedding.factory import create_embedding_provider
+from app.services.ingestion.enricher import ChunkEnricher
+from app.services.ingestion.ontology_extractor import OntologyExtractor
+from app.services.ingestion.pipeline_support import update_job
+from app.services.llm.factory import create_llm_provider, get_missing_platform_llm_config
 from app.services.storage.factory import create_storage_provider
 
 logger = logging.getLogger(__name__)
@@ -87,6 +97,20 @@ def _build_async_byok_metrics(*, escrow_id: UUID | None, provider_name: str | No
     }
 
 
+def _build_curriculum_billing_metrics(*, estimate: dict) -> dict:
+    return {
+        "curriculum_billing": {
+            "estimated_credits_low": int(estimate.get("curriculum_credits_low") or 0),
+            "estimated_credits_high": int(estimate.get("curriculum_credits_high") or 0),
+            "reserved_credits": 0,
+            "actual_credits": None,
+            "status": "pending_background_preparation",
+            "operation_id": None,
+            "release_reason": None,
+        }
+    }
+
+
 def _estimate_retry_credits(resource: Resource, latest_job: IngestionJob | None, meter: CreditMeter) -> int:
     latest_metrics = (latest_job.metrics or {}) if latest_job else {}
     latest_billing = latest_metrics.get("billing") if isinstance(latest_metrics, dict) else None
@@ -144,6 +168,24 @@ def _job_async_byok_payload(job: IngestionJob | None) -> IngestionAsyncByokStatu
     )
 
 
+def _job_curriculum_billing_payload(job: IngestionJob | None) -> IngestionCurriculumBillingStatusResponse | None:
+    metrics = (getattr(job, "metrics", None) or {}) if job else {}
+    if not isinstance(metrics, dict):
+        return None
+    curriculum_billing = metrics.get("curriculum_billing")
+    if not isinstance(curriculum_billing, dict):
+        return None
+    return IngestionCurriculumBillingStatusResponse(
+        estimated_credits_low=int(curriculum_billing.get("estimated_credits_low") or 0),
+        estimated_credits_high=int(curriculum_billing.get("estimated_credits_high") or 0),
+        reserved_credits=int(curriculum_billing.get("reserved_credits") or 0),
+        actual_credits=int(curriculum_billing.get("actual_credits")) if curriculum_billing.get("actual_credits") is not None else None,
+        status=str(curriculum_billing.get("status") or "pending"),
+        operation_id=UUID(curriculum_billing["operation_id"]) if curriculum_billing.get("operation_id") else None,
+        release_reason=curriculum_billing.get("release_reason"),
+    )
+
+
 def _get_billing_state(job: IngestionJob | None) -> dict:
     metrics = (getattr(job, "metrics", None) or {}) if job else {}
     if not isinstance(metrics, dict):
@@ -160,7 +202,52 @@ def _get_async_byok_state(job: IngestionJob | None) -> dict:
     return async_byok if isinstance(async_byok, dict) else {}
 
 
+def _get_curriculum_billing_state(job: IngestionJob | None) -> dict:
+    metrics = (getattr(job, "metrics", None) or {}) if job else {}
+    if not isinstance(metrics, dict):
+        return {}
+    curriculum_billing = metrics.get("curriculum_billing")
+    return curriculum_billing if isinstance(curriculum_billing, dict) else {}
+
+
+def _estimate_curriculum_from_job(*, meter: CreditMeter, resource: Resource, job: IngestionJob | None) -> dict:
+    metrics = (getattr(job, "metrics", None) or {}) if job else {}
+    billing = metrics.get("billing") if isinstance(metrics, dict) else {}
+    document = metrics.get("document") if isinstance(metrics, dict) else {}
+    file_size_bytes = int((billing or {}).get("file_size_bytes") or 0)
+    if file_size_bytes <= 0 and resource.file_path_or_uri and urlparse(resource.file_path_or_uri).scheme in {"", "file"}:
+        try:
+            file_size_bytes = Path(resource.file_path_or_uri).stat().st_size
+        except OSError:
+            file_size_bytes = 0
+
+    return meter.estimate_curriculum_preparation_v2(
+        file_size_bytes=file_size_bytes,
+        filename=resource.filename,
+        page_count_estimate=int((document or {}).get("page_count_actual") or 0),
+        token_count_estimate=int((document or {}).get("token_count_actual") or 0),
+        chunk_count_estimate=int((document or {}).get("chunk_count_actual") or 0),
+    )
+
+
+async def _release_curriculum_reservation(meter: CreditMeter, *, user_id: UUID, curriculum_billing: dict) -> None:
+    reserved_credits = int(curriculum_billing.get("reserved_credits") or 0)
+    operation_id = curriculum_billing.get("operation_id")
+    if reserved_credits <= 0 or not operation_id:
+        return
+    await meter.release_operation(
+        user_id,
+        UUID(str(operation_id)),
+        reserved_credits,
+        reference_id=str(operation_id),
+        reference_type="curriculum_prepare",
+    )
+
+
 def _job_status_payload(job: IngestionJob) -> IngestionStatusResponse:
+    metrics = (getattr(job, "metrics", None) or {}) if job else {}
+    document = metrics.get("document") if isinstance(metrics, dict) else None
+    capability_progress = metrics.get("capability_progress") if isinstance(metrics, dict) else None
     return IngestionStatusResponse(
         job_id=job.id,
         resource_id=job.resource_id,
@@ -174,9 +261,187 @@ def _job_status_payload(job: IngestionJob) -> IngestionStatusResponse:
         error_message=job.error_message,
         started_at=job.started_at,
         completed_at=job.completed_at,
+        document_metrics=document if isinstance(document, dict) else None,
+        capability_progress=capability_progress if isinstance(capability_progress, dict) else None,
         billing=_job_billing_payload(job),
+        curriculum_billing=_job_curriculum_billing_payload(job),
         async_byok=_job_async_byok_payload(job),
     )
+
+
+async def _continue_background_curriculum_preparation(
+    *,
+    db: AsyncSession,
+    resource_id: UUID,
+    job: IngestionJob,
+    byok_api_key: str | None,
+    byok_api_base_url: str | None,
+) -> dict:
+    meter = CreditMeter(db)
+    resource = await db.get(Resource, resource_id)
+    if resource is None:
+        raise ValueError(f"Resource {resource_id} not found")
+
+    curriculum_estimate = _estimate_curriculum_from_job(meter=meter, resource=resource, job=job)
+    op = await meter.create_operation(
+        job.owner_user_id,
+        "curriculum_prepare",
+        resource_id=str(resource_id),
+        selected_model_id=settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
+        estimate_credits_low=int(curriculum_estimate.get("estimated_credits_low") or 0),
+        estimate_credits_high=int(curriculum_estimate.get("estimated_credits_high") or 0),
+        metadata={"job_id": str(job.id), "source": "background_ingestion"},
+    )
+    reserved_credits = await meter.reserve_operation(
+        job.owner_user_id,
+        op.id,
+        int(curriculum_estimate.get("estimated_credits_high") or 0),
+        reference_id=str(op.id),
+        reference_type="curriculum_prepare",
+    )
+    if reserved_credits is None:
+        job.metrics = {
+            **(job.metrics or {}),
+            "capability_progress": {
+                "search_ready": True,
+                "doubt_ready": True,
+                "learn_ready": False,
+            },
+            "curriculum_billing": {
+                "estimated_credits_low": int(curriculum_estimate.get("estimated_credits_low") or 0),
+                "estimated_credits_high": int(curriculum_estimate.get("estimated_credits_high") or 0),
+                "reserved_credits": 0,
+                "actual_credits": None,
+                "status": "blocked_insufficient_credits",
+                "operation_id": str(op.id),
+                "release_reason": None,
+            },
+            "curriculum_preparation": {"prepared": False, "reason": "insufficient_credits"},
+        }
+        await update_job(
+            db,
+            job.id,
+            "completed",
+            "complete",
+            100,
+            metrics=job.metrics,
+        )
+        await db.commit()
+        return {"prepared": False, "reason": "insufficient_credits"}
+
+    job.metrics = {
+        **(job.metrics or {}),
+        "curriculum_billing": {
+            "estimated_credits_low": int(curriculum_estimate.get("estimated_credits_low") or 0),
+            "estimated_credits_high": int(curriculum_estimate.get("estimated_credits_high") or 0),
+            "reserved_credits": reserved_credits,
+            "actual_credits": None,
+            "status": "reserved",
+            "operation_id": str(op.id),
+            "release_reason": None,
+        },
+    }
+    await db.commit()
+
+    async def _progress(stage: str, progress: int) -> None:
+        current_metrics = dict(job.metrics or {})
+        await update_job(
+            db,
+            job.id,
+            "running",
+            stage,
+            progress,
+            metrics=current_metrics,
+        )
+        await db.commit()
+
+    embedding_provider = create_embedding_provider(settings)
+    ontology_llm = create_llm_provider(
+        settings,
+        task="ontology",
+        byok_api_key=byok_api_key,
+        byok_api_base_url=byok_api_base_url,
+    )
+    enrichment_llm = create_llm_provider(
+        settings,
+        task="enrichment",
+        byok_api_key=byok_api_key,
+        byok_api_base_url=byok_api_base_url,
+    )
+    service = CurriculumPreparationService(
+        db,
+        ontology_extractor=OntologyExtractor(
+            ontology_llm,
+            ontology_model=settings.LLM_MODEL_ONTOLOGY,
+            embed_fn=embedding_provider.embed,
+        ),
+        enricher=ChunkEnricher(
+            enrichment_llm,
+            enrichment_model=settings.LLM_MODEL_ENRICHMENT,
+        ),
+    )
+    ontology_before = dict(getattr(ontology_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+    enrichment_before = dict(getattr(enrichment_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+    summary = await service.ensure_curriculum_ready(resource_id, progress_callback=_progress)
+    ontology_after = dict(getattr(ontology_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+    enrichment_after = dict(getattr(enrichment_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+
+    ontology_prompt = max(0, int(ontology_after.get("prompt_tokens", 0)) - int(ontology_before.get("prompt_tokens", 0)))
+    ontology_completion = max(0, int(ontology_after.get("completion_tokens", 0)) - int(ontology_before.get("completion_tokens", 0)))
+    enrichment_prompt = max(0, int(enrichment_after.get("prompt_tokens", 0)) - int(enrichment_before.get("prompt_tokens", 0)))
+    enrichment_completion = max(0, int(enrichment_after.get("completion_tokens", 0)) - int(enrichment_before.get("completion_tokens", 0)))
+
+    if ontology_prompt or ontology_completion:
+        await meter.append_usage_line(
+            op.id,
+            "curriculum_ontology",
+            settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
+            input_tokens=ontology_prompt,
+            output_tokens=ontology_completion,
+        )
+    if enrichment_prompt or enrichment_completion:
+        await meter.append_usage_line(
+            op.id,
+            "curriculum_enrichment",
+            settings.LLM_MODEL_ENRICHMENT or settings.LLM_MODEL,
+            input_tokens=enrichment_prompt,
+            output_tokens=enrichment_completion,
+        )
+    actual_credits = await meter.finalize_operation(
+        job.owner_user_id,
+        op.id,
+        reserved_credits,
+        reference_id=str(op.id),
+        reference_type="curriculum_prepare",
+    )
+    job.metrics = {
+        **(job.metrics or {}),
+        "capability_progress": {
+            "search_ready": True,
+            "doubt_ready": True,
+            "learn_ready": True,
+        },
+        "curriculum_billing": {
+            "estimated_credits_low": int(curriculum_estimate.get("estimated_credits_low") or 0),
+            "estimated_credits_high": int(curriculum_estimate.get("estimated_credits_high") or 0),
+            "reserved_credits": reserved_credits,
+            "actual_credits": actual_credits,
+            "status": "finalized",
+            "operation_id": str(op.id),
+            "release_reason": None,
+        },
+        "curriculum_preparation": summary,
+    }
+    await update_job(
+        db,
+        job.id,
+        "completed",
+        "complete",
+        100,
+        metrics=job.metrics,
+    )
+    await db.commit()
+    return summary
 
 
 def _resolve_async_byok_request(*, requested: bool, byok: dict) -> bool:
@@ -263,6 +528,12 @@ class IngestionEstimateResponse(BaseModel):
     estimated_credits_high: int
     estimated_usd_low: float
     estimated_usd_high: float
+    core_upload_credits: int
+    core_upload_usd: float
+    curriculum_credits_low: int
+    curriculum_credits_high: int
+    curriculum_usd_low: float
+    curriculum_usd_high: float
     page_count_estimate: int
     token_count_estimate: int
     chunk_count_estimate: int
@@ -370,14 +641,15 @@ async def upload_resource(
     job_id = uuid.uuid4()
     resource_id = uuid.uuid4()
     escrow = None
+    estimate = meter.estimate_ingestion_v2(
+        file_size_bytes=len(file_content),
+        filename=file.filename,
+    )
     estimated_credits = 0
     reserved_credits = 0
     uses_platform_credits = settings.CREDITS_ENABLED and not use_async_byok
     if uses_platform_credits:
-        estimated_credits = meter.estimate_ingestion_credits(
-            file_size_bytes=len(file_content),
-            filename=file.filename,
-        )
+        estimated_credits = int(estimate["core_upload_credits"])
         reserved = await meter.reserve_for_ingestion(user.id, str(job_id), estimated_credits)
         if reserved is None:
             raise HTTPException(
@@ -433,6 +705,7 @@ async def upload_resource(
                     reserved_credits=reserved_credits,
                     file_size_bytes=len(file_content),
                 ),
+                **_build_curriculum_billing_metrics(estimate=estimate),
                 **_build_async_byok_metrics(
                     escrow_id=escrow.id if escrow else None,
                     provider_name=escrow.provider_name if escrow else None,
@@ -560,11 +833,16 @@ async def retry_ingestion(
     meter = CreditMeter(db)
     job_id = uuid.uuid4()
     escrow = None
+    file_size_bytes = int((((latest_job.metrics or {}).get("billing") or {}).get("file_size_bytes") or 0)) if latest_job else 0
+    estimate = meter.estimate_ingestion_v2(
+        file_size_bytes=file_size_bytes,
+        filename=resource.filename,
+    )
     estimated_credits = 0
     reserved_credits = 0
     uses_platform_credits = settings.CREDITS_ENABLED and not use_async_byok
     if uses_platform_credits:
-        estimated_credits = _estimate_retry_credits(resource, latest_job, meter)
+        estimated_credits = int(estimate["core_upload_credits"])
         reserved = await meter.reserve_for_ingestion(user.id, str(job_id), estimated_credits)
         if reserved is None:
             raise HTTPException(
@@ -600,8 +878,9 @@ async def retry_ingestion(
                     uses_platform_credits=uses_platform_credits,
                     estimated_credits=estimated_credits,
                     reserved_credits=reserved_credits,
-                    file_size_bytes=int((((latest_job.metrics or {}).get("billing") or {}).get("file_size_bytes") or 0)) if latest_job else 0,
+                    file_size_bytes=file_size_bytes,
                 ),
+                **_build_curriculum_billing_metrics(estimate=estimate),
                 **_build_async_byok_metrics(
                     escrow_id=escrow.id if escrow else None,
                     provider_name=escrow.provider_name if escrow else None,
@@ -719,6 +998,22 @@ async def run_ingestion_pipeline(resource_id: str, job_id: str, escrow_id: str |
             )
 
             result = await pipeline.run(resource_uuid, job_uuid)
+            if job is not None:
+                await _continue_background_curriculum_preparation(
+                    db=db,
+                    resource_id=resource_uuid,
+                    job=job,
+                    byok_api_key=byok_api_key,
+                    byok_api_base_url=byok_api_base_url,
+                )
+                result = {
+                    **(result if isinstance(result, dict) else {}),
+                    "capability_progress": {
+                        "search_ready": True,
+                        "doubt_ready": True,
+                        "learn_ready": True,
+                    },
+                }
 
             # CM-009: Compute actual token usage from measured totals
             llm_tokens_after = dict(getattr(llm_provider, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
@@ -801,6 +1096,7 @@ async def run_ingestion_pipeline(resource_id: str, job_id: str, escrow_id: str |
                 job = await job_repo.get_by_id(UUID(job_id))
                 if job is not None:
                     billing = _get_billing_state(job)
+                    curriculum_billing = _get_curriculum_billing_state(job)
                     reserved_credits = int(billing.get("reserved_credits") or 0)
                     if job.owner_user_id and reserved_credits > 0 and billing.get("status") == "reserved":
                         meter = CreditMeter(db2)
@@ -813,6 +1109,20 @@ async def run_ingestion_pipeline(resource_id: str, job_id: str, escrow_id: str |
                                 "release_reason": "worker_failure",
                             },
                         }
+                        if int(curriculum_billing.get("reserved_credits") or 0) > 0 and curriculum_billing.get("status") == "reserved":
+                            await _release_curriculum_reservation(
+                                meter,
+                                user_id=job.owner_user_id,
+                                curriculum_billing=curriculum_billing,
+                            )
+                            job.metrics = {
+                                **(job.metrics or {}),
+                                "curriculum_billing": {
+                                    **curriculum_billing,
+                                    "status": "released",
+                                    "release_reason": "worker_failure",
+                                },
+                            }
                     async_byok = _get_async_byok_state(job)
                     if async_byok.get("escrow_id"):
                         escrow_service = AsyncByokEscrowService(AsyncByokEscrowRepository(db2))

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from './client'
 import { clearAuth } from '../stores/authStore'
+import { billedUsdFromCreditUnits, creditUnitsToCredits } from '../lib/credits'
 
 afterEach(() => {
   localStorage.clear()
@@ -107,5 +108,10 @@ describe('apiClient', () => {
     expect(localStorage.getItem('auth_user')).toBeNull()
     expect(localStorage.getItem('byok_api_key')).toBeNull()
     expect(localStorage.getItem('byok_api_base_url')).toBeNull()
+  })
+
+  it('formats backend credit values as direct credits', () => {
+    expect(creditUnitsToCredits(250)).toBe(2.5)
+    expect(billedUsdFromCreditUnits(250)).toBe(0.02)
   })
 })

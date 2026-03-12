@@ -11,6 +11,7 @@ from app.db.repositories.resource_artifact_repo import ResourceArtifactRepositor
 from app.db.repositories.resource_repo import ResourceRepository
 from app.models.resource_artifact import ResourceArtifactState
 from app.services.ingestion.resource_profile import build_resource_profile
+from app.services.resource_readiness import is_resource_doubt_ready, is_resource_study_ready, normalized_resource_capabilities
 from app.services.topic_preparation import build_topic_preparation_artifact
 
 
@@ -79,7 +80,8 @@ class NotebookPreparationService:
             notebook_wide=getattr(request, "notebook_wide", False),
         )
 
-        required = required_capabilities_for_mode(request.mode)
+        session_mode = (request.mode or "learn").strip().lower()
+        required = required_capabilities_for_mode(session_mode)
         artifacts_created = 0
         topic_artifacts_created = 0
         resources: list[Any] = []
@@ -91,17 +93,27 @@ class NotebookPreparationService:
             if not resource or resource.owner_user_id != user_id:
                 raise ValueError("Selected resource is not accessible")
 
-            capabilities = dict(resource.capabilities_json or {})
-            is_study_ready = bool(capabilities.get("study_ready"))
-            if not is_study_ready:
-                is_study_ready = bool(capabilities.get("has_concepts")) or resource.tutoring_ready_at is not None
+            capabilities = normalized_resource_capabilities(resource)
+            if capabilities != (resource.capabilities_json or {}):
+                resource.capabilities_json = capabilities
+                await self.db.flush()
 
-            if not is_study_ready:
+            is_doubt_ready = is_resource_doubt_ready(resource)
+            is_study_ready = is_resource_study_ready(resource)
+
+            if session_mode == "doubt":
+                is_ready_for_mode = is_doubt_ready
+                blocking_reason = "resource_not_doubt_ready"
+            else:
+                is_ready_for_mode = is_study_ready
+                blocking_reason = "resource_not_study_ready"
+
+            if not is_ready_for_mode:
                 blocking_resources.append(
                     {
                         "resource_id": str(resource.id),
                         "filename": resource.filename,
-                        "reason": "resource_not_study_ready",
+                        "reason": blocking_reason,
                     }
                 )
                 continue
@@ -119,6 +131,8 @@ class NotebookPreparationService:
             resources.append(resource)
 
         if blocking_resources:
+            if session_mode == "doubt":
+                raise ValueError("Some selected resources are not doubt-ready yet")
             raise ValueError("Some selected resources are not study-ready yet")
 
         session_brief = await self._upsert_session_brief(

@@ -158,6 +158,9 @@ async def get_balance(
     if not settings.CREDITS_ENABLED:
         return BalanceResponse(credits_enabled=False)
 
+    meter = CreditMeter(db)
+    await meter.ensure_account(user.id)
+
     repo = CreditAccountRepository(db)
     account = await repo.get_account(user.id)
     if not account:

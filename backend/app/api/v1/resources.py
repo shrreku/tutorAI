@@ -17,6 +17,7 @@ from app.db.repositories.ingestion_repo import IngestionJobRepository
 from app.models.session import UserProfile
 from app.models.knowledge_base import ResourceTopicBundle, ResourceConceptStats, ResourceConceptGraph
 from app.api.deps import require_auth
+from app.services.resource_readiness import normalized_resource_capabilities
 from app.services.storage.factory import create_storage_provider
 from app.schemas.api import (
     IngestionAsyncByokStatusResponse,
@@ -41,7 +42,7 @@ _DISPLAY_MIN_CONFIDENCE = 0.55
 _DISPLAY_MAX_EDGES_PER_CONCEPT = 4
 
 
-def _resource_response_payload(resource) -> dict:
+def _resource_response_payload(resource, latest_job=None) -> dict:
     return {
         "id": resource.id,
         "filename": resource.filename,
@@ -49,16 +50,20 @@ def _resource_response_payload(resource) -> dict:
         "status": resource.status,
         "lifecycle_status": resource.status,
         "processing_profile": getattr(resource, "processing_profile", None),
-        "capabilities": getattr(resource, "capabilities_json", None) or {},
+        "capabilities": normalized_resource_capabilities(resource, latest_job=latest_job),
         "uploaded_at": resource.uploaded_at,
         "processed_at": resource.processed_at,
+        "latest_job": _job_status_payload(latest_job) if latest_job is not None else None,
     }
 
 
 def _job_status_payload(job) -> IngestionStatusResponse:
     metrics = (getattr(job, "metrics", None) or {})
     billing = metrics.get("billing") if isinstance(metrics, dict) else None
+    curriculum_billing = metrics.get("curriculum_billing") if isinstance(metrics, dict) else None
     async_byok = metrics.get("async_byok") if isinstance(metrics, dict) else None
+    document = metrics.get("document") if isinstance(metrics, dict) else None
+    capability_progress = metrics.get("capability_progress") if isinstance(metrics, dict) else None
     return IngestionStatusResponse(
         job_id=job.id,
         resource_id=job.resource_id,
@@ -72,6 +77,8 @@ def _job_status_payload(job) -> IngestionStatusResponse:
         error_message=job.error_message,
         started_at=job.started_at,
         completed_at=job.completed_at,
+        document_metrics=document if isinstance(document, dict) else None,
+        capability_progress=capability_progress if isinstance(capability_progress, dict) else None,
         billing={
             "uses_platform_credits": bool(billing.get("uses_platform_credits", False)),
             "estimated_credits": int(billing.get("estimated_credits") or 0),
@@ -81,6 +88,15 @@ def _job_status_payload(job) -> IngestionStatusResponse:
             "release_reason": billing.get("release_reason") if billing else None,
             "file_size_bytes": int(billing.get("file_size_bytes") or 0) if billing else 0,
         } if isinstance(billing, dict) else None,
+        curriculum_billing={
+            "estimated_credits_low": int(curriculum_billing.get("estimated_credits_low") or 0),
+            "estimated_credits_high": int(curriculum_billing.get("estimated_credits_high") or 0),
+            "reserved_credits": int(curriculum_billing.get("reserved_credits") or 0),
+            "actual_credits": int(curriculum_billing.get("actual_credits")) if curriculum_billing and curriculum_billing.get("actual_credits") is not None else None,
+            "status": str(curriculum_billing.get("status") or "pending") if curriculum_billing else "pending",
+            "operation_id": str(curriculum_billing.get("operation_id")) if curriculum_billing and curriculum_billing.get("operation_id") else None,
+            "release_reason": curriculum_billing.get("release_reason") if curriculum_billing else None,
+        } if isinstance(curriculum_billing, dict) else None,
         async_byok=IngestionAsyncByokStatusResponse(
             enabled=bool(async_byok.get("enabled", False)),
             escrow_id=UUID(async_byok["escrow_id"]) if async_byok.get("escrow_id") else None,
@@ -244,13 +260,15 @@ async def list_resources(
         limit=limit,
         offset=offset,
     )
+    job_repo = IngestionJobRepository(db)
+    latest_jobs = await job_repo.get_latest_by_resource_ids([resource.id for resource in resources])
     
     # Get total count
     total = len(resources)  # Simplified; should use count query for large datasets
     
     return PaginatedResponse(
         items=[
-            ResourceResponse(**_resource_response_payload(r))
+            ResourceResponse(**_resource_response_payload(r, latest_jobs.get(r.id)))
             for r in resources
         ],
         total=total,
@@ -280,9 +298,10 @@ async def get_resource(
     chunk_count = await chunk_repo.count_by_resource(resource_id)
     artifact_repo = ResourceArtifactRepository(db)
     artifacts = await artifact_repo.list_by_resource(resource_id, limit=10, offset=0)
+    latest_job = await IngestionJobRepository(db).get_by_resource(resource_id)
     
     return ResourceDetailResponse(
-        **_resource_response_payload(resource),
+        **_resource_response_payload(resource, latest_job),
         chunk_count=chunk_count,
         concept_count=len(resource.concept_stats) if resource.concept_stats else 0,
         topic_bundles=[

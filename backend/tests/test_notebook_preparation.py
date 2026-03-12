@@ -141,3 +141,94 @@ def test_prepare_session_context_rejects_ready_resource_without_study_ready_capa
         assert str(exc) == "Some selected resources are not study-ready yet"
     else:
         raise AssertionError("Expected prepare_session_context to reject non-study-ready resource")
+
+
+def test_prepare_session_context_allows_doubt_mode_for_core_ready_resource():
+    notebook_id = uuid4()
+    user_id = uuid4()
+    resource_id = uuid4()
+    request = SimpleNamespace(
+        resource_id=resource_id,
+        selected_resource_ids=[],
+        notebook_wide=False,
+        selected_topics=[],
+        mode="doubt",
+        topic=None,
+    )
+    resource = SimpleNamespace(
+        id=resource_id,
+        owner_user_id=user_id,
+        filename="outline.md",
+        topic="physics",
+        status="ready",
+        tutoring_ready_at=None,
+        capabilities_json={
+            "study_ready": False,
+            "has_concepts": False,
+            "vector_search_ready": True,
+            "can_answer_doubts": True,
+            "has_resource_profile": True,
+        },
+    )
+
+    service = NotebookPreparationService(_FakeDb())
+    service.notebook_resource_repo = SimpleNamespace(list_active_resource_ids=lambda _notebook_id: asyncio.sleep(0, result=[resource_id]))
+    service.resource_repo = SimpleNamespace(get_by_id=lambda _resource_id: asyncio.sleep(0, result=resource))
+    service._upsert_session_brief = lambda **_kwargs: asyncio.sleep(0, result=SimpleNamespace(id=uuid4()))
+
+    summary = asyncio.run(
+        service.prepare_session_context(
+            notebook_id=notebook_id,
+            request=request,
+            user_id=user_id,
+        )
+    )
+
+    assert summary["scope_type"] == "single_resource"
+    assert summary["blocking_resources"] == []
+
+
+def test_prepare_session_context_allows_study_mode_for_resource_with_ready_timestamps():
+    notebook_id = uuid4()
+    user_id = uuid4()
+    resource_id = uuid4()
+    request = SimpleNamespace(
+        resource_id=resource_id,
+        selected_resource_ids=[],
+        notebook_wide=False,
+        selected_topics=[],
+        mode="revision",
+        topic=None,
+    )
+    resource = SimpleNamespace(
+        id=resource_id,
+        owner_user_id=user_id,
+        filename="chapter-2.pdf",
+        topic="physics",
+        status="ready",
+        processed_at=object(),
+        tutoring_ready_at=object(),
+        study_ready_at=object(),
+        curriculum_ready_at=object(),
+        capabilities_json={"study_ready": False, "has_concepts": False, "curriculum_ready": False},
+    )
+
+    service = NotebookPreparationService(_FakeDb())
+    service.notebook_resource_repo = SimpleNamespace(list_active_resource_ids=lambda _notebook_id: asyncio.sleep(0, result=[resource_id]))
+    service.resource_repo = SimpleNamespace(get_by_id=lambda _resource_id: asyncio.sleep(0, result=resource))
+    service._ensure_resource_profile = lambda _resource: asyncio.sleep(0, result=0)
+    service._ensure_topic_prepare = lambda _resource, _request: asyncio.sleep(0, result=(0, "revision:general"))
+    service._upsert_session_brief = lambda **_kwargs: asyncio.sleep(0, result=SimpleNamespace(id=uuid4()))
+
+    summary = asyncio.run(
+        service.prepare_session_context(
+            notebook_id=notebook_id,
+            request=request,
+            user_id=user_id,
+        )
+    )
+
+    assert summary["scope_type"] == "single_resource"
+    assert summary["blocking_resources"] == []
+    assert resource.capabilities_json["curriculum_ready"] is True
+    assert resource.capabilities_json["can_start_revision_session"] is True

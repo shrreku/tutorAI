@@ -25,6 +25,22 @@ class IngestionJobRepository(BaseRepository[IngestionJob]):
         )
         return result.scalar_one_or_none()
 
+    async def get_latest_by_resource_ids(self, resource_ids: List[UUID]) -> dict[UUID, IngestionJob]:
+        """Return the newest ingestion job for each resource id in one query."""
+        if not resource_ids:
+            return {}
+
+        result = await self.db.execute(
+            select(IngestionJob)
+            .where(IngestionJob.resource_id.in_(resource_ids))
+            .order_by(IngestionJob.resource_id.asc(), IngestionJob.created_at.desc())
+        )
+
+        latest_jobs: dict[UUID, IngestionJob] = {}
+        for job in result.scalars().all():
+            latest_jobs.setdefault(job.resource_id, job)
+        return latest_jobs
+
     async def get_pending_jobs(self, limit: int = 10) -> List[IngestionJob]:
         """Get pending jobs for processing."""
         result = await self.db.execute(

@@ -27,7 +27,7 @@ from app.services.embedding.base import BaseEmbeddingProvider
 from app.services.storage.base import StorageProvider
 from app.services.ingestion.docling_adapter import DoclingAdapter, DoclingConversionResult
 from app.services.ingestion.docling_chunker import DoclingChunker, DoclingChunkingResult
-from app.services.ingestion.ingestion_types import ChunkData
+from app.services.ingestion.ingestion_types import ChunkData, token_len
 from app.services.ingestion.resource_profile import build_resource_profile
 from app.services.ingestion.pipeline_support import (
     compute_quality_metrics,
@@ -47,6 +47,7 @@ class IngestionStage(str, Enum):
     CHUNK = "chunk"
     EMBED = "embed"
     PERSIST = "persist"
+    CORE_READY = "core_ready"
     COMPLETE = "complete"
 
 
@@ -174,13 +175,21 @@ class IngestionPipeline:
             logger.info(f"Stage 2: Chunking text for resource {resource_id}")
             chunking_result = await self._run_chunk_stage(parse_result)
             chunks = chunking_result.chunks
+            document_metrics = self._build_document_metrics(parse_result, chunks)
             metrics["stages"]["chunk"] = {
                 "chunks": len(chunks),
                 "strategy": chunking_result.strategy,
                 "embedding_strategy": chunking_result.metadata.get("embedding_strategy"),
             }
-            
-            await self._update_job_stage(job_id, IngestionStage.EMBED, 55)
+            metrics["document"] = document_metrics
+
+            chunk_metrics = await self._merge_job_metrics(job_id, metrics)
+            await self._update_job_stage(
+                job_id,
+                IngestionStage.EMBED,
+                55,
+                metrics=chunk_metrics,
+            )
             
             # Stage 3: Embed chunks
             logger.info(f"Stage 3: Embedding chunks for resource {resource_id}")
@@ -240,15 +249,21 @@ class IngestionPipeline:
                 study_ready=metrics["quality"].get("concepts_admitted", 0) > 0,
             )
 
-            metrics = await self._merge_job_metrics(job_id, metrics)
+            metrics["capability_progress"] = {
+                "search_ready": True,
+                "doubt_ready": True,
+                "learn_ready": False,
+            }
 
+            core_ready_metrics = await self._merge_job_metrics(job_id, metrics)
             await self._update_job_stage(
                 job_id,
-                IngestionStage.COMPLETE,
-                100,
-                status="completed",
-                metrics=metrics,
+                IngestionStage.CORE_READY,
+                70,
+                metrics=core_ready_metrics,
             )
+
+            metrics = await self._merge_job_metrics(job_id, metrics)
 
             commit = getattr(self.db, "commit", None)
             if callable(commit):
@@ -290,6 +305,37 @@ class IngestionPipeline:
                 await commit()
             
             raise
+
+    def _build_document_metrics(
+        self,
+        parse_result: DoclingConversionResult,
+        chunks: list[ChunkData],
+    ) -> dict:
+        page_numbers: set[int] = set()
+        for item in parse_result.sections:
+            if item.page_start is not None:
+                page_numbers.add(item.page_start)
+            if item.page_end is not None:
+                page_numbers.add(item.page_end)
+        for chunk in chunks:
+            if chunk.page_start is not None:
+                page_numbers.add(chunk.page_start)
+            if chunk.page_end is not None:
+                page_numbers.add(chunk.page_end)
+
+        docling_pages = ((parse_result.metadata or {}).get("docling") or {}).get("pages")
+        if isinstance(docling_pages, list):
+            page_count_actual = max(len(docling_pages), len(page_numbers))
+        else:
+            page_count_actual = len(page_numbers)
+
+        token_count_actual = sum(token_len(chunk.text or "") for chunk in chunks)
+        return {
+            "page_count_actual": page_count_actual,
+            "section_count": len(parse_result.sections),
+            "chunk_count_actual": len(chunks),
+            "token_count_actual": token_count_actual,
+        }
     
     async def _get_resource(self, resource_id: uuid.UUID) -> Optional[Resource]:
         """Get resource by ID."""

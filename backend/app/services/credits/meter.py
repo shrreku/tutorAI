@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+CREDIT_UNITS_PER_CREDIT = 100
+
 
 class CreditMeter:
     """Stateless metering helper — call from turn or ingestion pipelines."""
@@ -37,6 +39,10 @@ class CreditMeter:
     def current_grant_period_key(now: datetime | None = None) -> str:
         current = now or datetime.now(timezone.utc)
         return f"{current.year:04d}-{current.month:02d}"
+
+    @staticmethod
+    def credit_units_to_usd(units: int | float) -> float:
+        return (float(units) / CREDIT_UNITS_PER_CREDIT) * settings.CREDITS_USD_PER_CREDIT
 
     @staticmethod
     def default_signup_grant_memo(now: datetime | None = None) -> str:
@@ -211,16 +217,114 @@ class CreditMeter:
     ) -> int:
         """Estimate ingestion credits before a job is accepted.
 
-        The estimate is intentionally conservative and based on file size,
-        probable OCR risk for PDFs, and the selected preparation profile.
+        Reservation estimates should stay aligned with the pricing-aware v2
+        estimator used by the public preflight endpoint.
         """
         del processing_profile
+        return self.estimate_core_upload_credits(
+            file_size_bytes=file_size_bytes,
+            filename=filename,
+        )
 
+    @staticmethod
+    def estimate_core_upload_credits(
+        *,
+        file_size_bytes: int,
+        filename: str,
+    ) -> int:
+        """Estimate the nominal upload-time platform fee only.
+
+        This covers parse/chunk/embed/persist infrastructure and should stay
+        materially smaller than the deferred curriculum-preparation charge.
+        """
+        del filename
+
+        size_mb = max(file_size_bytes, 1) / (1024 * 1024)
+        if size_mb >= 50:
+            return 200
+        if size_mb >= 25:
+            return 150
+        if size_mb >= 10:
+            return 100
+        return 50
+
+    def estimate_curriculum_preparation_v2(
+        self,
+        *,
+        file_size_bytes: int,
+        filename: str,
+        page_count_estimate: int = 0,
+        token_count_estimate: int = 0,
+        chunk_count_estimate: int = 0,
+    ) -> dict:
+        """Estimate only the deferred curriculum-preparation portion."""
         size_mb = max(1, math.ceil(max(file_size_bytes, 1) / (1024 * 1024)))
-        estimate = settings.CREDITS_INGESTION_BASE_ESTIMATE + size_mb * settings.CREDITS_INGESTION_PER_MB
-        if filename.lower().endswith(".pdf"):
-            estimate += settings.CREDITS_INGESTION_PDF_SURCHARGE
-        return estimate
+        is_pdf = filename.lower().endswith(".pdf")
+
+        if page_count_estimate <= 0 and is_pdf:
+            # PDF byte size is a poor proxy for pages; use a gentler heuristic.
+            page_count_estimate = max(1, round(file_size_bytes / 150_000))
+
+        if token_count_estimate <= 0:
+            if is_pdf:
+                inferred_pages = max(page_count_estimate, 1)
+                token_count_estimate = inferred_pages * 1_200
+            else:
+                token_count_estimate = max(250, int(file_size_bytes / 1024 * 180))
+
+        if chunk_count_estimate <= 0:
+            if is_pdf and page_count_estimate > 0:
+                chunk_count_estimate = max(page_count_estimate * 2, math.ceil(token_count_estimate / 800))
+            else:
+                chunk_count_estimate = max(1, math.ceil(token_count_estimate / 800))
+
+        ontology_tokens_low = min(token_count_estimate, 50_000)
+        ontology_tokens_high = min(token_count_estimate * 2, 200_000)
+        ontology_output_low = 2000
+        ontology_output_high = 8000
+
+        enrich_input_low = chunk_count_estimate * 800
+        enrich_input_high = chunk_count_estimate * 2000
+        enrich_output_low = chunk_count_estimate * 200
+        enrich_output_high = chunk_count_estimate * 600
+
+        std_in = 0.10 / 1_000_000
+        std_out = 0.40 / 1_000_000
+        eco_in = 0.015 / 1_000_000
+        eco_out = 0.06 / 1_000_000
+
+        usd_low = (
+            ontology_tokens_low * std_in + ontology_output_low * std_out
+            + enrich_input_low * eco_in + enrich_output_low * eco_out
+        )
+        usd_high = (
+            ontology_tokens_high * std_in + ontology_output_high * std_out
+            + enrich_input_high * eco_in + enrich_output_high * eco_out
+        )
+
+        credits_low = max(100, self._usd_to_credits(usd_low))
+        credits_high = max(credits_low, self._usd_to_credits(usd_high))
+
+        warnings = []
+        if is_pdf and size_mb > 10:
+            warnings.append("Large PDF — estimate range may be wider than usual")
+        if token_count_estimate > 500_000:
+            warnings.append("Very large document — processing may take longer")
+
+        confidence = "medium" if token_count_estimate > 0 else "low"
+
+        return {
+            "estimated_credits_low": credits_low,
+            "estimated_credits_high": credits_high,
+            "estimated_usd_low": round(usd_low, 6),
+            "estimated_usd_high": round(usd_high, 6),
+            "page_count_estimate": page_count_estimate,
+            "token_count_estimate": token_count_estimate,
+            "chunk_count_estimate": chunk_count_estimate,
+            "estimate_confidence": confidence,
+            "confidence": confidence,
+            "warnings": warnings,
+        }
 
     async def reserve_for_ingestion(
         self,
@@ -474,7 +578,7 @@ class CreditMeter:
         if pricing is None:
             # Fallback: use old multiplier-based calc, convert to rough USD
             old_credits = await self.repo.compute_credits(model_id, input_tokens, output_tokens)
-            return old_credits * settings.CREDITS_USD_PER_CREDIT
+            return self.credit_units_to_usd(old_credits)
 
         raw = (
             input_tokens * pricing.input_usd_per_million / 1_000_000
@@ -554,69 +658,40 @@ class CreditMeter:
         token_count_estimate: int = 0,
         chunk_count_estimate: int = 0,
     ) -> dict:
-        """V2 ingestion estimate with ranges (CM-008)."""
-        size_mb = max(1, math.ceil(max(file_size_bytes, 1) / (1024 * 1024)))
-        is_pdf = filename.lower().endswith(".pdf")
-
-        # Token estimates
-        if token_count_estimate <= 0:
-            # Heuristic: ~500 tokens per KB for text, ~300 for PDF
-            multiplier = 300 if is_pdf else 500
-            token_count_estimate = int(file_size_bytes / 1024 * multiplier)
-
-        if chunk_count_estimate <= 0:
-            chunk_count_estimate = max(1, token_count_estimate // 500)
-
-        if page_count_estimate <= 0 and is_pdf:
-            page_count_estimate = max(1, file_size_bytes // 50_000)
-
-        # Ontology tokens (full-content extraction)
-        ontology_tokens_low = min(token_count_estimate, 50_000)
-        ontology_tokens_high = min(token_count_estimate * 2, 200_000)
-        ontology_output_low = 2000
-        ontology_output_high = 8000
-
-        # Enrichment tokens (per-chunk)
-        enrich_input_low = chunk_count_estimate * 800
-        enrich_input_high = chunk_count_estimate * 2000
-        enrich_output_low = chunk_count_estimate * 200
-        enrich_output_high = chunk_count_estimate * 600
-
-        # USD estimates using economy pricing (ontology=standard, enrichment=economy)
-        std_in = 0.10 / 1_000_000   # standard input per token
-        std_out = 0.40 / 1_000_000
-        eco_in = 0.015 / 1_000_000
-        eco_out = 0.06 / 1_000_000
-
-        usd_low = (
-            ontology_tokens_low * std_in + ontology_output_low * std_out
-            + enrich_input_low * eco_in + enrich_output_low * eco_out
+        """V2 ingestion estimate with split core-vs-curriculum pricing."""
+        curriculum = self.estimate_curriculum_preparation_v2(
+            file_size_bytes=file_size_bytes,
+            filename=filename,
+            page_count_estimate=page_count_estimate,
+            token_count_estimate=token_count_estimate,
+            chunk_count_estimate=chunk_count_estimate,
         )
-        usd_high = (
-            ontology_tokens_high * std_in + ontology_output_high * std_out
-            + enrich_input_high * eco_in + enrich_output_high * eco_out
+        core_upload_credits = self.estimate_core_upload_credits(
+            file_size_bytes=file_size_bytes,
+            filename=filename,
         )
+        core_upload_usd = round(self.credit_units_to_usd(core_upload_credits), 6)
 
-        credits_low = max(100, self._usd_to_credits(usd_low))
-        credits_high = max(credits_low, self._usd_to_credits(usd_high))
-
-        warnings = []
-        if is_pdf and size_mb > 10:
-            warnings.append("Large PDF — estimate range may be wider than usual")
-        if token_count_estimate > 500_000:
-            warnings.append("Very large document — processing may take longer")
-
-        confidence = "medium" if token_count_estimate > 0 else "low"
+        total_credits_low = core_upload_credits + int(curriculum["estimated_credits_low"])
+        total_credits_high = core_upload_credits + int(curriculum["estimated_credits_high"])
+        total_usd_low = core_upload_usd + float(curriculum["estimated_usd_low"])
+        total_usd_high = core_upload_usd + float(curriculum["estimated_usd_high"])
 
         return {
-            "estimated_credits_low": credits_low,
-            "estimated_credits_high": credits_high,
-            "estimated_usd_low": round(usd_low, 6),
-            "estimated_usd_high": round(usd_high, 6),
-            "page_count_estimate": page_count_estimate,
-            "token_count_estimate": token_count_estimate,
-            "chunk_count_estimate": chunk_count_estimate,
-            "estimate_confidence": confidence,
-            "confidence": confidence,
-            "warnings": warnings,
+            "estimated_credits_low": total_credits_low,
+            "estimated_credits_high": total_credits_high,
+            "estimated_usd_low": round(total_usd_low, 6),
+            "estimated_usd_high": round(total_usd_high, 6),
+            "core_upload_credits": core_upload_credits,
+            "core_upload_usd": core_upload_usd,
+            "curriculum_credits_low": int(curriculum["estimated_credits_low"]),
+            "curriculum_credits_high": int(curriculum["estimated_credits_high"]),
+            "curriculum_usd_low": float(curriculum["estimated_usd_low"]),
+            "curriculum_usd_high": float(curriculum["estimated_usd_high"]),
+            "page_count_estimate": int(curriculum["page_count_estimate"]),
+            "token_count_estimate": int(curriculum["token_count_estimate"]),
+            "chunk_count_estimate": int(curriculum["chunk_count_estimate"]),
+            "estimate_confidence": curriculum["estimate_confidence"],
+            "confidence": curriculum["confidence"],
+            "warnings": list(curriculum["warnings"]),
         }

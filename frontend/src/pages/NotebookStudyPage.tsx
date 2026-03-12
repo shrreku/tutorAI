@@ -16,6 +16,7 @@ import {
   useModelPreferences,
 } from '../api/hooks';
 import SessionLaunchPanel from '../components/notebooks/SessionLaunchPanel';
+import { getResourceDisplayStatus, isResourceDoubtReady, isResourceStudyReady } from '../lib/ingestion';
 import type { NotebookSessionCreateRequest } from '../types/api';
 
 const MODES = ['learn', 'doubt', 'practice', 'revision'] as const;
@@ -170,13 +171,14 @@ export default function NotebookStudyPage() {
     : 'Use the launcher to open a fresh branch when you want a different scope or topic than your current thread.';
 
   const launchResources = (notebookResources?.items ?? []).map((resource) => {
-    const fullResource = resourceMap.get(resource.resource_id);
+    const fullResource = resourceMap.get(resource.resource_id) ?? resource.resource ?? undefined;
     return {
       id: resource.resource_id,
       label: fullResource?.filename ?? resource.resource_id,
       subtitle: fullResource?.topic || 'Attached notebook resource',
-      status: fullResource?.status,
-      studyReady: Boolean(fullResource?.capabilities?.study_ready),
+      status: getResourceDisplayStatus(fullResource),
+      studyReady: isResourceStudyReady(fullResource),
+      doubtReady: isResourceDoubtReady(fullResource),
     };
   });
   const notReadyResources = launchResources.filter((resource) => !resource.studyReady);
@@ -284,8 +286,8 @@ export default function NotebookStudyPage() {
         {hasResources && notReadyResources.length > 0 && (
           <div className="mt-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/[0.08] text-sm text-amber-100">
             {notReadyResources.length === 1
-              ? `${notReadyResources[0].label} is still preparing and cannot start a tutoring session yet.`
-              : `${notReadyResources.length} attached resources are still preparing and cannot be used for tutoring yet.`}
+              ? `${notReadyResources[0].label} is still preparing structured study artifacts. Doubt mode becomes available once core indexing finishes.`
+              : `${notReadyResources.length} attached resources are still preparing structured study artifacts. Doubt mode can unlock earlier than learn/practice/revision.`}
           </div>
         )}
       </div>

@@ -2,7 +2,7 @@ import hashlib
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,7 +45,11 @@ class CurriculumPreparationService:
         self.graph_builder = graph_builder or ConceptGraphBuilder(db_session)
         self.bundle_builder = bundle_builder or BundleBuilder(db_session)
 
-    async def ensure_curriculum_ready(self, resource_id: uuid.UUID) -> dict:
+    async def ensure_curriculum_ready(
+        self,
+        resource_id: uuid.UUID,
+        progress_callback: Optional[Callable[[str, int], Awaitable[None]]] = None,
+    ) -> dict:
         resource = await self.db.get(Resource, resource_id)
         if not resource:
             raise ValueError(f"Resource {resource_id} not found")
@@ -58,15 +62,26 @@ class CurriculumPreparationService:
         if not chunks:
             raise ValueError(f"Resource {resource_id} has no chunks available for curriculum preparation")
 
+        if progress_callback is not None:
+            await progress_callback("curriculum_ontology", 78)
+
         sections = self._build_sections(chunks)
         chunk_data = self._build_chunk_data(chunks)
 
         ontology = await self.ontology_extractor.extract(sections=sections, resource_title=resource.filename)
         ontology_context = ontology.get_enrichment_context(max_tokens=800) if ontology else None
+
+        if progress_callback is not None:
+            await progress_callback("curriculum_enrichment", 86)
+
         enrichments = await self.enricher.enrich_batch(chunk_data, ontology_context=ontology_context)
         enrichments_dict = [item.to_dict() for item in enrichments]
 
         await self._persist_enrichments(chunks, enrichments_dict)
+
+        if progress_callback is not None:
+            await progress_callback("curriculum_kb", 92)
+
         kb_result = await self.kb_builder.build(
             resource_id,
             force_rebuild=True,
@@ -80,6 +95,10 @@ class CurriculumPreparationService:
             force_rebuild=True,
             ontology_relations=(ontology.semantic_relations if ontology else None),
         )
+
+        if progress_callback is not None:
+            await progress_callback("curriculum_bundles", 96)
+
         bundle_result = await self._build_bundles(resource_id)
         await self._mark_resource_ready(resource, kb_result, graph_result, bundle_result)
         artifact = await self._upsert_curriculum_artifact(
@@ -89,6 +108,10 @@ class CurriculumPreparationService:
             bundle_result,
             source_chunk_ids=[chunk.id for chunk in chunks],
         )
+
+        if progress_callback is not None:
+            await progress_callback("curriculum_finalize", 99)
+
         await self.db.commit()
         return {
             "prepared": True,

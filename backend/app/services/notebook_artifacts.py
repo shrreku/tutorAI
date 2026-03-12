@@ -142,8 +142,12 @@ class NotebookArtifactService:
 
         strategy = "deterministic_fallback"
         fallback_reason: str | None = None
+        has_grounded_session_context = self._has_grounded_session_context(
+            sessions=sessions,
+            turns_by_session=turns_by_session,
+        )
 
-        if self.llm:
+        if self.llm and has_grounded_session_context:
             try:
                 payload = await self._generate_with_llm(
                     artifact_type=artifact_type,
@@ -164,15 +168,19 @@ class NotebookArtifactService:
                     turns_by_session=turns_by_session,
                     progress=progress,
                     options=options,
+                    notebook=notebook,
+                    source_resource_names=source_resource_names,
                 )
         else:
-            fallback_reason = "llm_unavailable"
+            fallback_reason = "insufficient_session_context" if self.llm else "llm_unavailable"
             payload = self._generate_fallback(
                 artifact_type=artifact_type,
                 sessions=sessions,
                 turns_by_session=turns_by_session,
                 progress=progress,
                 options=options,
+                notebook=notebook,
+                source_resource_names=source_resource_names,
             )
 
         payload["artifact_type"] = artifact_type
@@ -194,6 +202,20 @@ class NotebookArtifactService:
             "resources": source_resource_names,
         }
         return payload
+
+    def _has_grounded_session_context(
+        self,
+        *,
+        sessions: list[UserSession],
+        turns_by_session: dict[str, list[Any]],
+    ) -> bool:
+        for session in sessions:
+            if turns_by_session.get(str(session.id)):
+                return True
+            plan_state = session.plan_state or {}
+            if plan_state.get("session_overview") or plan_state.get("focus_concepts"):
+                return True
+        return False
 
     def _build_context(
         self,
@@ -345,7 +367,17 @@ class NotebookArtifactService:
         turns_by_session: dict[str, list[Any]],
         progress: NotebookProgressResponse,
         options: dict[str, Any],
+        notebook: Any,
+        source_resource_names: list[str],
     ) -> dict[str, Any]:
+        if not sessions:
+            return self._fallback_without_sessions(
+                artifact_type=artifact_type,
+                notebook=notebook,
+                progress=progress,
+                source_resource_names=source_resource_names,
+                options=options,
+            )
         if artifact_type == "notes":
             return self._fallback_notes(sessions, turns_by_session, progress)
         if artifact_type == "flashcards":
@@ -354,6 +386,95 @@ class NotebookArtifactService:
             return self._fallback_quiz(sessions, options)
         if artifact_type == "revision_plan":
             return self._fallback_revision_plan(progress, sessions, options)
+        raise ValueError(f"Unsupported artifact_type: {artifact_type}")
+
+    def _fallback_without_sessions(
+        self,
+        *,
+        artifact_type: str,
+        notebook: Any,
+        progress: NotebookProgressResponse,
+        source_resource_names: list[str],
+        options: dict[str, Any],
+    ) -> dict[str, Any]:
+        notebook_title = getattr(notebook, "title", None) or "Notebook"
+        notebook_goal = getattr(notebook, "goal", None)
+        resources = source_resource_names[:6]
+        weak_concepts = progress.weak_concepts_snapshot[:6]
+
+        if artifact_type == "notes":
+            sections = []
+            if notebook_goal:
+                sections.append(
+                    {
+                        "heading": "Notebook Goal",
+                        "bullets": [notebook_goal],
+                        "key_takeaway": notebook_goal,
+                        "source_session_ids": [],
+                        "concepts": [],
+                    }
+                )
+            if resources:
+                sections.append(
+                    {
+                        "heading": "Attached Resources",
+                        "bullets": [f"Study source: {name}" for name in resources],
+                        "key_takeaway": "Complete at least one tutoring session to generate session-grounded notes.",
+                        "source_session_ids": [],
+                        "concepts": weak_concepts,
+                    }
+                )
+            return {
+                "title": f"{notebook_title} Notes Scaffold",
+                "summary": "No tutoring sessions have been completed for this notebook yet, so these notes are limited to notebook metadata and attached resources.",
+                "sections": sections,
+                "next_actions": [
+                    "Start a tutoring session for this notebook.",
+                    "Return after the first session to generate evidence-grounded notes.",
+                ],
+                "coverage_concepts": weak_concepts,
+            }
+
+        if artifact_type == "flashcards":
+            return {
+                "title": f"{notebook_title} Flashcards",
+                "deck_strategy": "No session evidence is available yet; generate flashcards after at least one tutoring session for grounded cards.",
+                "cards": [],
+                "coverage_concepts": weak_concepts,
+            }
+
+        if artifact_type == "quiz":
+            return {
+                "title": f"{notebook_title} Quiz",
+                "quiz_focus": "No session evidence is available yet.",
+                "questions": [],
+                "recommended_follow_up": "Complete at least one tutoring session before generating a quiz.",
+            }
+
+        if artifact_type == "revision_plan":
+            horizon_days = max(3, min(int(options.get("horizon_days", 5) or 5), 14))
+            now = datetime.now(timezone.utc)
+            days = [
+                {
+                    "day_label": f"Day {index + 1}",
+                    "scheduled_for": (now + timedelta(days=index + 1)).date().isoformat(),
+                    "focus_concepts": weak_concepts[:2],
+                    "activities": [
+                        "Complete a notebook tutoring session.",
+                        "Review the attached source material.",
+                    ],
+                    "rationale": "A grounded revision plan requires completed session evidence.",
+                    "source_session_ids": [],
+                }
+                for index in range(horizon_days)
+            ]
+            return {
+                "title": f"{notebook_title} Revision Plan",
+                "summary": "This is a bootstrap revision plan based only on notebook metadata because no tutoring sessions exist yet.",
+                "horizon_days": horizon_days,
+                "days": days,
+            }
+
         raise ValueError(f"Unsupported artifact_type: {artifact_type}")
 
     def _fallback_notes(

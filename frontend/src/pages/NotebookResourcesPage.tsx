@@ -13,10 +13,41 @@ import {
   useIngestionEstimate,
 } from '../api/hooks';
 import { formatCredits } from '../lib/credits';
-import type { IngestionBillingStatus, IngestionAsyncByokStatus, IngestionEstimateResponse } from '../types/api';
+import {
+  getLiveIngestionJob,
+  getResourceDisplayStatus,
+  isResourceDoubtReady,
+  isResourceStudyReady,
+} from '../lib/ingestion';
+import type {
+  IngestionBillingStatus,
+  IngestionAsyncByokStatus,
+  IngestionCurriculumBillingStatus,
+  IngestionEstimateResponse,
+} from '../types/api';
+
+function formatIngestionStage(stage?: string | null) {
+  const labels: Record<string, string> = {
+    worker_pickup: 'Queued',
+    initializing_models: 'Initializing models',
+    parse: 'Parsing document',
+    chunk: 'Chunking document',
+    embed: 'Embedding chunks',
+    persist: 'Saving index',
+    core_ready: 'Core index ready',
+    curriculum_ontology: 'Extracting curriculum',
+    curriculum_enrichment: 'Enriching chunks',
+    curriculum_kb: 'Building knowledge base',
+    curriculum_bundles: 'Preparing topic bundles',
+    curriculum_finalize: 'Finalizing readiness',
+    complete: 'Complete',
+  };
+  return labels[stage ?? ''] ?? (stage ? stage.split('_').join(' ') : null);
+}
 
 function ResourceStatusBadge({ status }: { status: string }) {
   const cfg: Record<string, { icon: typeof CheckCircle2; cls: string; label: string }> = {
+    ready: { icon: CheckCircle2, cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', label: 'Ready' },
     ingested: { icon: CheckCircle2, cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', label: 'Ready' },
     processing: { icon: Clock, cls: 'bg-gold/10 text-gold border-gold/20 animate-pulse-gold', label: 'Processing' },
     failed: { icon: AlertCircle, cls: 'bg-red-500/10 text-red-400 border-red-500/20', label: 'Failed' },
@@ -36,7 +67,11 @@ function IngestionTracker({ jobId, billing, asyncByok }: {
   const { data: status } = useIngestionStatus(jobId);
   const isActive = status && status.status !== 'completed' && status.status !== 'failed';
   const liveBilling = status?.billing ?? billing;
+  const liveCurriculumBilling: IngestionCurriculumBillingStatus | null | undefined = status?.curriculum_billing;
   const liveAsyncByok = status?.async_byok ?? asyncByok;
+  const documentMetrics = status?.document_metrics;
+  const capabilityProgress = status?.capability_progress;
+  const stageLabel = formatIngestionStage(status?.current_stage);
 
   return (
     <div className="rounded-lg border border-gold/15 bg-gold/[0.04] p-3 space-y-2">
@@ -46,7 +81,7 @@ function IngestionTracker({ jobId, billing, asyncByok }: {
           : status?.status === 'failed' ? <AlertCircle className="w-3.5 h-3.5 text-red-400" />
           : <Clock className="w-3.5 h-3.5 text-gold" />}
         <span className="text-xs font-medium text-foreground capitalize">{status?.status ?? 'queued'}</span>
-        {status?.current_stage && <span className="text-[11px] text-muted-foreground">· {status.current_stage}</span>}
+        {stageLabel && <span className="text-[11px] text-muted-foreground">· {stageLabel}</span>}
         {status?.progress_percent != null && status.progress_percent > 0 && (
           <span className="text-[11px] text-muted-foreground ml-auto">{status.progress_percent}%</span>
         )}
@@ -59,10 +94,32 @@ function IngestionTracker({ jobId, billing, asyncByok }: {
       )}
       {liveBilling && liveBilling.uses_platform_credits && (
         <div className="flex items-center gap-4 text-[11px] text-muted-foreground pt-1 flex-wrap">
-          <span className="inline-flex items-center gap-1"><Coins className="w-3 h-3 text-gold" /> Est. {formatCredits(liveBilling.estimated_credits)} credits</span>
-          {liveBilling.reserved_credits > 0 && <span>Reserved: {formatCredits(liveBilling.reserved_credits)}</span>}
-          {liveBilling.actual_credits != null && <span className="text-emerald-400">Charged: {formatCredits(liveBilling.actual_credits)}</span>}
+          <span className="inline-flex items-center gap-1"><Coins className="w-3 h-3 text-gold" /> Upload est. {formatCredits(liveBilling.estimated_credits)} credits</span>
+          {liveBilling.reserved_credits > 0 && <span>Upload reserved: {formatCredits(liveBilling.reserved_credits)}</span>}
+          {liveBilling.actual_credits != null && <span className="text-emerald-400">Upload charged: {formatCredits(liveBilling.actual_credits)}</span>}
           <span className="capitalize ml-auto text-[10px] px-1.5 py-0.5 rounded bg-muted">{liveBilling.status}</span>
+        </div>
+      )}
+      {liveCurriculumBilling && (
+        <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
+          <span className="inline-flex items-center gap-1"><Coins className="w-3 h-3 text-gold" /> Curriculum est. {formatCredits(liveCurriculumBilling.estimated_credits_low)}–{formatCredits(liveCurriculumBilling.estimated_credits_high)} credits</span>
+          {liveCurriculumBilling.reserved_credits > 0 && <span>Curriculum reserved: {formatCredits(liveCurriculumBilling.reserved_credits)}</span>}
+          {liveCurriculumBilling.actual_credits != null && <span className="text-emerald-400">Curriculum charged: {formatCredits(liveCurriculumBilling.actual_credits)}</span>}
+          <span className="capitalize text-[10px] px-1.5 py-0.5 rounded bg-muted">{liveCurriculumBilling.status.split('_').join(' ')}</span>
+        </div>
+      )}
+      {documentMetrics && (documentMetrics.chunk_count_actual > 0 || documentMetrics.page_count_actual > 0) && (
+        <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
+          {documentMetrics.page_count_actual > 0 && <span>{documentMetrics.page_count_actual} pages</span>}
+          {documentMetrics.chunk_count_actual > 0 && <span>{documentMetrics.chunk_count_actual} chunks</span>}
+          {documentMetrics.token_count_actual > 0 && <span>~{documentMetrics.token_count_actual.toLocaleString()} tokens</span>}
+        </div>
+      )}
+      {capabilityProgress && (
+        <div className="flex items-center gap-2 text-[11px] flex-wrap">
+          {capabilityProgress.search_ready && <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-sky-300">search-ready</span>}
+          {capabilityProgress.doubt_ready && <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-emerald-300">doubt-ready</span>}
+          {capabilityProgress.learn_ready && <span className="rounded-full border border-gold/20 bg-gold/10 px-2 py-0.5 text-gold">learn-ready</span>}
         </div>
       )}
       {liveAsyncByok?.enabled && (
@@ -113,7 +170,40 @@ export default function NotebookResourcesPage() {
   const linked = useMemo(() => notebookResources?.items ?? [], [notebookResources?.items]);
   const linkedIds = useMemo(() => new Set(linked.map((item) => item.resource_id)), [linked]);
   const available = (resources?.items ?? []).filter((r) => !linkedIds.has(r.id));
-  const resourceById = new Map((resources?.items ?? []).map((r) => [r.id, r]));
+  const resourceById = useMemo(() => new Map((resources?.items ?? []).map((r) => [r.id, r])), [resources?.items]);
+  const trackerEntries = useMemo(() => {
+    const entries: Array<{
+      jobId: string;
+      label: string;
+      billing?: IngestionBillingStatus | null;
+      asyncByok?: IngestionAsyncByokStatus | null;
+    }> = [];
+    const seen = new Set<string>();
+
+    linked.forEach((entry) => {
+      const resource = resourceById.get(entry.resource_id);
+      const liveJob = getLiveIngestionJob(resource);
+      if (!liveJob || seen.has(liveJob.job_id)) return;
+      seen.add(liveJob.job_id);
+      entries.push({
+        jobId: liveJob.job_id,
+        label: resource?.filename ?? 'Processing resource',
+        billing: liveJob.billing ?? null,
+        asyncByok: liveJob.async_byok ?? null,
+      });
+    });
+
+    if (activeJobId && !seen.has(activeJobId)) {
+      entries.unshift({
+        jobId: activeJobId,
+        label: selectedFile?.name ?? 'Latest upload',
+        billing: lastBilling,
+        asyncByok: lastAsyncByok,
+      });
+    }
+
+    return entries;
+  }, [activeJobId, lastAsyncByok, lastBilling, linked, resourceById, selectedFile]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }, []);
   const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); }, []);
@@ -159,7 +249,11 @@ export default function NotebookResourcesPage() {
       setLastBilling(upload.billing ?? null);
       setLastAsyncByok(upload.async_byok ?? null);
       const rc = upload.billing?.reserved_credits ?? 0;
-      setFeedbackMessage(rc > 0 ? `Uploaded and attached. ${formatCredits(rc)} credits reserved for processing.` : 'Uploaded and attached. Processing continues in the background.');
+      setFeedbackMessage(
+        rc > 0
+          ? `Uploaded and attached. ${formatCredits(rc)} credits reserved now for upload processing; curriculum preparation is billed separately if it runs.`
+          : 'Uploaded and attached. Processing continues in the background; curriculum preparation is billed separately if it runs.',
+      );
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error, 'Upload failed. Check file type and try again.'));
     }
@@ -206,9 +300,16 @@ export default function NotebookResourcesPage() {
           </div>
         )}
 
-        {activeJobId && (
+        {trackerEntries.length > 0 && (
           <div className="mb-5 max-w-5xl animate-fade-up">
-            <IngestionTracker jobId={activeJobId} billing={lastBilling} asyncByok={lastAsyncByok} />
+            <div className="space-y-3">
+              {trackerEntries.map((tracker) => (
+                <div key={tracker.jobId} className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">{tracker.label}</p>
+                  <IngestionTracker jobId={tracker.jobId} billing={tracker.billing} asyncByok={tracker.asyncByok} />
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -269,10 +370,18 @@ export default function NotebookResourcesPage() {
                     </span>
                   </div>
                   <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
-                    <span>{formatCredits(uploadEstimate.estimated_credits_low)}–{formatCredits(uploadEstimate.estimated_credits_high)} credits</span>
-                    <span>${uploadEstimate.estimated_usd_low.toFixed(4)}–${uploadEstimate.estimated_usd_high.toFixed(4)} USD</span>
+                    <span>Reserve now: {formatCredits(uploadEstimate.core_upload_credits)} credits</span>
+                    <span>${uploadEstimate.core_upload_usd.toFixed(4)} USD</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
+                    <span>Curriculum later: {formatCredits(uploadEstimate.curriculum_credits_low)}–{formatCredits(uploadEstimate.curriculum_credits_high)} credits</span>
+                    <span>${uploadEstimate.curriculum_usd_low.toFixed(4)}–${uploadEstimate.curriculum_usd_high.toFixed(4)} USD</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
+                    <span>Total projected: {formatCredits(uploadEstimate.estimated_credits_low)}–{formatCredits(uploadEstimate.estimated_credits_high)} credits</span>
                     <span>~{uploadEstimate.chunk_count_estimate} chunks</span>
                   </div>
+                  <div className="text-[11px] text-muted-foreground">Core upload is reserved immediately. Curriculum preparation is reserved only when that stage starts.</div>
                   {uploadEstimate.warnings.length > 0 && (
                     <div className="flex items-start gap-1.5 text-[11px] text-orange-400">
                       <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
@@ -303,7 +412,7 @@ export default function NotebookResourcesPage() {
               <select value={selectedResourceId} onChange={(e) => setSelectedResourceId(e.target.value)}
                 className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:border-gold/30 focus:ring-1 focus:ring-gold/20">
                 <option value="">Select a resource…</option>
-                {available.map((r) => <option key={r.id} value={r.id}>{r.filename}{r.status === 'processing' ? ' (processing…)' : ''}</option>)}
+                {available.map((r) => <option key={r.id} value={r.id}>{r.filename}{getResourceDisplayStatus(r) === 'processing' ? ' (processing…)' : ''}</option>)}
               </select>
               <button onClick={handleAttach} disabled={!selectedResourceId || attach.isPending}
                 className="w-full inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-gold/10 border border-gold/20 text-gold text-sm font-medium hover:bg-gold/20 transition-colors disabled:opacity-50">
@@ -330,6 +439,8 @@ export default function NotebookResourcesPage() {
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {linked.map((entry, i) => {
                 const r = resourceById.get(entry.resource_id);
+                const liveJob = getLiveIngestionJob(r);
+                const displayStatus = getResourceDisplayStatus(r);
                 return (
                   <div key={entry.id} className="group rounded-xl border border-border bg-card p-4 transition-all hover:border-gold/15 hover:shadow-md hover:shadow-gold/5 animate-fade-up" style={{ animationDelay: `${0.12 + i * 0.03}s` }}>
                     <div className="flex items-start gap-3">
@@ -338,9 +449,11 @@ export default function NotebookResourcesPage() {
                         <p className="text-sm font-medium text-foreground truncate">{r?.filename ?? 'Unknown file'}</p>
                         {r?.topic && <p className="text-xs text-muted-foreground truncate mt-0.5">{r.topic}</p>}
                         <div className="mt-2 flex items-center gap-2 flex-wrap">
-                          <ResourceStatusBadge status={r?.status ?? 'processing'} />
+                          <ResourceStatusBadge status={displayStatus} />
                           <span className="text-[10px] text-muted-foreground/60 capitalize">{entry.role}</span>
-                          {r?.capabilities?.study_ready && <span className="text-[10px] text-emerald-400/70">study-ready</span>}
+                          {isResourceStudyReady(r) && <span className="text-[10px] text-emerald-400/70">study-ready</span>}
+                          {!isResourceStudyReady(r) && isResourceDoubtReady(r) && <span className="text-[10px] text-sky-400/80">doubt-ready</span>}
+                          {liveJob?.current_stage && <span className="text-[10px] text-muted-foreground/70">{formatIngestionStage(liveJob.current_stage)}</span>}
                         </div>
                       </div>
                       <div className="shrink-0">

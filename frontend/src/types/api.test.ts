@@ -60,6 +60,12 @@ describe('CM types', () => {
 
   it('IngestionEstimateResponse has required fields', () => {
     const res: IngestionEstimateResponse = {
+      core_upload_credits: 50,
+      core_upload_usd: 0.4,
+      curriculum_credits_low: 0,
+      curriculum_credits_high: 150,
+      curriculum_usd_low: 0,
+      curriculum_usd_high: 1.2,
       estimated_credits_low: 50,
       estimated_credits_high: 200,
       estimated_usd_low: 0.4,

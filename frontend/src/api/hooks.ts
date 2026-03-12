@@ -40,6 +40,7 @@ import type {
   IngestionEstimateResponse,
   HealthActionRequest,
 } from '../types/api';
+import { hasActiveIngestionJob } from '../lib/ingestion';
 
 // Query keys
 export const queryKeys = {
@@ -277,6 +278,13 @@ export function useResources(params?: {
         limit: params?.limit?.toString(),
         offset: params?.offset?.toString(),
       } as Record<string, string>),
+    refetchInterval: (query) => {
+      const items = query.state.data?.items ?? [];
+      return items.some((resource) => resource.status === 'processing' || hasActiveIngestionJob(resource.latest_job))
+        ? 3000
+        : false;
+    },
+    refetchIntervalInBackground: true,
   });
 }
 

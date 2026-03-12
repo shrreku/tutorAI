@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from io import BytesIO
 from types import SimpleNamespace
 from uuid import uuid4
@@ -10,6 +10,7 @@ from app.config import settings
 from app.db.database import get_db
 from app.api.v1 import auth as auth_module
 from app.api.v1 import ingest as ingest_module
+from app.api.v1 import resources as resources_module
 import app.db.repositories.ingestion_repo as ingestion_repo_module
 
 
@@ -164,4 +165,128 @@ def test_http_ingest_status_forbidden_for_non_owner(monkeypatch):
         response = client.get(f"/api/v1/ingest/status/{job_id}")
 
     assert response.status_code == 403
+    app.dependency_overrides.clear()
+
+
+def test_http_resources_list_includes_latest_job(monkeypatch):
+    resource_id = uuid4()
+    job_id = uuid4()
+    owner_id = uuid4()
+
+    class _ResourceRepo:
+        def __init__(self, _db):
+            pass
+
+        async def list_resources(self, **_kwargs):
+            return [
+                SimpleNamespace(
+                    id=resource_id,
+                    filename="notes.pdf",
+                    topic="Linear Algebra",
+                    status="processing",
+                    processing_profile="core_only",
+                    capabilities_json={"study_ready": False, "can_answer_doubts": True},
+                    uploaded_at=datetime.now(timezone.utc),
+                    processed_at=None,
+                )
+            ]
+
+    class _JobRepo:
+        def __init__(self, _db):
+            pass
+
+        async def get_latest_by_resource_ids(self, resource_ids):
+            assert resource_ids == [resource_id]
+            return {
+                resource_id: SimpleNamespace(
+                    id=job_id,
+                    resource_id=resource_id,
+                    status="running",
+                    job_kind="core_ingest",
+                    requested_capability="study_ready",
+                    scope_type="resource",
+                    scope_key=str(resource_id),
+                    current_stage="core_ready",
+                    progress_percent=70,
+                    error_message=None,
+                    started_at=datetime.now(timezone.utc),
+                    completed_at=None,
+                    metrics={
+                        "capability_progress": {
+                            "search_ready": True,
+                            "doubt_ready": True,
+                            "learn_ready": False,
+                        }
+                    },
+                )
+            }
+
+    monkeypatch.setattr(resources_module, "ResourceRepository", _ResourceRepo)
+    monkeypatch.setattr(resources_module, "IngestionJobRepository", _JobRepo)
+
+    async def _fake_user():
+        return SimpleNamespace(id=owner_id)
+
+    app.dependency_overrides[resources_module.require_auth] = _fake_user
+
+    with _build_client() as client:
+        response = client.get("/api/v1/resources")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["latest_job"]["job_id"] == str(job_id)
+    assert payload["items"][0]["latest_job"]["current_stage"] == "core_ready"
+    assert payload["items"][0]["latest_job"]["capability_progress"]["doubt_ready"] is True
+    app.dependency_overrides.clear()
+
+
+def test_http_resources_list_normalizes_ready_capabilities_from_timestamps(monkeypatch):
+    resource_id = uuid4()
+    owner_id = uuid4()
+
+    class _ResourceRepo:
+        def __init__(self, _db):
+            pass
+
+        async def list_resources(self, **_kwargs):
+            return [
+                SimpleNamespace(
+                    id=resource_id,
+                    filename="chapter-2.pdf",
+                    topic="Mechanics",
+                    status="ready",
+                    processing_profile="prepared_for_curriculum",
+                    capabilities_json={"study_ready": False, "curriculum_ready": False},
+                    uploaded_at=datetime.now(timezone.utc),
+                    processed_at=datetime.now(timezone.utc),
+                    tutoring_ready_at=datetime.now(timezone.utc),
+                    study_ready_at=datetime.now(timezone.utc),
+                    curriculum_ready_at=datetime.now(timezone.utc),
+                )
+            ]
+
+    class _JobRepo:
+        def __init__(self, _db):
+            pass
+
+        async def get_latest_by_resource_ids(self, resource_ids):
+            assert resource_ids == [resource_id]
+            return {}
+
+    monkeypatch.setattr(resources_module, "ResourceRepository", _ResourceRepo)
+    monkeypatch.setattr(resources_module, "IngestionJobRepository", _JobRepo)
+
+    async def _fake_user():
+        return SimpleNamespace(id=owner_id)
+
+    app.dependency_overrides[resources_module.require_auth] = _fake_user
+
+    with _build_client() as client:
+        response = client.get("/api/v1/resources")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["capabilities"]["study_ready"] is True
+    assert payload["items"][0]["capabilities"]["curriculum_ready"] is True
+    assert payload["items"][0]["capabilities"]["can_start_revision_session"] is True
     app.dependency_overrides.clear()

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import List, Optional, Dict, Any, Generic, TypeVar
 from uuid import UUID
 from datetime import datetime
@@ -57,6 +59,7 @@ class ResourceResponse(BaseModel):
     capabilities: Dict[str, bool] = Field(default_factory=dict)
     uploaded_at: datetime
     processed_at: Optional[datetime]
+    latest_job: Optional[IngestionStatusResponse] = None
 
 
 class ResourceArtifactResponse(BaseModel):
@@ -101,6 +104,19 @@ class IngestionBillingStatusResponse(BaseModel):
     file_size_bytes: int = 0
 
 
+class IngestionCurriculumBillingStatusResponse(BaseModel):
+    """Deferred curriculum-preparation billing attached to an ingestion job."""
+    model_config = ConfigDict(extra="forbid")
+
+    estimated_credits_low: int = 0
+    estimated_credits_high: int = 0
+    reserved_credits: int = 0
+    actual_credits: Optional[int] = None
+    status: str = "pending"
+    operation_id: Optional[UUID] = None
+    release_reason: Optional[str] = None
+
+
 class IngestionAsyncByokStatusResponse(BaseModel):
     """Async BYOK escrow details attached to an ingestion job."""
     model_config = ConfigDict(extra="forbid")
@@ -111,6 +127,25 @@ class IngestionAsyncByokStatusResponse(BaseModel):
     status: str = "disabled"
     expires_at: Optional[datetime] = None
     revoked_at: Optional[datetime] = None
+
+
+class IngestionDocumentMetricsResponse(BaseModel):
+    """Actual document metrics discovered during ingestion."""
+    model_config = ConfigDict(extra="forbid")
+
+    page_count_actual: int = 0
+    section_count: int = 0
+    chunk_count_actual: int = 0
+    token_count_actual: int = 0
+
+
+class IngestionCapabilityProgressResponse(BaseModel):
+    """Session capability readiness unlocked by staged ingestion."""
+    model_config = ConfigDict(extra="forbid")
+
+    search_ready: bool = False
+    doubt_ready: bool = False
+    learn_ready: bool = False
 
 
 class IngestionStatusResponse(BaseModel):
@@ -129,7 +164,10 @@ class IngestionStatusResponse(BaseModel):
     error_message: Optional[str]
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
+    document_metrics: Optional[IngestionDocumentMetricsResponse] = None
+    capability_progress: Optional[IngestionCapabilityProgressResponse] = None
     billing: Optional[IngestionBillingStatusResponse] = None
+    curriculum_billing: Optional[IngestionCurriculumBillingStatusResponse] = None
     async_byok: Optional[IngestionAsyncByokStatusResponse] = None
 
 
@@ -310,6 +348,7 @@ class NotebookResourceResponse(BaseModel):
     added_at: datetime
     created_at: datetime
     updated_at: datetime
+    resource: Optional[ResourceResponse] = None
 
 
 class NotebookSessionCreateRequest(BaseModel):

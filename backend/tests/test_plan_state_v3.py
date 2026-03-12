@@ -294,6 +294,34 @@ def test_session_service_fails_early_when_ready_resource_has_no_concepts(monkeyp
     service = SessionService(_DbStub(), curriculum)
 
     with pytest.raises(ValueError, match="has no admitted concepts yet"):
-        asyncio.run(service.create_session(resource_id=uuid.uuid4()))
+        asyncio.run(service.create_session(resource_id=uuid.uuid4(), mode="learn"))
 
     assert curriculum.calls == 0
+
+
+def test_session_service_allows_doubt_mode_without_concepts(monkeypatch):
+    async def _get_resource(self, resource_id):
+        return SimpleNamespace(id=resource_id, topic="heat", status="ready")
+
+    async def _get_or_create_default_user(self):
+        return SimpleNamespace(id=uuid.uuid4())
+
+    async def _get_active_session(self, user_id, resource_id):
+        return None
+
+    async def _get_concepts(self, resource_id):
+        return []
+
+    monkeypatch.setattr(SessionService, "_get_resource", _get_resource)
+    monkeypatch.setattr(SessionService, "_get_or_create_default_user", _get_or_create_default_user)
+    monkeypatch.setattr(SessionService, "_get_active_session", _get_active_session)
+    monkeypatch.setattr(SessionService, "_get_concepts", _get_concepts)
+
+    curriculum = _CurriculumCountingStub()
+    service = SessionService(_DbStub(), curriculum)
+    session = asyncio.run(service.create_session(resource_id=uuid.uuid4(), mode="doubt"))
+
+    assert curriculum.calls == 0
+    assert session.plan_state["mode"] == "doubt"
+    assert session.plan_state["objective_queue"][0]["objective_id"] == "obj_doubt_clarify"
+    assert session.plan_state["current_step"] == "clarify"

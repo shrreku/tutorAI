@@ -23,6 +23,20 @@ class ResourceRepository(BaseRepository[Resource]):
             select(Resource).where(Resource.filename == filename)
         )
         return result.scalar_one_or_none()
+    async def get_by_ids(
+        self,
+        resource_ids: List[UUID],
+        *,
+        owner_user_id: Optional[UUID] = None,
+    ) -> List[Resource]:
+        """Get multiple resources by id."""
+        if not resource_ids:
+            return []
+        query = select(Resource).where(Resource.id.in_(resource_ids))
+        if owner_user_id is not None:
+            query = query.where(Resource.owner_user_id == owner_user_id)
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
 
     async def list_resources(
         self,

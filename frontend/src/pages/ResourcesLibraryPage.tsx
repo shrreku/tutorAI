@@ -3,6 +3,7 @@ import {
   Loader2, FileText, CheckCircle2, AlertCircle, Clock, FolderOpen,
 } from 'lucide-react';
 import { useResources } from '../api/hooks';
+import { getLiveIngestionJob, getResourceDisplayStatus, isResourceDoubtReady, isResourceStudyReady } from '../lib/ingestion';
 
 function getFileExtColor(filename: string) {
   const ext = filename.split('.').pop()?.toLowerCase();
@@ -11,6 +12,7 @@ function getFileExtColor(filename: string) {
 
 function StatusBadge({ status }: { status: string }) {
   const cfg: Record<string, { icon: typeof CheckCircle2; cls: string; label: string }> = {
+    ready: { icon: CheckCircle2, cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', label: 'Ready' },
     ingested: { icon: CheckCircle2, cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', label: 'Ready' },
     processing: { icon: Clock, cls: 'bg-gold/10 text-gold border-gold/20 animate-pulse-gold', label: 'Processing' },
     failed: { icon: AlertCircle, cls: 'bg-red-500/10 text-red-400 border-red-500/20', label: 'Failed' },
@@ -64,6 +66,9 @@ export default function ResourcesLibraryPage() {
               <div key={resource.id}
                 className="group rounded-xl border border-border bg-card p-4 transition-all hover:border-gold/15 hover:shadow-md hover:shadow-gold/5 animate-fade-up"
                 style={{ animationDelay: `${i * 0.03}s` }}>
+                {(() => {
+                  const liveJob = getLiveIngestionJob(resource);
+                  return (
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 shrink-0">
                     <FileText className={`w-5 h-5 ${getFileExtColor(resource.filename)}`} />
@@ -72,9 +77,15 @@ export default function ResourcesLibraryPage() {
                     <p className="text-sm font-medium text-foreground truncate">{resource.filename}</p>
                     {resource.topic && <p className="text-xs text-muted-foreground truncate mt-0.5">{resource.topic}</p>}
                     <div className="mt-2 flex items-center gap-2 flex-wrap">
-                      <StatusBadge status={resource.status} />
-                      {resource.capabilities?.study_ready && (
+                      <StatusBadge status={getResourceDisplayStatus(resource)} />
+                      {isResourceStudyReady(resource) && (
                         <span className="text-[10px] text-emerald-400/70">study-ready</span>
+                      )}
+                      {!isResourceStudyReady(resource) && isResourceDoubtReady(resource) && (
+                        <span className="text-[10px] text-sky-400/80">doubt-ready</span>
+                      )}
+                      {liveJob?.current_stage && (
+                        <span className="text-[10px] text-muted-foreground/70">{liveJob.current_stage.split('_').join(' ')}</span>
                       )}
                     </div>
                     <p className="text-[10px] text-muted-foreground/50 mt-2">
@@ -82,6 +93,8 @@ export default function ResourcesLibraryPage() {
                     </p>
                   </div>
                 </div>
+                  );
+                })()}
               </div>
             ))}
           </div>

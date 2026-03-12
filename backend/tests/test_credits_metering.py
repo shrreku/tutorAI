@@ -106,6 +106,15 @@ class TestEstimateIngestionV2:
         assert result["estimated_credits_low"] > 0
         assert result["confidence"] in ("low", "medium", "high")
 
+    def test_pdf_heuristics_are_not_grossly_overinflated(self):
+        meter = self._make_meter()
+        result = meter.estimate_ingestion_v2(
+            file_size_bytes=740_100,
+            filename="chapter-2.pdf",
+        )
+        assert result["page_count_estimate"] == 5
+        assert result["chunk_count_estimate"] <= 16
+
 
 # ---------------------------------------------------------------------------
 # Billing telemetry event format tests

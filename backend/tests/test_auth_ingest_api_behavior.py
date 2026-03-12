@@ -63,6 +63,58 @@ def test_estimate_retry_credits_uses_local_stat_when_path_is_local(tmp_path):
     assert captured['file_size_bytes'] == 12
 
 
+def test_get_balance_bootstraps_credit_account_when_enabled(monkeypatch):
+    user_id = uuid4()
+    ensured = []
+
+    class _Repo:
+        def __init__(self, _db):
+            pass
+
+        async def get_account(self, _user_id):
+            return SimpleNamespace(
+                balance=250,
+                lifetime_granted=500,
+                lifetime_used=250,
+                plan_tier="free_research",
+            )
+
+    class _Meter:
+        def __init__(self, _db):
+            pass
+
+        async def ensure_account(self, _user_id):
+            ensured.append(_user_id)
+
+    from app.api.v1 import billing as billing_module
+
+    monkeypatch.setattr(settings, "CREDITS_ENABLED", True, raising=False)
+    monkeypatch.setattr(billing_module, "CreditAccountRepository", _Repo)
+    monkeypatch.setattr(billing_module, "CreditMeter", _Meter)
+
+    response = asyncio.run(
+        billing_module.get_balance(
+            db=_DummyDb(),
+            user=SimpleNamespace(id=user_id),
+        )
+    )
+
+    assert ensured == [user_id]
+    assert response.credits_enabled is True
+    assert response.balance == 250
+
+
+def test_estimate_ingestion_credits_uses_v2_range_for_small_markdown():
+    meter = ingest_module.CreditMeter(_DummyDb())
+
+    estimate = meter.estimate_ingestion_credits(
+        file_size_bytes=265,
+        filename="notes.md",
+    )
+
+    assert estimate == 50
+
+
 def test_register_rejects_existing_email(monkeypatch):
     class _Repo:
         def __init__(self, _db):
@@ -269,6 +321,25 @@ def test_ingest_upload_rejects_when_insufficient_credits(monkeypatch):
 
         def estimate_ingestion_credits(self, **_kwargs):
             return 1200
+
+        def estimate_ingestion_v2(self, **_kwargs):
+            return {
+                "core_upload_credits": 1200,
+                "core_upload_usd": 9.6,
+                "curriculum_credits_low": 0,
+                "curriculum_credits_high": 0,
+                "curriculum_usd_low": 0.0,
+                "curriculum_usd_high": 0.0,
+                "estimated_credits_low": 1200,
+                "estimated_credits_high": 1200,
+                "estimated_usd_low": 9.6,
+                "estimated_usd_high": 9.6,
+                "page_count_estimate": 1,
+                "token_count_estimate": 10,
+                "chunk_count_estimate": 1,
+                "estimate_confidence": "high",
+                "warnings": [],
+            }
 
         async def reserve_for_ingestion(self, *_args, **_kwargs):
             return None
@@ -530,6 +601,25 @@ def test_ingest_upload_uses_async_byok_escrow_and_bypasses_credits(monkeypatch):
 
         def estimate_ingestion_credits(self, **_kwargs):
             return 1200
+
+        def estimate_ingestion_v2(self, **_kwargs):
+            return {
+                "core_upload_credits": 1200,
+                "core_upload_usd": 9.6,
+                "curriculum_credits_low": 0,
+                "curriculum_credits_high": 0,
+                "curriculum_usd_low": 0.0,
+                "curriculum_usd_high": 0.0,
+                "estimated_credits_low": 1200,
+                "estimated_credits_high": 1200,
+                "estimated_usd_low": 9.6,
+                "estimated_usd_high": 9.6,
+                "page_count_estimate": 1,
+                "token_count_estimate": 10,
+                "chunk_count_estimate": 1,
+                "estimate_confidence": "high",
+                "warnings": [],
+            }
 
         async def reserve_for_ingestion(self, *_args, **_kwargs):
             reserve_calls.append(True)

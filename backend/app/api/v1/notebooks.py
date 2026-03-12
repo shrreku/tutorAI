@@ -1,5 +1,7 @@
 import logging
+from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -21,6 +23,7 @@ from app.db.repositories.notebook_repo import (
     NotebookProgressRepository,
     NotebookArtifactRepository,
 )
+from app.db.repositories.ingestion_repo import IngestionJobRepository
 from app.db.repositories.resource_repo import ResourceRepository
 from app.db.repositories.session_repo import (
     SessionRepository,
@@ -51,6 +54,7 @@ from app.schemas.api import (
     SessionResponse,
     CurriculumOverview,
     ObjectiveSummary,
+    ResourceResponse,
 )
 from app.services.llm.factory import create_llm_provider
 from app.services.embedding.factory import create_embedding_provider
@@ -59,6 +63,7 @@ from app.services.ingestion.enricher import ChunkEnricher
 from app.services.ingestion.ontology_extractor import OntologyExtractor
 from app.services.notebook_artifacts import NotebookArtifactService
 from app.services.notebook_preparation import NotebookPreparationService
+from app.services.resource_readiness import normalized_resource_capabilities
 from app.services.telemetry.notebook_events import emit_notebook_event
 from app.services.tutor.session_service import SessionService
 from app.services.credits.meter import CreditMeter
@@ -96,6 +101,25 @@ def _build_curriculum_overview(plan_state: dict) -> Optional[CurriculumOverview]
     )
 
 
+def _estimate_curriculum_prepare_for_resource(resource, latest_job, meter: CreditMeter) -> dict:
+    metrics = (getattr(latest_job, "metrics", None) or {}) if latest_job else {}
+    billing = metrics.get("billing") if isinstance(metrics, dict) else {}
+    document = metrics.get("document") if isinstance(metrics, dict) else {}
+    file_size_bytes = int((billing or {}).get("file_size_bytes") or 0)
+    if file_size_bytes <= 0 and getattr(resource, "file_path_or_uri", None) and urlparse(resource.file_path_or_uri).scheme in {"", "file"}:
+        try:
+            file_size_bytes = Path(resource.file_path_or_uri).stat().st_size
+        except OSError:
+            file_size_bytes = 0
+    return meter.estimate_curriculum_preparation_v2(
+        file_size_bytes=file_size_bytes,
+        filename=resource.filename,
+        page_count_estimate=int((document or {}).get("page_count_actual") or 0),
+        token_count_estimate=int((document or {}).get("token_count_actual") or 0),
+        chunk_count_estimate=int((document or {}).get("chunk_count_actual") or 0),
+    )
+
+
 def _to_notebook_response(notebook: Notebook) -> NotebookResponse:
     return NotebookResponse(
         id=notebook.id,
@@ -110,7 +134,7 @@ def _to_notebook_response(notebook: Notebook) -> NotebookResponse:
     )
 
 
-def _to_notebook_resource_response(link: NotebookResource) -> NotebookResourceResponse:
+def _to_notebook_resource_response(link: NotebookResource, resource=None, latest_job=None) -> NotebookResourceResponse:
     return NotebookResourceResponse(
         id=link.id,
         notebook_id=link.notebook_id,
@@ -120,6 +144,18 @@ def _to_notebook_resource_response(link: NotebookResource) -> NotebookResourceRe
         added_at=link.added_at,
         created_at=link.created_at,
         updated_at=link.updated_at,
+        resource=ResourceResponse(**{
+            "id": resource.id,
+            "filename": resource.filename,
+            "topic": resource.topic,
+            "status": resource.status,
+            "lifecycle_status": resource.status,
+            "processing_profile": getattr(resource, "processing_profile", None),
+            "capabilities": normalized_resource_capabilities(resource, latest_job=latest_job),
+            "uploaded_at": resource.uploaded_at,
+            "processed_at": resource.processed_at,
+            "latest_job": None,
+        }) if resource is not None else None,
     )
 
 
@@ -362,7 +398,8 @@ async def attach_resource_to_notebook(
 
     existing = await notebook_resource_repo.get_by_pair(notebook_id, request.resource_id)
     if existing:
-        return _to_notebook_resource_response(existing)
+        latest_job = await IngestionJobRepository(db).get_by_resource(request.resource_id)
+        return _to_notebook_resource_response(existing, resource=resource, latest_job=latest_job)
 
     link = NotebookResource(
         notebook_id=notebook_id,
@@ -373,7 +410,8 @@ async def attach_resource_to_notebook(
     link = await notebook_resource_repo.create(link)
     await db.commit()
     await db.refresh(link)
-    return _to_notebook_resource_response(link)
+    latest_job = await IngestionJobRepository(db).get_by_resource(request.resource_id)
+    return _to_notebook_resource_response(link, resource=resource, latest_job=latest_job)
 
 
 @router.get("/{notebook_id}/resources", response_model=PaginatedResponse[NotebookResourceResponse])
@@ -385,12 +423,25 @@ async def list_notebook_resources(
     user: UserProfile = Depends(require_auth),
 ):
     notebook_resource_repo = NotebookResourceRepository(db)
+    resource_repo = ResourceRepository(db)
+    ingestion_repo = IngestionJobRepository(db)
 
     await verify_notebook_owner(notebook_id, user, db)
     resources = await notebook_resource_repo.get_by_notebook(notebook_id)
     sliced = resources[offset: offset + limit]
+    resource_ids = [item.resource_id for item in sliced]
+    resource_rows = await resource_repo.get_by_ids(resource_ids, owner_user_id=user.id)
+    resources_by_id = {resource.id: resource for resource in resource_rows}
+    latest_jobs = await ingestion_repo.get_latest_by_resource_ids(resource_ids) if resource_ids else {}
     return PaginatedResponse(
-        items=[_to_notebook_resource_response(r) for r in sliced],
+        items=[
+            _to_notebook_resource_response(
+                r,
+                resource=resources_by_id.get(r.resource_id),
+                latest_job=latest_jobs.get(r.resource_id),
+            )
+            for r in sliced
+        ],
         total=len(resources),
         limit=limit,
         offset=offset,
@@ -426,6 +477,7 @@ async def create_notebook_session(
 ):
     notebook_resource_repo = NotebookResourceRepository(db)
     notebook_session_repo = NotebookSessionRepository(db)
+    resource_repo = ResourceRepository(db)
     user_repo = UserProfileRepository(db)
     preparation_service = NotebookPreparationService(db)
     meter = CreditMeter(db)
@@ -448,32 +500,45 @@ async def create_notebook_session(
             detail="Resource is not attached to this notebook",
         )
 
-    # CM-006: Create billing operation for session launch when a full DB session is available.
-    operation_id = None
-    if supports_operation_metering:
-        op = await meter.create_operation(
-            user.id, "session_launch",
-            session_id=None,
-            resource_id=str(request.resource_id),
-            selected_model_id=settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
-            metadata={"mode": request.mode, "notebook_id": str(notebook_id)},
-        )
-        operation_id = getattr(op, "id", None)
+    anchor_resource = await resource_repo.get_by_id(request.resource_id)
+    if not anchor_resource or anchor_resource.owner_user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found")
 
-    try:
-        preparation_summary = await preparation_service.prepare_session_context(
-            notebook_id=notebook_id,
-            request=request,
-            user_id=user.id,
-        )
-    except ValueError as exc:
-        detail = str(exc)
-        if "not study-ready" in detail or "no chunks available" in detail:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+    curriculum_summary = None
+    curriculum_prepare_operation_id = None
+    curriculum_prepare_reserved_credits = 0
 
     if request.mode in CURRICULUM_REQUIRED_MODES:
         try:
+            capabilities = normalized_resource_capabilities(anchor_resource)
+            curriculum_needed = not (capabilities.get("curriculum_ready") and capabilities.get("has_topic_bundles"))
+            if curriculum_needed:
+                latest_job = await IngestionJobRepository(db).get_by_resource(request.resource_id)
+                curriculum_estimate = _estimate_curriculum_prepare_for_resource(anchor_resource, latest_job, meter)
+                op = await meter.create_operation(
+                    user.id,
+                    "curriculum_prepare",
+                    resource_id=str(request.resource_id),
+                    selected_model_id=settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
+                    estimate_credits_low=int(curriculum_estimate.get("estimated_credits_low") or 0),
+                    estimate_credits_high=int(curriculum_estimate.get("estimated_credits_high") or 0),
+                    metadata={"mode": request.mode, "notebook_id": str(notebook_id), "source": "session_launch"},
+                )
+                curriculum_prepare_operation_id = getattr(op, "id", None)
+                reserved = await meter.reserve_operation(
+                    user.id,
+                    curriculum_prepare_operation_id,
+                    int(curriculum_estimate.get("estimated_credits_high") or 0),
+                    reference_id=str(curriculum_prepare_operation_id),
+                    reference_type="curriculum_prepare",
+                )
+                if reserved is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                        detail="Insufficient credits for curriculum preparation. Top up credits or use doubt mode first.",
+                    )
+                curriculum_prepare_reserved_credits = reserved
+
             embedding_provider = create_embedding_provider(settings)
             ontology_llm = create_llm_provider(
                 settings,
@@ -499,32 +564,87 @@ async def create_notebook_session(
                     enrichment_model=settings.LLM_MODEL_ENRICHMENT,
                 ),
             )
+            ontology_before = dict(getattr(ontology_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+            enrichment_before = dict(getattr(enrichment_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
             curriculum_summary = await curriculum_preparation.ensure_curriculum_ready(request.resource_id)
-            if curriculum_summary:
-                preparation_summary["curriculum_preparation"] = curriculum_summary
-                # CM-006: Record ontology + enrichment usage lines
-                if operation_id and supports_operation_metering:
-                    ontology_tokens = curriculum_summary.get("ontology_tokens", 0)
-                    enrichment_tokens = curriculum_summary.get("enrichment_tokens", 0)
-                    if ontology_tokens:
-                        await meter.append_usage_line(
-                            operation_id, "ontology_extraction",
-                            settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
-                            input_tokens=int(ontology_tokens * 0.8),
-                            output_tokens=int(ontology_tokens * 0.2),
-                        )
-                    if enrichment_tokens:
-                        await meter.append_usage_line(
-                            operation_id, "chunk_enrichment",
-                            settings.LLM_MODEL_ENRICHMENT or settings.LLM_MODEL,
-                            input_tokens=int(enrichment_tokens * 0.7),
-                            output_tokens=int(enrichment_tokens * 0.3),
-                        )
+            if curriculum_prepare_operation_id and curriculum_prepare_reserved_credits > 0:
+                ontology_after = dict(getattr(ontology_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+                enrichment_after = dict(getattr(enrichment_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+                ontology_prompt = max(0, int(ontology_after.get("prompt_tokens", 0)) - int(ontology_before.get("prompt_tokens", 0)))
+                ontology_completion = max(0, int(ontology_after.get("completion_tokens", 0)) - int(ontology_before.get("completion_tokens", 0)))
+                enrichment_prompt = max(0, int(enrichment_after.get("prompt_tokens", 0)) - int(enrichment_before.get("prompt_tokens", 0)))
+                enrichment_completion = max(0, int(enrichment_after.get("completion_tokens", 0)) - int(enrichment_before.get("completion_tokens", 0)))
+                if ontology_prompt or ontology_completion:
+                    await meter.append_usage_line(
+                        curriculum_prepare_operation_id,
+                        "curriculum_ontology",
+                        settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
+                        input_tokens=ontology_prompt,
+                        output_tokens=ontology_completion,
+                    )
+                if enrichment_prompt or enrichment_completion:
+                    await meter.append_usage_line(
+                        curriculum_prepare_operation_id,
+                        "curriculum_enrichment",
+                        settings.LLM_MODEL_ENRICHMENT or settings.LLM_MODEL,
+                        input_tokens=enrichment_prompt,
+                        output_tokens=enrichment_completion,
+                    )
+                await meter.finalize_operation(
+                    user.id,
+                    curriculum_prepare_operation_id,
+                    curriculum_prepare_reserved_credits,
+                    reference_id=str(curriculum_prepare_operation_id),
+                    reference_type="curriculum_prepare",
+                )
+        except HTTPException:
+            if curriculum_prepare_operation_id and curriculum_prepare_reserved_credits > 0:
+                await meter.release_operation(
+                    user.id,
+                    curriculum_prepare_operation_id,
+                    curriculum_prepare_reserved_credits,
+                    reference_id=str(curriculum_prepare_operation_id),
+                    reference_type="curriculum_prepare",
+                )
+            raise
         except ValueError as exc:
+            if curriculum_prepare_operation_id and curriculum_prepare_reserved_credits > 0:
+                await meter.release_operation(
+                    user.id,
+                    curriculum_prepare_operation_id,
+                    curriculum_prepare_reserved_credits,
+                    reference_id=str(curriculum_prepare_operation_id),
+                    reference_type="curriculum_prepare",
+                )
             detail = str(exc)
             if "not found" in detail or "no chunks available" in detail:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+        except Exception:
+            if curriculum_prepare_operation_id and curriculum_prepare_reserved_credits > 0:
+                await meter.release_operation(
+                    user.id,
+                    curriculum_prepare_operation_id,
+                    curriculum_prepare_reserved_credits,
+                    reference_id=str(curriculum_prepare_operation_id),
+                    reference_type="curriculum_prepare",
+                )
+            raise
+
+    try:
+        preparation_summary = await preparation_service.prepare_session_context(
+            notebook_id=notebook_id,
+            request=request,
+            user_id=user.id,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        if "not study-ready" in detail or "not doubt-ready" in detail or "no chunks available" in detail:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+    if curriculum_summary:
+        preparation_summary["curriculum_preparation"] = curriculum_summary
 
     global_consent, _ = await user_repo.get_global_consent(user)
 
@@ -558,7 +678,19 @@ async def create_notebook_session(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=msg)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
-    # CM-006: Record curriculum planning usage line
+    # CM-006: Record curriculum/session-launch usage once the session exists.
+    if supports_operation_metering:
+        op = await meter.create_operation(
+            user.id, "session_launch",
+            session_id=str(session.id),
+            resource_id=str(request.resource_id),
+            selected_model_id=settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
+            metadata={"mode": request.mode, "notebook_id": str(notebook_id)},
+        )
+        operation_id = getattr(op, "id", None)
+    else:
+        operation_id = None
+
     if operation_id and supports_operation_metering:
         await meter.append_usage_line(
             operation_id, "curriculum_planning",

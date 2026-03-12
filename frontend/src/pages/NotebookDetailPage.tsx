@@ -15,6 +15,7 @@ import ResourcesTab from '../components/notebooks/ResourcesTab';
 import SessionsTab from '../components/notebooks/SessionsTab';
 import ProgressTab from '../components/notebooks/ProgressTab';
 import type { NotebookSessionCreateRequest } from '../types/api';
+import { getResourceDisplayStatus, isResourceDoubtReady, isResourceStudyReady } from '../lib/ingestion';
 import { cn } from '../lib/utils';
 
 export default function NotebookDetailPage() {
@@ -64,12 +65,14 @@ export default function NotebookDetailPage() {
         : 'Use doubt mode when you mostly understand the material but want to clear specific uncertainty before moving on.';
 
   const launchResources = resourceItems.map((entry) => {
-    const resource = resourceById.get(entry.resource_id);
+    const resource = resourceById.get(entry.resource_id) ?? entry.resource ?? undefined;
     return {
       id: entry.resource_id,
       label: resource?.filename ?? 'Untitled resource',
       subtitle: resource?.topic || resource?.status || 'Attached resource',
-      status: resource?.status,
+      status: getResourceDisplayStatus(resource),
+      studyReady: isResourceStudyReady(resource),
+      doubtReady: isResourceDoubtReady(resource),
     };
   });
 

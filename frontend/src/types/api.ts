@@ -30,6 +30,7 @@ export interface Resource {
   capabilities?: Record<string, boolean>;
   uploaded_at: string;
   processed_at: string | null;
+  latest_job?: IngestionStatus | null;
 }
 
 export interface ResourceDetail extends Resource {
@@ -80,8 +81,24 @@ export interface IngestionStatus {
   error_message: string | null;
   started_at: string | null;
   completed_at: string | null;
+  document_metrics?: IngestionDocumentMetrics | null;
+  capability_progress?: IngestionCapabilityProgress | null;
   billing?: IngestionBillingStatus | null;
+  curriculum_billing?: IngestionCurriculumBillingStatus | null;
   async_byok?: IngestionAsyncByokStatus | null;
+}
+
+export interface IngestionDocumentMetrics {
+  page_count_actual: number;
+  section_count: number;
+  chunk_count_actual: number;
+  token_count_actual: number;
+}
+
+export interface IngestionCapabilityProgress {
+  search_ready: boolean;
+  doubt_ready: boolean;
+  learn_ready: boolean;
 }
 
 export interface IngestionBillingStatus {
@@ -92,6 +109,16 @@ export interface IngestionBillingStatus {
   status: string;
   release_reason?: string | null;
   file_size_bytes: number;
+}
+
+export interface IngestionCurriculumBillingStatus {
+  estimated_credits_low: number;
+  estimated_credits_high: number;
+  reserved_credits: number;
+  actual_credits?: number | null;
+  status: string;
+  operation_id?: string | null;
+  release_reason?: string | null;
 }
 
 export interface IngestionAsyncByokStatus {
@@ -241,6 +268,7 @@ export interface NotebookResource {
   added_at: string;
   created_at: string;
   updated_at: string;
+  resource?: Resource | null;
 }
 
 export interface NotebookResourceAttachRequest {
@@ -690,6 +718,12 @@ export interface IngestionEstimateResponse {
   estimated_credits_high: number;
   estimated_usd_low: number;
   estimated_usd_high: number;
+  core_upload_credits: number;
+  core_upload_usd: number;
+  curriculum_credits_low: number;
+  curriculum_credits_high: number;
+  curriculum_usd_low: number;
+  curriculum_usd_high: number;
   page_count_estimate: number;
   token_count_estimate: number;
   chunk_count_estimate: number;

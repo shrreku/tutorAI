@@ -14,7 +14,7 @@ from app.models.knowledge_base import (
     ResourceTopic,
 )
 from app.models.resource import Resource
-from app.models.resource import study_ready_capabilities
+from app.models.resource import core_ready_capabilities, study_ready_capabilities
 from app.services.ingestion.ingestion_types import ChunkData
 from app.services.ingestion.ontology_extractor import ResourceOntology
 
@@ -224,15 +224,18 @@ async def update_resource_status(
     if status == "ready":
         update_data["processed_at"] = datetime.utcnow()
         update_data["study_ready_at"] = datetime.utcnow() if study_ready else None
-        update_data["tutoring_ready_at"] = datetime.utcnow() if study_ready else None
+        update_data["tutoring_ready_at"] = datetime.utcnow()
         update_data["processing_profile"] = "core_only"
 
         current_resource = await db.get(Resource, resource_id)
         existing_capabilities = current_resource.capabilities_json if current_resource else None
-        update_data["capabilities_json"] = study_ready_capabilities(
-            existing_capabilities,
-            has_concepts=study_ready,
-        )
+        if study_ready:
+            update_data["capabilities_json"] = study_ready_capabilities(
+                existing_capabilities,
+                has_concepts=True,
+            )
+        else:
+            update_data["capabilities_json"] = core_ready_capabilities(existing_capabilities)
 
     if error_message:
         update_data["error_message"] = error_message

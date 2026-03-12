@@ -48,7 +48,15 @@ type LaunchResource = {
   subtitle?: string | null;
   status?: string;
   studyReady?: boolean;
+  doubtReady?: boolean;
 };
+
+function isResourceReadyForMode(resource: LaunchResource, mode: (typeof MODES)[number]) {
+  if (mode === 'doubt') {
+    return Boolean(resource.doubtReady || resource.studyReady);
+  }
+  return Boolean(resource.studyReady);
+}
 
 type SessionLaunchPanelProps = {
   resources: LaunchResource[];
@@ -129,7 +137,7 @@ export default function SessionLaunchPanel({
   }, [anchorResourceId, resources, scope, selectedResourceIds]);
 
   const includedResources = resources.filter((resource) => includedResourceIds.includes(resource.id));
-  const blockedResources = includedResources.filter((resource) => resource.studyReady === false);
+  const blockedResources = includedResources.filter((resource) => !isResourceReadyForMode(resource, mode));
   const hasBlockedResources = blockedResources.length > 0;
 
   const handleToggleResource = (resourceId: string) => {
@@ -284,16 +292,26 @@ export default function SessionLaunchPanel({
                                 Study-ready
                               </span>
                             )}
-                            {resource.studyReady === false && (
+                            {!resource.studyReady && resource.doubtReady && (
+                              <span className="rounded-full border border-sky-500/20 bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-300">
+                                Doubt-ready
+                              </span>
+                            )}
+                            {!resource.studyReady && !resource.doubtReady && (
                               <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
                                 Not ready yet
                               </span>
                             )}
                           </div>
                           {resource.subtitle && <p className="mt-1 text-xs text-muted-foreground">{resource.subtitle}</p>}
-                          {resource.studyReady === false && (
+                          {!resource.studyReady && !resource.doubtReady && (
                             <p className="mt-1 text-xs text-amber-300">
-                              This resource finished uploading, but concept extraction is not complete enough for tutoring yet.
+                              This resource is still being parsed and indexed, so even doubt mode is blocked for now.
+                            </p>
+                          )}
+                          {!resource.studyReady && resource.doubtReady && mode !== 'doubt' && (
+                            <p className="mt-1 text-xs text-sky-300">
+                              Core indexing is ready, so doubt mode can start now. Learn, practice, and revision still wait for curriculum preparation.
                             </p>
                           )}
                         </div>
@@ -326,7 +344,7 @@ export default function SessionLaunchPanel({
                 {includedResources.slice(0, 4).map((resource) => (
                   <span
                     key={resource.id}
-                    className={`rounded-full border px-2.5 py-1 text-[11px] ${resource.studyReady === false ? 'border-amber-500/20 bg-amber-500/10 text-amber-300' : 'border-border bg-background text-foreground'}`}
+                    className={`rounded-full border px-2.5 py-1 text-[11px] ${!isResourceReadyForMode(resource, mode) ? 'border-amber-500/20 bg-amber-500/10 text-amber-300' : 'border-border bg-background text-foreground'}`}
                   >
                     {resource.label}
                   </span>
@@ -343,10 +361,12 @@ export default function SessionLaunchPanel({
               <div className="mt-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
                 <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-300">
                   <AlertCircle className="h-3.5 w-3.5" />
-                  Study readiness required
+                  {mode === 'doubt' ? 'Core indexing required' : 'Curriculum readiness required'}
                 </div>
                 <p className="mt-2 text-sm text-amber-100/90">
-                  Remove resources that are still preparing before starting this session. Tutoring only starts after concept extraction succeeds.
+                  {mode === 'doubt'
+                    ? 'Remove resources that are still parsing or chunking before starting this session. Doubt mode starts as soon as the searchable core index is ready.'
+                    : 'Remove resources that are still preparing before starting this session. Learn, practice, and revision wait for curriculum preparation to finish.'}
                 </p>
                 <p className="mt-2 text-xs text-amber-200/90">
                   Blocked: {blockedResources.map((resource) => resource.label).join(', ')}

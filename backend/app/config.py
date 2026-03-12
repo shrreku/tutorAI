@@ -156,7 +156,7 @@ class Settings(BaseSettings):
     APP_BASE_URL: str = "https://tutorbook.me"
 
     # Credits system (student research defaults)
-    CREDITS_ENABLED: bool = False
+    CREDITS_ENABLED: bool = True
     CREDITS_SIGNUP_GRANT: int = 0              # credits issued at account creation
     CREDITS_DEFAULT_MONTHLY_GRANT: int = 0  # monthly top-up grant
     CREDITS_INPUT_TOKEN_MULTIPLIER: float = 1.0

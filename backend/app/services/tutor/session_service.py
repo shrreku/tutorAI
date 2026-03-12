@@ -83,6 +83,59 @@ def _build_session_overview(objective_queue: list[dict]) -> str:
     )
 
 
+def _build_doubt_fallback_plan(*, topic_label: str) -> dict:
+    title = topic_label or "Document clarification"
+    objective = {
+        "objective_id": "obj_doubt_clarify",
+        "title": f"Clarify {title}",
+        "description": "Resolve the current confusion directly from the indexed material, then verify understanding.",
+        "concept_scope": {
+            "primary": [],
+            "support": [],
+            "prereq": [],
+        },
+        "success_criteria": {
+            "min_correct": 1,
+            "min_mastery": 0.5,
+        },
+        "estimated_turns": 2,
+        "step_roadmap": [
+            {
+                "type": "clarify",
+                "target_concepts": [],
+                "can_skip": False,
+                "max_turns": 1,
+                "goal": f"Surface the exact confusion about {title}.",
+            },
+            {
+                "type": "explain",
+                "target_concepts": [],
+                "can_skip": False,
+                "max_turns": 2,
+                "goal": "Answer the question directly and ground it in the attached resource.",
+            },
+            {
+                "type": "probe",
+                "target_concepts": [],
+                "can_skip": True,
+                "max_turns": 1,
+                "goal": "Check whether the confusion is resolved.",
+            },
+            {
+                "type": "summarize",
+                "target_concepts": [],
+                "can_skip": True,
+                "max_turns": 1,
+                "goal": "Leave the learner with a concise final takeaway.",
+            },
+        ],
+    }
+    return {
+        "active_topic": title,
+        "objective_queue": [objective],
+    }
+
+
 def _mode_session_overview(mode: str, objective_queue: list[dict], active_topic: Optional[str]) -> str:
     normalized = _normalize_session_mode(mode)
     topic_label = active_topic or "this material"
@@ -262,19 +315,21 @@ class SessionService:
         
         # Get concepts for resource
         concepts = await self._get_concepts(resource_id)
-        if not concepts:
+        if not concepts and session_mode != "doubt":
             raise ValueError(
                 f"Resource {resource_id} is marked {resource.status} but has no admitted concepts yet. "
                 "Tutoring sessions cannot start until concept extraction/enrichment succeeds."
             )
         
-        # Generate curriculum plan
-        plan_output = await self.curriculum.generate_plan(
-            resource_id=resource_id,
-            topic=topic or resource.topic,
-            selected_topics=selected_topics,
-            mode=session_mode,
-        )
+        if concepts:
+            plan_output = await self.curriculum.generate_plan(
+                resource_id=resource_id,
+                topic=topic or resource.topic,
+                selected_topics=selected_topics,
+                mode=session_mode,
+            )
+        else:
+            plan_output = _build_doubt_fallback_plan(topic_label=topic or resource.topic or "this document")
         
         # Build initial plan state
         objective_queue = plan_output.get("objective_queue", [])
