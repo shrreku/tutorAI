@@ -6,14 +6,12 @@
   "preview_urls": false,
   "routes": [
     {
-      "pattern": "tutorbook.me",
-      "zone_name": "tutorbook.me",
-      "custom_domain": true
+      "pattern": "tutorbook.me/*",
+      "zone_name": "tutorbook.me"
     },
     {
-      "pattern": "www.tutorbook.me",
-      "zone_name": "tutorbook.me",
-      "custom_domain": true
+      "pattern": "www.tutorbook.me/*",
+      "zone_name": "tutorbook.me"
     }
   ],
   "assets": {

@@ -437,6 +437,7 @@ class SessionService:
         )
 
         self.db.add(session)
+        await self.db.flush()
 
         # Persist a tutor-only bootstrap turn so the UI can immediately render
         # a mode-aware opening message right after session creation.
