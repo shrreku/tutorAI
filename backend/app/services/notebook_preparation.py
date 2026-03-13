@@ -11,7 +11,11 @@ from app.db.repositories.resource_artifact_repo import ResourceArtifactRepositor
 from app.db.repositories.resource_repo import ResourceRepository
 from app.models.resource_artifact import ResourceArtifactState
 from app.services.ingestion.resource_profile import build_resource_profile
-from app.services.resource_readiness import is_resource_doubt_ready, is_resource_study_ready, normalized_resource_capabilities
+from app.services.resource_readiness import (
+    is_resource_doubt_ready,
+    is_resource_study_ready,
+    normalized_resource_capabilities,
+)
 from app.services.topic_preparation import build_topic_preparation_artifact
 
 
@@ -72,7 +76,9 @@ class NotebookPreparationService:
         request,
         user_id: UUID,
     ) -> dict[str, Any]:
-        active_resource_ids = await self.notebook_resource_repo.list_active_resource_ids(notebook_id)
+        active_resource_ids = (
+            await self.notebook_resource_repo.list_active_resource_ids(notebook_id)
+        )
         scope_type, scope_resource_ids = resolve_session_scope(
             request.resource_id,
             active_resource_ids=active_resource_ids,
@@ -118,7 +124,9 @@ class NotebookPreparationService:
                 )
                 continue
 
-            if "has_resource_profile" in required and not capabilities.get("has_resource_profile", False):
+            if "has_resource_profile" in required and not capabilities.get(
+                "has_resource_profile", False
+            ):
                 artifacts_created += await self._ensure_resource_profile(resource)
                 capabilities = dict(resource.capabilities_json or {})
 
@@ -145,7 +153,9 @@ class NotebookPreparationService:
 
         return {
             "scope_type": scope_type,
-            "scope_resource_ids": [str(resource_id) for resource_id in scope_resource_ids],
+            "scope_resource_ids": [
+                str(resource_id) for resource_id in scope_resource_ids
+            ],
             "required_capabilities": required,
             "artifacts_created": artifacts_created,
             "topic_artifacts_created": topic_artifacts_created,
@@ -173,9 +183,13 @@ class NotebookPreparationService:
             await self.db.flush()
             return 0
 
-        chunks = await self.chunk_repo.get_by_resource_id(resource.id, limit=256, offset=0)
+        chunks = await self.chunk_repo.get_by_resource_id(
+            resource.id, limit=256, offset=0
+        )
         if not chunks:
-            raise ValueError(f"Resource {resource.id} has no chunks available for preparation")
+            raise ValueError(
+                f"Resource {resource.id} has no chunks available for preparation"
+            )
 
         seen_headings: set[str] = set()
         sections: list[dict[str, str]] = []
@@ -220,14 +234,18 @@ class NotebookPreparationService:
         await self.db.flush()
         return 1
 
-    async def _ensure_topic_prepare(self, resource, request) -> tuple[int, Optional[str]]:
+    async def _ensure_topic_prepare(
+        self, resource, request
+    ) -> tuple[int, Optional[str]]:
         profile_artifact = await self.artifact_repo.get_for_scope(
             resource_id=resource.id,
             scope_type="resource",
             scope_key=str(resource.id),
             artifact_kind="resource_profile",
         )
-        profile_payload = (profile_artifact.payload_json if profile_artifact else None) or {}
+        profile_payload = (
+            profile_artifact.payload_json if profile_artifact else None
+        ) or {}
         topic_parts = list(getattr(request, "selected_topics", None) or [])
         if getattr(request, "topic", None):
             topic_parts.append(request.topic)
@@ -236,7 +254,12 @@ class NotebookPreparationService:
         scope_key = ":".join(
             [
                 (request.mode or "learn").lower(),
-                "-".join(str(part).strip().lower().replace(" ", "-") for part in topic_parts[:4] if str(part).strip()) or "general",
+                "-".join(
+                    str(part).strip().lower().replace(" ", "-")
+                    for part in topic_parts[:4]
+                    if str(part).strip()
+                )
+                or "general",
             ]
         )
 
@@ -249,9 +272,13 @@ class NotebookPreparationService:
         if existing and existing.status == "ready" and existing.payload_json:
             return 0, scope_key
 
-        chunks = await self.chunk_repo.get_by_resource_id(resource.id, limit=256, offset=0)
+        chunks = await self.chunk_repo.get_by_resource_id(
+            resource.id, limit=256, offset=0
+        )
         if not chunks:
-            raise ValueError(f"Resource {resource.id} has no chunks available for topic preparation")
+            raise ValueError(
+                f"Resource {resource.id} has no chunks available for topic preparation"
+            )
 
         payload = build_topic_preparation_artifact(
             mode=request.mode,
@@ -303,7 +330,9 @@ class NotebookPreparationService:
                 scope_key=str(resource.id),
                 artifact_kind="resource_profile",
             )
-            resource_profiles[str(resource.id)] = profile_artifact.payload_json if profile_artifact else {}
+            resource_profiles[str(resource.id)] = (
+                profile_artifact.payload_json if profile_artifact else {}
+            )
 
         payload = {
             "artifact_kind": "session_brief",
@@ -312,7 +341,9 @@ class NotebookPreparationService:
             "topic": request.topic,
             "selected_topics": request.selected_topics or [],
             "scope_type": scope_type,
-            "scope_resource_ids": [str(resource_id) for resource_id in scope_resource_ids],
+            "scope_resource_ids": [
+                str(resource_id) for resource_id in scope_resource_ids
+            ],
             "resources": [
                 {
                     "resource_id": str(resource.id),
@@ -320,8 +351,12 @@ class NotebookPreparationService:
                     "topic": resource.topic,
                     "processing_profile": getattr(resource, "processing_profile", None),
                     "capabilities": resource.capabilities_json or {},
-                    "document_type": (resource_profiles.get(str(resource.id)) or {}).get("document_type"),
-                    "topic_seeds": (resource_profiles.get(str(resource.id)) or {}).get("topic_seeds", []),
+                    "document_type": (
+                        resource_profiles.get(str(resource.id)) or {}
+                    ).get("document_type"),
+                    "topic_seeds": (resource_profiles.get(str(resource.id)) or {}).get(
+                        "topic_seeds", []
+                    ),
                 }
                 for resource in resources
             ],

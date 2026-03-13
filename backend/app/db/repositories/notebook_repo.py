@@ -36,7 +36,9 @@ class NotebookRepository(BaseRepository[Notebook]):
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def count_by_student(self, student_id: UUID, status: Optional[str] = None) -> int:
+    async def count_by_student(
+        self, student_id: UUID, status: Optional[str] = None
+    ) -> int:
         query = select(Notebook.id).where(Notebook.student_id == student_id)
         if status:
             query = query.where(Notebook.status == status)
@@ -71,7 +73,9 @@ class NotebookResourceRepository(BaseRepository[NotebookResource]):
         )
         return list(result.scalars().all())
 
-    async def get_by_pair(self, notebook_id: UUID, resource_id: UUID) -> Optional[NotebookResource]:
+    async def get_by_pair(
+        self, notebook_id: UUID, resource_id: UUID
+    ) -> Optional[NotebookResource]:
         result = await self.db.execute(
             select(NotebookResource).where(
                 NotebookResource.notebook_id == notebook_id,
@@ -98,7 +102,9 @@ class NotebookSessionRepository(BaseRepository[NotebookSession]):
     def __init__(self, db: AsyncSession):
         super().__init__(NotebookSession, db)
 
-    async def get_by_notebook(self, notebook_id: UUID, limit: int = 50, offset: int = 0) -> List[NotebookSession]:
+    async def get_by_notebook(
+        self, notebook_id: UUID, limit: int = 50, offset: int = 0
+    ) -> List[NotebookSession]:
         result = await self.db.execute(
             select(NotebookSession)
             .where(NotebookSession.notebook_id == notebook_id)
@@ -108,7 +114,9 @@ class NotebookSessionRepository(BaseRepository[NotebookSession]):
         )
         return list(result.scalars().all())
 
-    async def get_by_pair(self, notebook_id: UUID, session_id: UUID) -> Optional[NotebookSession]:
+    async def get_by_pair(
+        self, notebook_id: UUID, session_id: UUID
+    ) -> Optional[NotebookSession]:
         result = await self.db.execute(
             select(NotebookSession).where(
                 NotebookSession.notebook_id == notebook_id,
@@ -151,15 +159,25 @@ class NotebookArtifactRepository(BaseRepository[NotebookArtifact]):
         limit: int = 100,
         offset: int = 0,
     ) -> List[NotebookArtifact]:
-        query = select(NotebookArtifact).where(NotebookArtifact.notebook_id == notebook_id)
+        query = select(NotebookArtifact).where(
+            NotebookArtifact.notebook_id == notebook_id
+        )
         if artifact_type:
             query = query.where(NotebookArtifact.artifact_type == artifact_type)
-        query = query.order_by(NotebookArtifact.created_at.desc()).limit(limit).offset(offset)
+        query = (
+            query.order_by(NotebookArtifact.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def count_by_notebook(self, notebook_id: UUID, artifact_type: Optional[str] = None) -> int:
-        query = select(NotebookArtifact.id).where(NotebookArtifact.notebook_id == notebook_id)
+    async def count_by_notebook(
+        self, notebook_id: UUID, artifact_type: Optional[str] = None
+    ) -> int:
+        query = select(NotebookArtifact.id).where(
+            NotebookArtifact.notebook_id == notebook_id
+        )
         if artifact_type:
             query = query.where(NotebookArtifact.artifact_type == artifact_type)
         result = await self.db.execute(query)

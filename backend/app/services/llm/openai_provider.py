@@ -4,9 +4,13 @@ from typing import Type, TypeVar, Optional
 
 from langfuse.openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 from app.services.llm.base import BaseLLMProvider
-from app.config import settings
 from app.services.token_counting import approximate_token_count
 
 logger = logging.getLogger(__name__)
@@ -22,7 +26,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
     inside an active @observe() span or start_as_current_observation() context, the
     generation is automatically nested as a child.
     """
-    
+
     def __init__(
         self,
         api_key: str,
@@ -38,11 +42,11 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         self._model = model
         self._total_prompt_tokens = 0
         self._total_completion_tokens = 0
-    
+
     @property
     def model_id(self) -> str:
         return self._model
-    
+
     @property
     def total_tokens_used(self) -> dict:
         return {
@@ -99,17 +103,14 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         except Exception as first_error:
             err_msg = str(first_error).lower()
 
-            if (
-                "response_format" in kwargs
-                and any(
-                    token in err_msg
-                    for token in (
-                        "response_format",
-                        "json_object",
-                        "not supported",
-                        "invalid",
-                        "400",
-                    )
+            if "response_format" in kwargs and any(
+                token in err_msg
+                for token in (
+                    "response_format",
+                    "json_object",
+                    "not supported",
+                    "invalid",
+                    "400",
                 )
             ):
                 logger.info(
@@ -140,7 +141,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                     raise
 
             raise
-    
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
@@ -159,7 +160,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         used_model = model or self._model
         safe_messages = self._sanitize_messages(messages)
         safe_metadata = self._sanitize_metadata(trace_metadata)
-        
+
         try:
             response = await self._create_completion_with_resilience(
                 {
@@ -172,26 +173,34 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 },
                 trace_name=trace_name,
             )
-            
+
             prompt_tokens = response.usage.prompt_tokens if response.usage else 0
-            completion_tokens = response.usage.completion_tokens if response.usage else 0
+            completion_tokens = (
+                response.usage.completion_tokens if response.usage else 0
+            )
             self._total_prompt_tokens += prompt_tokens
             self._total_completion_tokens += completion_tokens
-            
+
             # Null-safe content extraction
             if not response or not response.choices:
                 logger.warning(f"[generate] LLM returned no choices for {trace_name}")
                 return ""
-            content = response.choices[0].message.content if response.choices[0].message else None
+            content = (
+                response.choices[0].message.content
+                if response.choices[0].message
+                else None
+            )
             return content or ""
         except Exception as e:
             # Langfuse wrapper can fail with NoneType errors on empty model responses
             if self._is_empty_response_error(e):
-                logger.warning(f"[generate] LLM returned empty/null response ({trace_name}): {e}")
+                logger.warning(
+                    f"[generate] LLM returned empty/null response ({trace_name}): {e}"
+                )
                 return ""
             logger.error(f"LLM generation failed: {e}")
             raise
-    
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=1, max=10),
@@ -211,10 +220,10 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         used_model = model or self._model
         safe_messages = self._sanitize_messages(messages)
         safe_metadata = self._sanitize_metadata(trace_metadata)
-        
+
         # Add JSON instruction to system message
         json_instruction = f"\nIMPORTANT: Respond with a single valid JSON object only. No markdown code fences, no explanation text before or after. The JSON must conform to this schema:\n{json.dumps(schema.model_json_schema(), indent=2)}"
-        
+
         enhanced_messages = safe_messages.copy()
         if enhanced_messages and enhanced_messages[0].get("role") == "system":
             enhanced_messages[0] = {
@@ -222,11 +231,14 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 "content": enhanced_messages[0]["content"] + json_instruction,
             }
         else:
-            enhanced_messages.insert(0, {
-                "role": "system",
-                "content": f"You are a helpful assistant.{json_instruction}",
-            })
-        
+            enhanced_messages.insert(
+                0,
+                {
+                    "role": "system",
+                    "content": f"You are a helpful assistant.{json_instruction}",
+                },
+            )
+
         try:
             create_kwargs = {
                 "model": used_model,
@@ -241,23 +253,31 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 create_kwargs,
                 trace_name=trace_name,
             )
-            
+
             prompt_tokens = response.usage.prompt_tokens if response.usage else 0
-            completion_tokens = response.usage.completion_tokens if response.usage else 0
+            completion_tokens = (
+                response.usage.completion_tokens if response.usage else 0
+            )
             self._total_prompt_tokens += prompt_tokens
             self._total_completion_tokens += completion_tokens
-            
+
             content = response.choices[0].message.content
             if not content or not content.strip():
-                logger.warning(f"[generate_json] LLM returned empty content for {schema.__name__}")
+                logger.warning(
+                    f"[generate_json] LLM returned empty content for {schema.__name__}"
+                )
                 raise ValueError(f"LLM returned empty content for {schema.__name__}")
-            
-            logger.debug(f"[generate_json] Raw LLM output for {schema.__name__} ({len(content)} chars): {content[:500]}")
-            
+
+            logger.debug(
+                f"[generate_json] Raw LLM output for {schema.__name__} ({len(content)} chars): {content[:500]}"
+            )
+
             # Extract JSON from response (handles markdown code blocks)
             content = self._extract_json(content)
-            logger.debug(f"[generate_json] Extracted JSON for {schema.__name__}: {content[:500]}")
-            
+            logger.debug(
+                f"[generate_json] Extracted JSON for {schema.__name__}: {content[:500]}"
+            )
+
             try:
                 data = json.loads(content)
                 # Apply schema-aware coercion for common LLM mistakes
@@ -274,20 +294,24 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                         return result
                     except (json.JSONDecodeError, ValidationError):
                         pass
-                logger.warning(f"JSON parse failed for {schema.__name__} at position {e.pos}: {e.msg}")
+                logger.warning(
+                    f"JSON parse failed for {schema.__name__} at position {e.pos}: {e.msg}"
+                )
                 logger.warning(f"Extracted content: {content[:300]}")
                 raise ValueError(f"Failed to generate valid JSON: {e}")
             except ValidationError as e:
                 logger.warning(f"JSON validation failed for {schema.__name__}: {e}")
-                logger.warning(f"Parsed data: {json.dumps(data)[:300] if isinstance(data, dict) else str(data)[:300]}")
+                logger.warning(
+                    f"Parsed data: {json.dumps(data)[:300] if isinstance(data, dict) else str(data)[:300]}"
+                )
                 raise ValueError(f"Failed to validate JSON: {e}")
-        except Exception as e:
+        except Exception:
             raise
-    
+
     def _extract_json(self, text: str) -> str:
         """Extract and clean JSON from text that may contain markdown or syntax errors."""
         import re
-        
+
         # Try to find JSON in code blocks first
         json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
         if json_match:
@@ -302,21 +326,23 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 json_match = re.search(r"(\{[\s\S]*\})", text)
                 if json_match:
                     text = json_match.group(1)
-        
+
         # Clean common JSON syntax issues from LLMs
         # Remove trailing commas before } or ]
-        text = re.sub(r',\s*([}\]])', r'\1', text)
+        text = re.sub(r",\s*([}\]])", r"\1", text)
         # Remove control characters EXCEPT newline (\n), tab (\t), carriage return (\r)
-        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+        text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", text)
         # Escape stray backslashes that would otherwise make JSON invalid.
-        text = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', text)
-        
+        text = re.sub(r'\\(?!["\\/bfnrtu])', r"\\\\", text)
+
         # Handle truncated JSON - try to close unclosed brackets
         text = self._repair_truncated_json(text)
-        
+
         return text.strip()
 
-    def _repair_json_from_decode_error(self, text: str, error: json.JSONDecodeError) -> str:
+    def _repair_json_from_decode_error(
+        self, text: str, error: json.JSONDecodeError
+    ) -> str:
         """Attempt targeted repair using the JSON parser failure position."""
         truncated_messages = {
             "Unterminated string starting at",
@@ -329,11 +355,11 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         candidate_positions = [error.pos]
         scan_start = min(error.pos, len(text) - 1)
         for idx in range(scan_start, -1, -1):
-            if text[idx] in {',', '{', '['}:
+            if text[idx] in {",", "{", "["}:
                 candidate_positions.append(idx)
 
         for pos in candidate_positions:
-            truncated = text[:pos].rstrip().rstrip(',')
+            truncated = text[:pos].rstrip().rstrip(",")
             if not truncated:
                 continue
             repaired = self._repair_truncated_json(truncated)
@@ -344,7 +370,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 continue
 
         return text
-    
+
     def _repair_truncated_json(self, text: str) -> str:
         """Attempt to repair truncated JSON by closing unclosed brackets."""
         import re
@@ -360,41 +386,41 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         unescaped_quote_count = len(re.findall(r'(?<!\\)"', text))
         if unescaped_quote_count % 2 == 1:
             text += '"'
-        
+
         # Remove trailing incomplete string or value
         if text and text[-1] not in '{}[],"0123456789nulltruefalse':
             # Try to find the last complete field
             last_complete = max(
                 text.rfind('",'),
                 text.rfind('"],'),
-                text.rfind('},'),
-                text.rfind('],'),
+                text.rfind("},"),
+                text.rfind("],"),
                 text.rfind('"'),
-                text.rfind('}'),
-                text.rfind(']'),
+                text.rfind("}"),
+                text.rfind("]"),
             )
             if last_complete > 0:
-                text = text[:last_complete + 1]
+                text = text[: last_complete + 1]
 
         # Remove dangling key/value separators before closing structures.
-        text = re.sub(r'[:,]\s*$', '', text)
-        
+        text = re.sub(r"[:,]\s*$", "", text)
+
         # Remove trailing comma if present
-        text = text.rstrip().rstrip(',')
-        
+        text = text.rstrip().rstrip(",")
+
         # Close remaining brackets
-        open_braces = text.count('{') - text.count('}')
-        open_brackets = text.count('[') - text.count(']')
-        
+        open_braces = text.count("{") - text.count("}")
+        open_brackets = text.count("[") - text.count("]")
+
         # Close in reverse order of likely nesting
-        text += ']' * max(0, open_brackets)
-        text += '}' * max(0, open_braces)
-        
+        text += "]" * max(0, open_brackets)
+        text += "}" * max(0, open_braces)
+
         return text
-    
+
     def _coerce_data(self, data: dict, schema: Type[T]) -> dict:
         """Apply schema-aware coercion for common LLM output mistakes.
-        
+
         Handles cases like:
         - concept_deltas returned as list instead of dict
         - progression_decision returned as string instead of int
@@ -411,10 +437,9 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 if isinstance(item, dict):
                     normalized_item = dict(item)
                     if "name" not in normalized_item:
-                        concept_name = (
-                            normalized_item.pop("concept_name", None)
-                            or normalized_item.pop("concept", None)
-                        )
+                        concept_name = normalized_item.pop(
+                            "concept_name", None
+                        ) or normalized_item.pop("concept", None)
                         if concept_name:
                             normalized_item["name"] = concept_name
                     normalized_concepts.append(normalized_item)
@@ -441,9 +466,13 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                     normalized_relationships.append(item)
                     continue
                 normalized_item = dict(item)
-                if "source" not in normalized_item and normalized_item.get("source_concept"):
+                if "source" not in normalized_item and normalized_item.get(
+                    "source_concept"
+                ):
                     normalized_item["source"] = normalized_item.pop("source_concept")
-                if "target" not in normalized_item and normalized_item.get("target_concept"):
+                if "target" not in normalized_item and normalized_item.get(
+                    "target_concept"
+                ):
                     normalized_item["target"] = normalized_item.pop("target_concept")
                 relation_type = (
                     normalized_item.get("relation_type")
@@ -451,21 +480,30 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                     or normalized_item.pop("relationship_type", None)
                 )
                 if isinstance(relation_type, str):
-                    normalized_key = relation_type.strip().lower().replace("-", "_").replace(" ", "_")
+                    normalized_key = (
+                        relation_type.strip()
+                        .lower()
+                        .replace("-", "_")
+                        .replace(" ", "_")
+                    )
                     normalized_item["relation_type"] = relation_aliases.get(
                         normalized_key,
                         relation_type.strip().upper(),
                     )
                 normalized_relationships.append(normalized_item)
             data["semantic_relationships"] = normalized_relationships
-        
+
         # --- EvaluatorOutput: concept_deltas list → dict ---
         if "concept_deltas" in data and isinstance(data["concept_deltas"], list):
             coerced = {}
             for item in data["concept_deltas"]:
                 if isinstance(item, dict):
                     # Try to find the concept name key
-                    name = item.pop("concept", None) or item.pop("concept_name", None) or item.pop("name", None)
+                    name = (
+                        item.pop("concept", None)
+                        or item.pop("concept_name", None)
+                        or item.pop("name", None)
+                    )
                     if name:
                         coerced[name] = item
                     else:
@@ -473,7 +511,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                         coerced[f"concept_{len(coerced)}"] = item
             if coerced:
                 data["concept_deltas"] = coerced
-        
+
         # --- PolicyOrchestratorOutput: progression_decision string → int ---
         pd = data.get("progression_decision")
         if isinstance(pd, str):
@@ -486,7 +524,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 "end_session": 6,
             }
             data["progression_decision"] = mapping.get(pd.lower().strip(), 1)
-        
+
         # --- pedagogical_action: normalize casing ---
         pa = data.get("pedagogical_action")
         if isinstance(pa, str):
@@ -504,17 +542,30 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             data["pedagogical_action"] = alias_map.get(pa_norm, pa_norm)
 
         # --- intent: normalize or drop invalid labels ---
-        VALID_INTENT = {"question", "answer", "statement", "confusion", "request_hint", None}
+        VALID_INTENT = {
+            "question",
+            "answer",
+            "statement",
+            "confusion",
+            "request_hint",
+            None,
+        }
         intent = data.get("intent")
         if intent is not None:
             intent_lower = intent.lower().strip() if isinstance(intent, str) else intent
             if intent_lower not in VALID_INTENT:
                 # Common LLM drift: labels like "correct"/"incorrect" belong to evaluator, not intent.
-                msg = (data.get("reasoning") or "") + " " + (data.get("planner_guidance") or "")
+                msg = (
+                    (data.get("reasoning") or "")
+                    + " "
+                    + (data.get("planner_guidance") or "")
+                )
                 msg = msg.lower()
                 if "?" in msg:
                     intent_lower = "question"
-                elif any(k in msg for k in ("confus", "unclear", "misconception", "stuck")):
+                elif any(
+                    k in msg for k in ("confus", "unclear", "misconception", "stuck")
+                ):
                     intent_lower = "confusion"
                 else:
                     intent_lower = "statement"
@@ -534,18 +585,31 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         }
         student_intent = data.get("student_intent")
         if student_intent is not None:
-            si_lower = student_intent.lower().strip() if isinstance(student_intent, str) else student_intent
+            si_lower = (
+                student_intent.lower().strip()
+                if isinstance(student_intent, str)
+                else student_intent
+            )
             if si_lower not in VALID_STUDENT_INTENT:
                 si_lower = None
             data["student_intent"] = si_lower
-        
+
         # --- recommended_strategy: normalize or drop ---
-        VALID_STRATEGY = {"direct", "socratic", "scaffolded", "assessment", "review", None}
+        VALID_STRATEGY = {
+            "direct",
+            "socratic",
+            "scaffolded",
+            "assessment",
+            "review",
+            None,
+        }
         rs = data.get("recommended_strategy")
         if rs is not None:
             rs_lower = rs.lower().strip() if isinstance(rs, str) else rs
-            data["recommended_strategy"] = rs_lower if rs_lower in VALID_STRATEGY else None
-        
+            data["recommended_strategy"] = (
+                rs_lower if rs_lower in VALID_STRATEGY else None
+            )
+
         # --- correctness_label: normalize casing ---
         cl = data.get("correctness_label")
         if isinstance(cl, str):
@@ -584,21 +648,26 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                 # Normalize: map common LLM variants to valid enum values
                 it_lower = it.lower().strip().replace(" ", "_")
                 VALID_INTERACTION = {
-                    "ask_question", "give_hint", "worked_example",
-                    "explain_concept", "check_understanding",
-                    "reflect_prompt", "correct_mistake",
+                    "ask_question",
+                    "give_hint",
+                    "worked_example",
+                    "explain_concept",
+                    "check_understanding",
+                    "reflect_prompt",
+                    "correct_mistake",
                 }
                 if it_lower not in VALID_INTERACTION:
                     tp["interaction_type"] = "explain_concept"
                 else:
                     tp["interaction_type"] = it_lower
-        
+
         return data
-    
+
     async def count_tokens(self, text: str) -> int:
         """Count tokens using tiktoken."""
         try:
             import tiktoken
+
             encoding = tiktoken.encoding_for_model(self._model)
             return len(encoding.encode(text))
         except Exception:

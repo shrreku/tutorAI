@@ -38,8 +38,20 @@ def test_ingestion_pipeline_run_completes_with_fixture_resource(monkeypatch):
     async def _run_chunk_stage(self, parse_result):
         return SimpleNamespace(
             chunks=[
-                SimpleNamespace(text="Definition: Conduction transfers heat.", metadata={}, section_heading="Intro", page_start=1, page_end=1),
-                SimpleNamespace(text="Example: Heat flows through a rod.", metadata={}, section_heading="Intro", page_start=1, page_end=1),
+                SimpleNamespace(
+                    text="Definition: Conduction transfers heat.",
+                    metadata={},
+                    section_heading="Intro",
+                    page_start=1,
+                    page_end=1,
+                ),
+                SimpleNamespace(
+                    text="Example: Heat flows through a rod.",
+                    metadata={},
+                    section_heading="Intro",
+                    page_start=1,
+                    page_end=1,
+                ),
             ],
             strategy="docling_hybrid",
             metadata={"embedding_strategy": "contextualized"},
@@ -59,16 +71,32 @@ def test_ingestion_pipeline_run_completes_with_fixture_resource(monkeypatch):
     ):
         return None
 
-    async def _persist_core_artifacts(self, resource, sections, chunks, chunking_metadata=None):
+    async def _persist_core_artifacts(
+        self, resource, sections, chunks, chunking_metadata=None
+    ):
         return 1
 
-    monkeypatch.setattr(pipeline_module, "update_resource_status", _update_resource_status)
-    monkeypatch.setattr(pipeline_module.IngestionPipeline, "_get_resource", _get_resource)
-    monkeypatch.setattr(pipeline_module.IngestionPipeline, "_run_parse_stage", _run_parse_stage)
-    monkeypatch.setattr(pipeline_module.IngestionPipeline, "_run_chunk_stage", _run_chunk_stage)
-    monkeypatch.setattr(pipeline_module.IngestionPipeline, "_run_embed_stage", _run_embed_stage)
+    monkeypatch.setattr(
+        pipeline_module, "update_resource_status", _update_resource_status
+    )
+    monkeypatch.setattr(
+        pipeline_module.IngestionPipeline, "_get_resource", _get_resource
+    )
+    monkeypatch.setattr(
+        pipeline_module.IngestionPipeline, "_run_parse_stage", _run_parse_stage
+    )
+    monkeypatch.setattr(
+        pipeline_module.IngestionPipeline, "_run_chunk_stage", _run_chunk_stage
+    )
+    monkeypatch.setattr(
+        pipeline_module.IngestionPipeline, "_run_embed_stage", _run_embed_stage
+    )
     monkeypatch.setattr(pipeline_module.IngestionPipeline, "_save_chunks", _save_chunks)
-    monkeypatch.setattr(pipeline_module.IngestionPipeline, "_persist_core_artifacts", _persist_core_artifacts)
+    monkeypatch.setattr(
+        pipeline_module.IngestionPipeline,
+        "_persist_core_artifacts",
+        _persist_core_artifacts,
+    )
 
     pipeline = object.__new__(pipeline_module.IngestionPipeline)
     pipeline.db = object()

@@ -67,7 +67,9 @@ def normalize_runtime_plan_state(plan_state: dict | None) -> dict:
 
     plan["ad_hoc_count"] = max(0, int(plan.get("ad_hoc_count", 0) or 0))
     plan["turns_at_step"] = max(0, int(plan.get("turns_at_step", 0) or 0))
-    plan["max_ad_hoc_per_objective"] = max(1, int(plan.get("max_ad_hoc_per_objective", 4) or 4))
+    plan["max_ad_hoc_per_objective"] = max(
+        1, int(plan.get("max_ad_hoc_per_objective", 4) or 4)
+    )
     plan.setdefault("last_decision", None)
 
     current_obj = objective_queue[obj_idx] if obj_idx < len(objective_queue) else {}
@@ -113,8 +115,7 @@ def build_step_status(
 
 
 def get_max_turns_for_step(roadmap: list[dict], step_idx: int, default: int = 5) -> int:
-    """Return configured max_turns for the active roadmap step.
-    """
+    """Return configured max_turns for the active roadmap step."""
     if 0 <= step_idx < len(roadmap):
         step = roadmap[step_idx] or {}
         value = step.get("max_turns", default)
@@ -127,9 +128,7 @@ def required_steps_for_objective(roadmap: list[dict]) -> set[int]:
     """Indexes of required readiness steps before objective advancement."""
     required_types = {"practice", "assess"}
     return {
-        idx
-        for idx, step in enumerate(roadmap)
-        if get_step_type(step) in required_types
+        idx for idx, step in enumerate(roadmap) if get_step_type(step) in required_types
     }
 
 
@@ -178,17 +177,19 @@ def build_curriculum_slice(obj: dict, step_idx: int) -> dict:
         "current_objective": obj,
         "current_step_index": step_idx,
         "current_step": step,
-        "lookahead_steps": roadmap[step_idx + 1: step_idx + 3] if roadmap else [],
+        "lookahead_steps": roadmap[step_idx + 1 : step_idx + 3] if roadmap else [],
     }
 
 
 def build_focus_concepts(scope: dict) -> list[str]:
     """Build ordered unique list of focus concepts from concept scope."""
-    return list(dict.fromkeys(
-        scope.get("primary", [])
-        + scope.get("support", [])
-        + scope.get("prereq", [])
-    ))
+    return list(
+        dict.fromkeys(
+            scope.get("primary", [])
+            + scope.get("support", [])
+            + scope.get("prereq", [])
+        )
+    )
 
 
 def update_objective_progress(plan: dict, current_obj: dict, evaluation_result) -> None:

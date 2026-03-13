@@ -20,7 +20,6 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -43,7 +42,9 @@ class CreditAccount(Base, UUIDMixin, TimestampMixin):
     balance: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     lifetime_granted: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     lifetime_used: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-    plan_tier: Mapped[str] = mapped_column(String(64), nullable=False, default="free_research")
+    plan_tier: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="free_research"
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     # Relationships
@@ -118,18 +119,14 @@ class CreditLedgerEntry(Base, UUIDMixin, TimestampMixin):
     reference_id: Mapped[Optional[str]] = mapped_column(
         String(256), nullable=True
     )  # turn_id, job_id, grant_id, etc.
-    metadata_: Mapped[Optional[dict]] = mapped_column(
-        "metadata", JSONB, nullable=True
-    )
+    metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, nullable=True)
 
     # Relationships
     account: Mapped["CreditAccount"] = relationship(
         "CreditAccount", back_populates="ledger_entries"
     )
 
-    __table_args__ = (
-        Index("ix_credit_ledger_created", "account_id", "created_at"),
-    )
+    __table_args__ = (Index("ix_credit_ledger_created", "account_id", "created_at"),)
 
 
 class ModelMultiplier(Base, UUIDMixin, TimestampMixin):
@@ -148,50 +145,83 @@ class ModelMultiplier(Base, UUIDMixin, TimestampMixin):
 # CM-001: Hosted model pricing registry
 # ---------------------------------------------------------------------------
 
+
 class ModelPricing(Base, UUIDMixin, TimestampMixin):
     """Source of truth for hosted model pricing and product metadata."""
 
     __tablename__ = "model_pricing"
 
-    model_id: Mapped[str] = mapped_column(String(256), nullable=False, unique=True, index=True)
+    model_id: Mapped[str] = mapped_column(
+        String(256), nullable=False, unique=True, index=True
+    )
     provider_name: Mapped[str] = mapped_column(String(128), nullable=False)
     display_name: Mapped[str] = mapped_column(String(256), nullable=False)
-    model_class: Mapped[str] = mapped_column(String(64), nullable=False)  # economy | standard | premium_small
-    input_usd_per_million: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    output_usd_per_million: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    cache_write_usd_per_million: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    cache_read_usd_per_million: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    model_class: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )  # economy | standard | premium_small
+    input_usd_per_million: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0
+    )
+    output_usd_per_million: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0
+    )
+    cache_write_usd_per_million: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True
+    )
+    cache_read_usd_per_million: Mapped[Optional[float]] = mapped_column(
+        Float, nullable=True
+    )
     search_usd_per_unit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    is_user_selectable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    supports_structured_output: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    supports_long_context: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_user_selectable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+    supports_structured_output: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    supports_long_context: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     supports_byok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    deprecated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    deprecated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 # ---------------------------------------------------------------------------
 # CM-002: Task-model assignment registry
 # ---------------------------------------------------------------------------
 
+
 class TaskModelAssignment(Base, UUIDMixin, TimestampMixin):
     """Explicit task → model mapping with fallback and override support."""
 
     __tablename__ = "task_model_assignment"
 
-    task_type: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    task_type: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True, index=True
+    )
     default_model_id: Mapped[str] = mapped_column(String(256), nullable=False)
-    fallback_model_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True, default=list)
-    allowed_model_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True, default=list)
-    user_override_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    rollout_state: Mapped[str] = mapped_column(String(64), nullable=False, default="active")  # active | beta | disabled
+    fallback_model_ids: Mapped[Optional[list]] = mapped_column(
+        JSONB, nullable=True, default=list
+    )
+    allowed_model_ids: Mapped[Optional[list]] = mapped_column(
+        JSONB, nullable=True, default=list
+    )
+    user_override_allowed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    rollout_state: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="active"
+    )  # active | beta | disabled
     beta_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 # ---------------------------------------------------------------------------
 # CM-003: Billing operation and usage-line tables
 # ---------------------------------------------------------------------------
+
 
 class BillingOperation(Base, UUIDMixin, TimestampMixin):
     """Top-level metered operation (one per billed action)."""
@@ -205,10 +235,14 @@ class BillingOperation(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
     operation_type: Mapped[str] = mapped_column(
-        String(64), nullable=False, index=True,
+        String(64),
+        nullable=False,
+        index=True,
     )  # ingestion_upload | notebook_session_launch | tutor_turn | artifact_generate
     status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="pending",
+        String(32),
+        nullable=False,
+        default="pending",
     )  # pending | reserved | finalized | failed | released
     resource_id: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     session_id: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
@@ -216,8 +250,12 @@ class BillingOperation(Base, UUIDMixin, TimestampMixin):
     selected_model_id: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     routed_model_id: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     reroute_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    estimate_credits_low: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    estimate_credits_high: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    estimate_credits_low: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True
+    )
+    estimate_credits_high: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True
+    )
     reserved_credits: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     final_credits: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     final_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -250,11 +288,17 @@ class BillingUsageLine(Base, UUIDMixin, TimestampMixin):
     provider_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-    cache_write_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
-    cache_read_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    cache_write_tokens: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0
+    )
+    cache_read_tokens: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0
+    )
     tool_units: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     raw_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="recorded")  # recorded | error
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="recorded"
+    )  # recorded | error
 
     # Relationships
     operation: Mapped["BillingOperation"] = relationship(
@@ -266,6 +310,7 @@ class BillingUsageLine(Base, UUIDMixin, TimestampMixin):
 # CM-010: Model-task health registry
 # ---------------------------------------------------------------------------
 
+
 class ModelTaskHealth(Base, UUIDMixin, TimestampMixin):
     """Per model-task health tracking for cooldown and routing."""
 
@@ -274,13 +319,23 @@ class ModelTaskHealth(Base, UUIDMixin, TimestampMixin):
     model_id: Mapped[str] = mapped_column(String(256), nullable=False)
     task_type: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="healthy",
+        String(32),
+        nullable=False,
+        default="healthy",
     )  # healthy | degraded | disabled | manual_only
     consecutive_errors: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    rolling_error_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    cooldown_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_success_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_error_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    rolling_error_rate: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0
+    )
+    cooldown_until: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     last_error_code: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     last_error_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     manual_override_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

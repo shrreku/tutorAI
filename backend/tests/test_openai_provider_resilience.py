@@ -117,17 +117,17 @@ def test_generate_json_sanitizes_none_message_content_before_call():
 
 
 def test_generate_json_repairs_invalid_backslash_escape():
-        provider = _provider_with_stub([_response_with_content('{"value":"Fourier\\law"}')])
+    provider = _provider_with_stub([_response_with_content('{"value":"Fourier\\law"}')])
 
-        result = asyncio.run(
-                provider.generate_json(
-                        messages=[{"role": "user", "content": "return json"}],
-                        schema=_JsonSchema,
-                        trace_name="policy_decide",
-                )
+    result = asyncio.run(
+        provider.generate_json(
+            messages=[{"role": "user", "content": "return json"}],
+            schema=_JsonSchema,
+            trace_name="policy_decide",
         )
+    )
 
-        assert result.value == "Fourier\\law"
+    assert result.value == "Fourier\\law"
 
 
 def test_generate_json_coerces_enrichment_alias_fields():

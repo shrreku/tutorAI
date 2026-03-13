@@ -9,6 +9,7 @@ executes the jobs.
 When ``INGESTION_QUEUE_ENABLED=false`` the module exposes a thin no-op
 interface so the rest of the code can remain queue-agnostic.
 """
+
 import json
 import logging
 from typing import Optional
@@ -30,15 +31,21 @@ async def get_redis() -> aioredis.Redis:
     global _redis_client
     if _redis_client is None:
         if not settings.REDIS_URL:
-            raise RuntimeError("REDIS_URL is not configured but queue operation was requested")
+            raise RuntimeError(
+                "REDIS_URL is not configured but queue operation was requested"
+            )
         _redis_client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
     return _redis_client
 
 
-async def enqueue_ingestion_job(resource_id: str, job_id: str, *, escrow_id: str | None = None) -> None:
+async def enqueue_ingestion_job(
+    resource_id: str, job_id: str, *, escrow_id: str | None = None
+) -> None:
     """Push an ingestion job onto the durable Redis queue."""
     r = await get_redis()
-    payload = json.dumps({"resource_id": resource_id, "job_id": job_id, "escrow_id": escrow_id})
+    payload = json.dumps(
+        {"resource_id": resource_id, "job_id": job_id, "escrow_id": escrow_id}
+    )
     await r.rpush(QUEUE_KEY, payload)
     logger.info(f"Enqueued ingestion job {job_id} for resource {resource_id}")
 

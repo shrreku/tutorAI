@@ -21,8 +21,7 @@ class RetrieverProtocol(Protocol):
         pedagogy_roles: list[str] | None = None,
         exclude_chunk_ids: list[str] | None = None,
         top_k: int = 5,
-    ) -> RetrievalResult:
-        ...
+    ) -> RetrievalResult: ...
 
 
 def _roles_for_step(step_type: str | None) -> list[str]:
@@ -46,10 +45,32 @@ def _roles_for_step(step_type: str | None) -> list[str]:
 
 
 _THIN_MESSAGES = {
-    "ok", "yes", "no", "sure", "yeah", "yep", "nope", "i see",
-    "got it", "thanks", "thank you", "go on", "continue", "next",
-    "i don't know", "idk", "hmm", "hm", "what", "why", "how",
-    "i don't understand", "confused", "help", "hint", "explain",
+    "ok",
+    "yes",
+    "no",
+    "sure",
+    "yeah",
+    "yep",
+    "nope",
+    "i see",
+    "got it",
+    "thanks",
+    "thank you",
+    "go on",
+    "continue",
+    "next",
+    "i don't know",
+    "idk",
+    "hmm",
+    "hm",
+    "what",
+    "why",
+    "how",
+    "i don't understand",
+    "confused",
+    "help",
+    "hint",
+    "explain",
 }
 
 
@@ -92,13 +113,19 @@ def _build_retrieval_query(
     planner_guidance: str = ""
     pedagogical_action: str = ""
     if policy_output is not None:
-        retrieval_directives = getattr(policy_output, "retrieval_directives", None) or {}
+        retrieval_directives = (
+            getattr(policy_output, "retrieval_directives", None) or {}
+        )
         tp = getattr(policy_output, "turn_plan", None)
         if tp is not None:
             turn_plan_goal = (getattr(tp, "goal", "") or "").strip()
-        planner_guidance = (getattr(policy_output, "planner_guidance", "") or "").strip()
+        planner_guidance = (
+            getattr(policy_output, "planner_guidance", "") or ""
+        ).strip()
         pa = getattr(policy_output, "pedagogical_action", None)
-        pedagogical_action = (pa.value if hasattr(pa, "value") else str(pa or "")).strip()
+        pedagogical_action = (
+            pa.value if hasattr(pa, "value") else str(pa or "")
+        ).strip()
 
     # --- 1. Explicit query from retrieval_directives ---
     directive_query = (retrieval_directives.get("query") or "").strip()
@@ -174,9 +201,7 @@ async def retrieve_knowledge(
                 f"Session resource {session_resource_id} is outside notebook scope {notebook_id}"
             )
     recent_chunk_ids = [
-        str(cid)
-        for cid in (plan.get("recent_evidence_chunk_ids") or [])
-        if cid
+        str(cid) for cid in (plan.get("recent_evidence_chunk_ids") or []) if cid
     ]
     query = _build_retrieval_query(
         student_message=student_message,

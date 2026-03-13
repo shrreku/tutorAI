@@ -10,6 +10,7 @@ When ALPHA_ACCESS_ENABLED=True, /register requires either:
 Users first submit a request via /auth/request-access; admin approves via the
 billing admin API which sends an email with a one-time registration link.
 """
+
 import logging
 from typing import Optional
 
@@ -43,6 +44,7 @@ def _verify_password(pw: str, hashed: str) -> bool:
 # ---------------------------------------------------------------------------
 # Request / Response schemas
 # ---------------------------------------------------------------------------
+
 
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -102,7 +104,9 @@ class AuthUserInfo(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/config", response_model=AuthConfigResponse, status_code=status.HTTP_200_OK)
+@router.get(
+    "/config", response_model=AuthConfigResponse, status_code=status.HTTP_200_OK
+)
 async def auth_config():
     """Return public auth/onboarding configuration for the frontend."""
     return AuthConfigResponse(
@@ -111,7 +115,11 @@ async def auth_config():
     )
 
 
-@router.post("/request-access", response_model=RequestAccessResponse, status_code=status.HTTP_200_OK)
+@router.post(
+    "/request-access",
+    response_model=RequestAccessResponse,
+    status_code=status.HTTP_200_OK,
+)
 async def request_access(
     body: RequestAccessRequest,
     _: None = Depends(check_auth_rate_limit),
@@ -126,11 +134,15 @@ async def request_access(
     """
     # Check for valid promo code — bypass manual approval
     if body.promo_code:
-        valid_promos = {c.strip() for c in settings.ALPHA_PROMO_CODES.split(",") if c.strip()}
+        valid_promos = {
+            c.strip() for c in settings.ALPHA_PROMO_CODES.split(",") if c.strip()
+        }
         if body.promo_code in valid_promos:
             # Upsert / idempotent: if already exists, just tell them they're good
             result = await db.execute(
-                select(AlphaAccessRequest).where(AlphaAccessRequest.email == str(body.email))
+                select(AlphaAccessRequest).where(
+                    AlphaAccessRequest.email == str(body.email)
+                )
             )
             existing = result.scalar_one_or_none()
             if existing is None:
@@ -168,7 +180,9 @@ async def request_access(
     )
 
 
-@router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED
+)
 async def register(
     body: RegisterRequest,
     _: None = Depends(check_auth_rate_limit),
@@ -207,7 +221,9 @@ async def register(
                     detail="This invite token was issued for a different email address",
                 )
         elif body.promo_code:
-            valid_promos = {c.strip() for c in settings.ALPHA_PROMO_CODES.split(",") if c.strip()}
+            valid_promos = {
+                c.strip() for c in settings.ALPHA_PROMO_CODES.split(",") if c.strip()
+            }
             if body.promo_code not in valid_promos:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,

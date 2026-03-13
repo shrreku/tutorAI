@@ -2,7 +2,18 @@ import uuid
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 
-from sqlalchemy import String, Text, Integer, Float, ForeignKey, Index, UniqueConstraint, func, DateTime, text
+from sqlalchemy import (
+    String,
+    Text,
+    Integer,
+    Float,
+    ForeignKey,
+    Index,
+    UniqueConstraint,
+    func,
+    DateTime,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,6 +25,7 @@ if TYPE_CHECKING:
 
 class ResourceConceptStats(Base):
     """Aggregate statistics per concept within a resource with ontological metadata."""
+
     __tablename__ = "resource_concept_stats"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -39,7 +51,9 @@ class ResourceConceptStats(Base):
     # Proportional distributions (JSONB)
     type_distribution: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     bloom_distribution: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    difficulty_distribution: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    difficulty_distribution: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True
+    )
     pedagogy_distribution: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     # Topological ordering for prerequisite DAG
     topo_order: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -49,7 +63,9 @@ class ResourceConceptStats(Base):
         onupdate=func.now(),
     )
 
-    resource: Mapped["Resource"] = relationship("Resource", back_populates="concept_stats")
+    resource: Mapped["Resource"] = relationship(
+        "Resource", back_populates="concept_stats"
+    )
 
     __table_args__ = (
         UniqueConstraint("resource_id", "concept_id", name="uq_resource_concept_stats"),
@@ -60,6 +76,7 @@ class ResourceConceptStats(Base):
 
 class ResourceConceptEvidence(Base):
     """Weighted links between concepts and chunks."""
+
     __tablename__ = "resource_concept_evidence"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -86,16 +103,21 @@ class ResourceConceptEvidence(Base):
         onupdate=func.now(),
     )
 
-    resource: Mapped["Resource"] = relationship("Resource", back_populates="concept_evidence")
+    resource: Mapped["Resource"] = relationship(
+        "Resource", back_populates="concept_evidence"
+    )
 
     __table_args__ = (
-        Index("ix_resource_concept_evidence_resource_concept", "resource_id", "concept_id"),
+        Index(
+            "ix_resource_concept_evidence_resource_concept", "resource_id", "concept_id"
+        ),
         Index("ix_resource_concept_evidence_resource_chunk", "resource_id", "chunk_id"),
     )
 
 
 class ResourceConceptGraph(Base):
     """Typed semantic edges between concepts within a resource."""
+
     __tablename__ = "resource_concept_graph"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -110,7 +132,7 @@ class ResourceConceptGraph(Base):
     target_concept_id: Mapped[str] = mapped_column(String(256), nullable=False)
     # Relationship typing
     relation_type: Mapped[str] = mapped_column(
-        String(32), 
+        String(32),
         default="RELATED_TO",
         nullable=False,
     )
@@ -130,7 +152,9 @@ class ResourceConceptGraph(Base):
         onupdate=func.now(),
     )
 
-    resource: Mapped["Resource"] = relationship("Resource", back_populates="concept_graph")
+    resource: Mapped["Resource"] = relationship(
+        "Resource", back_populates="concept_graph"
+    )
 
     __table_args__ = (
         Index("ix_resource_concept_graph_source", "resource_id", "source_concept_id"),
@@ -141,6 +165,7 @@ class ResourceConceptGraph(Base):
 
 class ResourceBundle(Base):
     """Cached per-concept working set used by retrieval and orchestration."""
+
     __tablename__ = "resource_bundle"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -164,13 +189,16 @@ class ResourceBundle(Base):
     resource: Mapped["Resource"] = relationship("Resource", back_populates="bundles")
 
     __table_args__ = (
-        UniqueConstraint("resource_id", "primary_concept_id", name="uq_resource_bundle"),
+        UniqueConstraint(
+            "resource_id", "primary_concept_id", name="uq_resource_bundle"
+        ),
         Index("ix_resource_bundle_resource", "resource_id"),
     )
 
 
 class ResourceTopicBundle(Base):
     """Higher-level groupings used by curriculum/objective generation."""
+
     __tablename__ = "resource_topic_bundle"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -186,14 +214,18 @@ class ResourceTopicBundle(Base):
     primary_concepts: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     support_concepts: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     prereq_topic_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
-    representative_chunk_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    representative_chunk_ids: Mapped[Optional[list]] = mapped_column(
+        JSONB, nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
     )
 
-    resource: Mapped["Resource"] = relationship("Resource", back_populates="topic_bundles")
+    resource: Mapped["Resource"] = relationship(
+        "Resource", back_populates="topic_bundles"
+    )
 
     __table_args__ = (
         UniqueConstraint("resource_id", "topic_id", name="uq_resource_topic_bundle"),
@@ -203,6 +235,7 @@ class ResourceTopicBundle(Base):
 
 class ResourceTopic(Base):
     """Persisted topic strings derived from extraction/enrichment."""
+
     __tablename__ = "resource_topic"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -217,13 +250,12 @@ class ResourceTopic(Base):
 
     resource: Mapped["Resource"] = relationship("Resource", back_populates="topics")
 
-    __table_args__ = (
-        Index("ix_resource_topic_resource", "resource_id"),
-    )
+    __table_args__ = (Index("ix_resource_topic_resource", "resource_id"),)
 
 
 class ResourceLearningObjective(Base):
     """Persisted learning objective strings."""
+
     __tablename__ = "resource_learning_objective"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -237,15 +269,16 @@ class ResourceLearningObjective(Base):
     objective_text: Mapped[str] = mapped_column(Text, nullable=False)
     specificity: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
-    resource: Mapped["Resource"] = relationship("Resource", back_populates="learning_objectives")
-
-    __table_args__ = (
-        Index("ix_resource_learning_objective_resource", "resource_id"),
+    resource: Mapped["Resource"] = relationship(
+        "Resource", back_populates="learning_objectives"
     )
+
+    __table_args__ = (Index("ix_resource_learning_objective_resource", "resource_id"),)
 
 
 class ResourcePrereqHint(Base):
     """Soft prerequisite hints derived from chunk enrichment."""
+
     __tablename__ = "resource_prereq_hint"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -261,8 +294,8 @@ class ResourcePrereqHint(Base):
     support_count: Mapped[int] = mapped_column(Integer, default=0)
     sources: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
-    resource: Mapped["Resource"] = relationship("Resource", back_populates="prereq_hints")
-
-    __table_args__ = (
-        Index("ix_resource_prereq_hint_resource", "resource_id"),
+    resource: Mapped["Resource"] = relationship(
+        "Resource", back_populates="prereq_hints"
     )
+
+    __table_args__ = (Index("ix_resource_prereq_hint_resource", "resource_id"),)

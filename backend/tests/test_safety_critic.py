@@ -22,8 +22,13 @@ def test_safety_critic_times_out_and_falls_back():
     result = asyncio.run(
         critic.evaluate(
             response_text="Probability is between 0 and 1. What does that imply?",
-            retrieved_chunks=[{"chunk_id": "c1", "text": "Probability ranges from 0 to 1."}],
-            current_objective={"title": "Basics", "concept_scope": {"primary": ["probability"]}},
+            retrieved_chunks=[
+                {"chunk_id": "c1", "text": "Probability ranges from 0 to 1."}
+            ],
+            current_objective={
+                "title": "Basics",
+                "concept_scope": {"primary": ["probability"]},
+            },
             student_message="I am not sure",
             cited_evidence_chunk_ids=["c1"],
         )
@@ -43,7 +48,10 @@ def test_safety_critic_exception_path_uses_heuristic_fallback():
         critic.evaluate(
             response_text="This is grounded content.",
             retrieved_chunks=[{"chunk_id": "c1", "text": "This is grounded content."}],
-            current_objective={"title": "Basics", "concept_scope": {"primary": ["probability"]}},
+            current_objective={
+                "title": "Basics",
+                "concept_scope": {"primary": ["probability"]},
+            },
             cited_evidence_chunk_ids=["c1"],
         )
     )

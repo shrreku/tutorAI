@@ -47,7 +47,9 @@ class DoclingAdapter:
         if docling_document is None:
             errors.append("Docling conversion returned no document")
 
-        markdown_text = self._export_markdown(docling_document) if docling_document else ""
+        markdown_text = (
+            self._export_markdown(docling_document) if docling_document else ""
+        )
         sections = split_markdown_sections(markdown_text)
         if not sections and markdown_text.strip():
             sections = [
@@ -97,7 +99,12 @@ class DoclingAdapter:
         if docling_document is None:
             return ""
 
-        for method_name in ("export_to_markdown", "to_markdown", "export_to_text", "to_text"):
+        for method_name in (
+            "export_to_markdown",
+            "to_markdown",
+            "export_to_text",
+            "to_text",
+        ):
             method = getattr(docling_document, method_name, None)
             if callable(method):
                 try:
@@ -105,7 +112,9 @@ class DoclingAdapter:
                     if isinstance(content, str):
                         return content
                 except Exception as exc:  # pragma: no cover - defensive
-                    logger.warning("Docling markdown export failed via %s: %s", method_name, exc)
+                    logger.warning(
+                        "Docling markdown export failed via %s: %s", method_name, exc
+                    )
 
         return ""
 
@@ -116,6 +125,7 @@ class DoclingAdapter:
             return obj
         if isinstance(obj, float):
             import math
+
             if math.isnan(obj) or math.isinf(obj):
                 return None
             return obj
@@ -136,10 +146,12 @@ class DoclingAdapter:
         # Handle numpy scalars
         try:
             import numpy as np
+
             if isinstance(obj, (np.integer,)):
                 return int(obj)
             if isinstance(obj, (np.floating,)):
                 import math
+
                 val = float(obj)
                 return None if math.isnan(val) or math.isinf(val) else val
             if isinstance(obj, np.ndarray):

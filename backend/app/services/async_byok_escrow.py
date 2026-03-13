@@ -51,11 +51,15 @@ def validate_async_byok_escrow_config(config: Settings = settings) -> None:
     if config.ASYNC_BYOK_ESCROW_TTL_MINUTES <= 0:
         raise RuntimeError("ASYNC_BYOK_ESCROW_TTL_MINUTES must be positive")
     if config.ASYNC_BYOK_ESCROW_HARD_MAX_MINUTES < config.ASYNC_BYOK_ESCROW_TTL_MINUTES:
-        raise RuntimeError("ASYNC_BYOK_ESCROW_HARD_MAX_MINUTES must be >= ASYNC_BYOK_ESCROW_TTL_MINUTES")
+        raise RuntimeError(
+            "ASYNC_BYOK_ESCROW_HARD_MAX_MINUTES must be >= ASYNC_BYOK_ESCROW_TTL_MINUTES"
+        )
     backend = (config.ASYNC_BYOK_ESCROW_BACKEND or "").strip().lower()
     if backend == "local":
         if not (config.ASYNC_BYOK_LOCAL_KEK or "").strip():
-            raise RuntimeError("ASYNC_BYOK_LOCAL_KEK is required when ASYNC_BYOK_ESCROW_BACKEND=local")
+            raise RuntimeError(
+                "ASYNC_BYOK_LOCAL_KEK is required when ASYNC_BYOK_ESCROW_BACKEND=local"
+            )
         raw_key = _urlsafe_b64decode(config.ASYNC_BYOK_LOCAL_KEK.strip())
         if len(raw_key) != 32:
             raise RuntimeError("ASYNC_BYOK_LOCAL_KEK must decode to 32 bytes")
@@ -73,17 +77,17 @@ def validate_async_byok_escrow_config(config: Settings = settings) -> None:
                 "Async BYOK escrow backend is incomplete: missing " + ", ".join(missing)
             )
         return
-    raise RuntimeError(f"Unsupported ASYNC_BYOK_ESCROW_BACKEND: {config.ASYNC_BYOK_ESCROW_BACKEND}")
+    raise RuntimeError(
+        f"Unsupported ASYNC_BYOK_ESCROW_BACKEND: {config.ASYNC_BYOK_ESCROW_BACKEND}"
+    )
 
 
 class AsyncByokKeyProvider(Protocol):
     backend_name: str
 
-    async def wrap_dek(self, dek: bytes) -> tuple[str, str, str | None]:
-        ...
+    async def wrap_dek(self, dek: bytes) -> tuple[str, str, str | None]: ...
 
-    async def unwrap_dek(self, wrapped_dek: str) -> bytes:
-        ...
+    async def unwrap_dek(self, wrapped_dek: str) -> bytes: ...
 
 
 class LocalAsyncByokKeyProvider:
@@ -96,7 +100,9 @@ class LocalAsyncByokKeyProvider:
     async def wrap_dek(self, dek: bytes) -> tuple[str, str, str | None]:
         nonce = os.urandom(12)
         ciphertext = self._cipher.encrypt(nonce, dek, None)
-        wrapped = f"local:v1:{_urlsafe_b64encode(nonce)}:{_urlsafe_b64encode(ciphertext)}"
+        wrapped = (
+            f"local:v1:{_urlsafe_b64encode(nonce)}:{_urlsafe_b64encode(ciphertext)}"
+        )
         return wrapped, "local-kek", "v1"
 
     async def unwrap_dek(self, wrapped_dek: str) -> bytes:
@@ -119,21 +125,29 @@ class VaultTransitAsyncByokKeyProvider:
 
     async def wrap_dek(self, dek: bytes) -> tuple[str, str, str | None]:
         payload = {"plaintext": _standard_b64encode(dek)}
-        data = await self._request("POST", f"/v1/transit/encrypt/{self._key_name}", payload)
+        data = await self._request(
+            "POST", f"/v1/transit/encrypt/{self._key_name}", payload
+        )
         return (
             str(data["ciphertext"]),
             self._key_name,
-            str(data.get("key_version")) if data.get("key_version") is not None else None,
+            str(data.get("key_version"))
+            if data.get("key_version") is not None
+            else None,
         )
 
     async def unwrap_dek(self, wrapped_dek: str) -> bytes:
         payload = {"ciphertext": wrapped_dek}
-        data = await self._request("POST", f"/v1/transit/decrypt/{self._key_name}", payload)
+        data = await self._request(
+            "POST", f"/v1/transit/decrypt/{self._key_name}", payload
+        )
         return _standard_b64decode(str(data["plaintext"]))
 
     async def _request(self, method: str, path: str, payload: dict) -> dict:
         headers = {"X-Vault-Token": self._token}
-        async with httpx.AsyncClient(base_url=self._base_url, timeout=self._timeout) as client:
+        async with httpx.AsyncClient(
+            base_url=self._base_url, timeout=self._timeout
+        ) as client:
             response = await client.request(method, path, headers=headers, json=payload)
         response.raise_for_status()
         body = response.json()
@@ -150,7 +164,9 @@ def build_async_byok_key_provider(config: Settings = settings) -> AsyncByokKeyPr
         return LocalAsyncByokKeyProvider(config.ASYNC_BYOK_LOCAL_KEK)
     if backend == "vault_transit":
         return VaultTransitAsyncByokKeyProvider(config)
-    raise RuntimeError(f"Unsupported async BYOK escrow backend: {config.ASYNC_BYOK_ESCROW_BACKEND}")
+    raise RuntimeError(
+        f"Unsupported async BYOK escrow backend: {config.ASYNC_BYOK_ESCROW_BACKEND}"
+    )
 
 
 @dataclass
@@ -193,7 +209,9 @@ class AsyncByokEscrowService:
     ) -> AsyncByokEscrow:
         now = datetime.now(timezone.utc)
         expires_at = now + timedelta(minutes=self.config.ASYNC_BYOK_ESCROW_TTL_MINUTES)
-        hard_delete_after = now + timedelta(minutes=self.config.ASYNC_BYOK_ESCROW_RETENTION_MINUTES)
+        hard_delete_after = now + timedelta(
+            minutes=self.config.ASYNC_BYOK_ESCROW_RETENTION_MINUTES
+        )
         aad_payload = {
             "user_id": str(user_id),
             "purpose_type": "ingestion",
@@ -201,7 +219,9 @@ class AsyncByokEscrowService:
             "scope_type": "resource",
             "scope_key": str(resource_id),
         }
-        aad_bytes = json.dumps(aad_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        aad_bytes = json.dumps(
+            aad_payload, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
         aad_hash = hashlib.sha256(aad_bytes).hexdigest()
 
         plaintext = json.dumps(
@@ -243,9 +263,13 @@ class AsyncByokEscrowService:
         )
         return await self.repo.create(escrow)
 
-    async def decrypt_for_ingestion(self, *, escrow_id: UUID, resource_id: UUID, job_id: UUID) -> AsyncByokResolvedSecret:
+    async def decrypt_for_ingestion(
+        self, *, escrow_id: UUID, resource_id: UUID, job_id: UUID
+    ) -> AsyncByokResolvedSecret:
         await self.repo.expire_due()
-        escrow = await self.repo.get_for_decrypt(escrow_id, purpose_type="ingestion", purpose_id=str(job_id))
+        escrow = await self.repo.get_for_decrypt(
+            escrow_id, purpose_type="ingestion", purpose_id=str(job_id)
+        )
         if escrow is None:
             raise RuntimeError("Async BYOK escrow not found for this job")
         if escrow.status != "active":
@@ -260,7 +284,9 @@ class AsyncByokEscrowService:
             "scope_type": escrow.scope_type,
             "scope_key": escrow.scope_key,
         }
-        aad_bytes = json.dumps(aad_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        aad_bytes = json.dumps(
+            aad_payload, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
         if hashlib.sha256(aad_bytes).hexdigest() != escrow.aad_hash:
             raise RuntimeError("Async BYOK escrow AAD hash mismatch")
 
@@ -275,11 +301,15 @@ class AsyncByokEscrowService:
             escrow_id=str(escrow.id),
         )
 
-    async def list_user_escrows(self, user_id: UUID, *, include_inactive: bool = False) -> list[AsyncByokEscrow]:
+    async def list_user_escrows(
+        self, user_id: UUID, *, include_inactive: bool = False
+    ) -> list[AsyncByokEscrow]:
         await self.repo.expire_due()
         return await self.repo.list_for_user(user_id, include_inactive=include_inactive)
 
-    async def revoke_user_escrow(self, escrow_id: UUID, user_id: UUID) -> AsyncByokEscrow:
+    async def revoke_user_escrow(
+        self, escrow_id: UUID, user_id: UUID
+    ) -> AsyncByokEscrow:
         await self.repo.expire_due()
         escrow = await self.repo.get_for_user(escrow_id, user_id)
         if escrow is None:
@@ -287,10 +317,14 @@ class AsyncByokEscrowService:
         if escrow.status != "active":
             return escrow
         await self.repo.revoke(escrow, reason="user_revoked")
-        logger.warning("Async BYOK escrow revoked by user %s for escrow %s", user_id, escrow_id)
+        logger.warning(
+            "Async BYOK escrow revoked by user %s for escrow %s", user_id, escrow_id
+        )
         return escrow
 
-    async def finalize_job_escrow(self, escrow_id: UUID, *, reason: str, success: bool) -> None:
+    async def finalize_job_escrow(
+        self, escrow_id: UUID, *, reason: str, success: bool
+    ) -> None:
         escrow = await self.repo.get_by_id(escrow_id)
         if escrow is None or escrow.status != "active":
             return

@@ -41,8 +41,8 @@ def test_estimate_retry_credits_uses_cached_file_size_for_s3_uri():
 
 
 def test_estimate_retry_credits_uses_local_stat_when_path_is_local(tmp_path):
-    file_path = tmp_path / 'notes.pdf'
-    file_path.write_bytes(b'a' * 12)
+    file_path = tmp_path / "notes.pdf"
+    file_path.write_bytes(b"a" * 12)
 
     captured = {}
 
@@ -52,15 +52,15 @@ def test_estimate_retry_credits_uses_local_stat_when_path_is_local(tmp_path):
             return 111
 
     resource = SimpleNamespace(
-        filename='notes.pdf',
+        filename="notes.pdf",
         file_path_or_uri=str(file_path),
-        processing_profile='core_only',
+        processing_profile="core_only",
     )
 
     estimated = ingest_module._estimate_retry_credits(resource, None, _Meter())
 
     assert estimated == 111
-    assert captured['file_size_bytes'] == 12
+    assert captured["file_size_bytes"] == 12
 
 
 def test_get_balance_bootstraps_credit_account_when_enabled(monkeypatch):
@@ -189,7 +189,9 @@ def test_login_returns_token_and_user_payload(monkeypatch):
     password = "Password123!"
     hashed = auth_module._hash_password(password)
     user_id = uuid4()
-    monkeypatch.setattr(settings, "ADMIN_EXTERNAL_ID", "login@example.com", raising=False)
+    monkeypatch.setattr(
+        settings, "ADMIN_EXTERNAL_ID", "login@example.com", raising=False
+    )
     monkeypatch.setattr(settings, "ADMIN_EXTERNAL_IDS", "", raising=False)
 
     class _Repo:
@@ -225,7 +227,9 @@ def test_login_returns_token_and_user_payload(monkeypatch):
 def test_ingest_upload_rejects_unsupported_extension(monkeypatch):
     monkeypatch.setattr(settings, "FEATURE_UPLOADS_ENABLED", True, raising=False)
     monkeypatch.setattr(settings, "AUTH_ENABLED", False, raising=False)
-    monkeypatch.setattr(settings, "UPLOAD_ALLOWED_EXTENSIONS", ".pdf,.md", raising=False)
+    monkeypatch.setattr(
+        settings, "UPLOAD_ALLOWED_EXTENSIONS", ".pdf,.md", raising=False
+    )
     monkeypatch.setattr(settings, "INGESTION_MAX_CONCURRENT_JOBS", 3, raising=False)
     monkeypatch.setattr(settings, "INGESTION_QUEUE_ENABLED", False, raising=False)
     monkeypatch.setattr(settings, "REDIS_URL", None, raising=False)
@@ -262,7 +266,9 @@ def test_ingest_upload_rejects_unsupported_extension(monkeypatch):
 def test_ingest_upload_rejects_when_queue_full(monkeypatch):
     monkeypatch.setattr(settings, "FEATURE_UPLOADS_ENABLED", True, raising=False)
     monkeypatch.setattr(settings, "AUTH_ENABLED", False, raising=False)
-    monkeypatch.setattr(settings, "UPLOAD_ALLOWED_EXTENSIONS", ".pdf,.md", raising=False)
+    monkeypatch.setattr(
+        settings, "UPLOAD_ALLOWED_EXTENSIONS", ".pdf,.md", raising=False
+    )
     monkeypatch.setattr(settings, "INGESTION_MAX_CONCURRENT_JOBS", 1, raising=False)
     monkeypatch.setattr(settings, "INGESTION_QUEUE_ENABLED", False, raising=False)
     monkeypatch.setattr(settings, "REDIS_URL", None, raising=False)
@@ -300,7 +306,9 @@ def test_ingest_upload_rejects_when_insufficient_credits(monkeypatch):
     monkeypatch.setattr(settings, "FEATURE_UPLOADS_ENABLED", True, raising=False)
     monkeypatch.setattr(settings, "AUTH_ENABLED", False, raising=False)
     monkeypatch.setattr(settings, "CREDITS_ENABLED", True, raising=False)
-    monkeypatch.setattr(settings, "UPLOAD_ALLOWED_EXTENSIONS", ".pdf,.md", raising=False)
+    monkeypatch.setattr(
+        settings, "UPLOAD_ALLOWED_EXTENSIONS", ".pdf,.md", raising=False
+    )
     monkeypatch.setattr(settings, "INGESTION_MAX_CONCURRENT_JOBS", 3, raising=False)
     monkeypatch.setattr(settings, "INGESTION_QUEUE_ENABLED", False, raising=False)
     monkeypatch.setattr(settings, "REDIS_URL", None, raising=False)
@@ -503,7 +511,15 @@ def test_admin_monthly_grant_skips_users_already_granted_for_period(monkeypatch)
     assert response.granted_user_count == 1
     assert response.skipped_user_count == 1
     assert response.granted_user_ids == [str(first_user_id)]
-    assert issued == [(first_user_id, settings.CREDITS_DEFAULT_MONTHLY_GRANT, "monthly_grant", "Monthly research grant (2026-03)", "2026-03")]
+    assert issued == [
+        (
+            first_user_id,
+            settings.CREDITS_DEFAULT_MONTHLY_GRANT,
+            "monthly_grant",
+            "Monthly research grant (2026-03)",
+            "2026-03",
+        )
+    ]
 
 
 def test_async_llm_config_reports_missing_platform_fields(monkeypatch):
@@ -512,7 +528,9 @@ def test_async_llm_config_reports_missing_platform_fields(monkeypatch):
     monkeypatch.setattr(settings, "LLM_MODEL", "", raising=False)
     monkeypatch.setattr(settings, "LLM_MODEL_ONTOLOGY", "", raising=False)
 
-    missing = llm_factory_module.get_missing_platform_llm_config(settings, task="ontology")
+    missing = llm_factory_module.get_missing_platform_llm_config(
+        settings, task="ontology"
+    )
 
     assert missing == ["LLM_API_KEY", "LLM_API_BASE_URL", "LLM_MODEL[ontology]"]
 
@@ -520,7 +538,9 @@ def test_async_llm_config_reports_missing_platform_fields(monkeypatch):
 def test_ingest_upload_rejects_when_queue_mode_missing_platform_llm(monkeypatch):
     monkeypatch.setattr(settings, "FEATURE_UPLOADS_ENABLED", True, raising=False)
     monkeypatch.setattr(settings, "AUTH_ENABLED", False, raising=False)
-    monkeypatch.setattr(settings, "UPLOAD_ALLOWED_EXTENSIONS", ".pdf,.md", raising=False)
+    monkeypatch.setattr(
+        settings, "UPLOAD_ALLOWED_EXTENSIONS", ".pdf,.md", raising=False
+    )
     monkeypatch.setattr(settings, "INGESTION_MAX_CONCURRENT_JOBS", 3, raising=False)
     monkeypatch.setattr(settings, "INGESTION_QUEUE_ENABLED", True, raising=False)
     monkeypatch.setattr(settings, "REDIS_URL", "redis://redis:6379/0", raising=False)
@@ -564,7 +584,9 @@ def test_ingest_upload_uses_async_byok_escrow_and_bypasses_credits(monkeypatch):
     monkeypatch.setattr(settings, "AUTH_ENABLED", False, raising=False)
     monkeypatch.setattr(settings, "BYOK_ENABLED", True, raising=False)
     monkeypatch.setattr(settings, "ASYNC_BYOK_ESCROW_ENABLED", True, raising=False)
-    monkeypatch.setattr(settings, "UPLOAD_ALLOWED_EXTENSIONS", ".pdf,.md", raising=False)
+    monkeypatch.setattr(
+        settings, "UPLOAD_ALLOWED_EXTENSIONS", ".pdf,.md", raising=False
+    )
     monkeypatch.setattr(settings, "INGESTION_MAX_CONCURRENT_JOBS", 3, raising=False)
     monkeypatch.setattr(settings, "INGESTION_QUEUE_ENABLED", True, raising=False)
     monkeypatch.setattr(settings, "REDIS_URL", "redis://redis:6379/0", raising=False)
@@ -643,17 +665,25 @@ def test_ingest_upload_uses_async_byok_escrow_and_bypasses_credits(monkeypatch):
                 expires_at=datetime.utcnow(),
             )
 
-    async def _fake_enqueue(resource_id_arg: str, job_id_arg: str, *, escrow_id: str | None = None):
+    async def _fake_enqueue(
+        resource_id_arg: str, job_id_arg: str, *, escrow_id: str | None = None
+    ):
         enqueue_calls.append((resource_id_arg, job_id_arg, escrow_id))
 
     monkeypatch.setattr(ingestion_repo_module, "IngestionJobRepository", _JobRepo)
     monkeypatch.setattr(ingest_module, "IngestionJobRepository", _JobRepo)
     monkeypatch.setattr(ingest_module, "ResourceRepository", _ResourceRepo)
     monkeypatch.setattr(ingest_module, "CreditMeter", _Meter)
-    monkeypatch.setattr(ingest_module, "create_storage_provider", lambda _settings: _Storage())
+    monkeypatch.setattr(
+        ingest_module, "create_storage_provider", lambda _settings: _Storage()
+    )
     monkeypatch.setattr(ingest_module, "AsyncByokEscrowService", _EscrowService)
-    monkeypatch.setattr(ingest_module, "AsyncByokEscrowRepository", lambda _db: object())
-    monkeypatch.setattr("app.services.ingestion.queue.enqueue_ingestion_job", _fake_enqueue)
+    monkeypatch.setattr(
+        ingest_module, "AsyncByokEscrowRepository", lambda _db: object()
+    )
+    monkeypatch.setattr(
+        "app.services.ingestion.queue.enqueue_ingestion_job", _fake_enqueue
+    )
 
     response = asyncio.run(
         ingest_module.upload_resource(
@@ -663,7 +693,10 @@ def test_ingest_upload_uses_async_byok_escrow_and_bypasses_credits(monkeypatch):
             use_async_byok=True,
             db=_DummyDb(),
             user=SimpleNamespace(id=user_id),
-            byok={"api_key": "sk-user-key", "api_base_url": "https://api.openai.com/v1"},
+            byok={
+                "api_key": "sk-user-key",
+                "api_base_url": "https://api.openai.com/v1",
+            },
         )
     )
 

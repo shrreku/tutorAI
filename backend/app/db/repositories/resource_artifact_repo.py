@@ -22,15 +22,25 @@ class ResourceArtifactRepository(BaseRepository[ResourceArtifactState]):
         limit: int = 50,
         offset: int = 0,
     ) -> List[ResourceArtifactState]:
-        query = select(ResourceArtifactState).where(ResourceArtifactState.resource_id == resource_id)
+        query = select(ResourceArtifactState).where(
+            ResourceArtifactState.resource_id == resource_id
+        )
         if artifact_kind:
             query = query.where(ResourceArtifactState.artifact_kind == artifact_kind)
-        query = query.order_by(ResourceArtifactState.generated_at.desc()).limit(limit).offset(offset)
+        query = (
+            query.order_by(ResourceArtifactState.generated_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def count_by_resource(self, resource_id: UUID, *, artifact_kind: Optional[str] = None) -> int:
-        query = select(ResourceArtifactState).where(ResourceArtifactState.resource_id == resource_id)
+    async def count_by_resource(
+        self, resource_id: UUID, *, artifact_kind: Optional[str] = None
+    ) -> int:
+        query = select(ResourceArtifactState).where(
+            ResourceArtifactState.resource_id == resource_id
+        )
         if artifact_kind:
             query = query.where(ResourceArtifactState.artifact_kind == artifact_kind)
         result = await self.db.execute(query)
@@ -54,5 +64,7 @@ class ResourceArtifactRepository(BaseRepository[ResourceArtifactState]):
             query = query.where(ResourceArtifactState.resource_id == resource_id)
         if notebook_id is not None:
             query = query.where(ResourceArtifactState.notebook_id == notebook_id)
-        result = await self.db.execute(query.order_by(ResourceArtifactState.generated_at.desc()).limit(1))
+        result = await self.db.execute(
+            query.order_by(ResourceArtifactState.generated_at.desc()).limit(1)
+        )
         return result.scalar_one_or_none()

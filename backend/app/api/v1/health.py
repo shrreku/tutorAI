@@ -25,7 +25,9 @@ class HealthResponse(BaseModel):
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
     """Basic health check endpoint."""
-    return HealthResponse(status="ok", service="studyagent-api", timestamp=datetime.now(timezone.utc))
+    return HealthResponse(
+        status="ok", service="studyagent-api", timestamp=datetime.now(timezone.utc)
+    )
 
 
 @router.get("/health/ready", response_model=HealthResponse)
@@ -113,4 +115,6 @@ async def readiness_check():
 @router.get("/health/live", response_model=HealthResponse)
 async def liveness_check():
     """Liveness check - verifies the service is running."""
-    return HealthResponse(status="alive", service="studyagent-api", timestamp=datetime.now(timezone.utc))
+    return HealthResponse(
+        status="alive", service="studyagent-api", timestamp=datetime.now(timezone.utc)
+    )

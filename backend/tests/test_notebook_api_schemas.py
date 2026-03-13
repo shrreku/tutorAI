@@ -30,14 +30,18 @@ def test_notebook_update_rejects_unknown_fields():
 
 
 def test_notebook_resource_attach_defaults():
-    payload = NotebookResourceAttachRequest(resource_id="123e4567-e89b-12d3-a456-426614174000")
+    payload = NotebookResourceAttachRequest(
+        resource_id="123e4567-e89b-12d3-a456-426614174000"
+    )
 
     assert payload.role == "supplemental"
     assert payload.is_active is True
 
 
 def test_notebook_session_create_defaults_mode():
-    payload = NotebookSessionCreateRequest(resource_id="123e4567-e89b-12d3-a456-426614174000")
+    payload = NotebookSessionCreateRequest(
+        resource_id="123e4567-e89b-12d3-a456-426614174000"
+    )
 
     assert payload.mode == "learn"
     assert payload.selected_resource_ids == []
@@ -45,7 +49,9 @@ def test_notebook_session_create_defaults_mode():
 
 
 def test_notebook_progress_response_defaults():
-    payload = NotebookProgressResponse(notebook_id="123e4567-e89b-12d3-a456-426614174000")
+    payload = NotebookProgressResponse(
+        notebook_id="123e4567-e89b-12d3-a456-426614174000"
+    )
 
     assert payload.mastery_snapshot == {}
     assert payload.objective_progress_snapshot == {}

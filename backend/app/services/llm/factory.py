@@ -7,7 +7,9 @@ from app.services.llm.openai_provider import OpenAICompatibleProvider
 logger = logging.getLogger(__name__)
 
 
-def get_missing_platform_llm_config(config: Settings, *, task: str = "default") -> list[str]:
+def get_missing_platform_llm_config(
+    config: Settings, *, task: str = "default"
+) -> list[str]:
     """Return required platform LLM settings that are missing for a task."""
     model_map = {
         "tutoring": config.LLM_MODEL_TUTORING,

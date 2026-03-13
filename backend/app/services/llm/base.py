@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Type, TypeVar, Optional
+from typing import Type, TypeVar
 from pydantic import BaseModel
 
 T = TypeVar("T", bound=BaseModel)
@@ -7,7 +7,7 @@ T = TypeVar("T", bound=BaseModel)
 
 class BaseLLMProvider(ABC):
     """Base class for LLM providers."""
-    
+
     @abstractmethod
     async def generate(
         self,
@@ -18,7 +18,7 @@ class BaseLLMProvider(ABC):
     ) -> str:
         """Generate a text response from the LLM."""
         pass
-    
+
     @abstractmethod
     async def generate_json(
         self,
@@ -30,12 +30,12 @@ class BaseLLMProvider(ABC):
     ) -> T:
         """Generate and parse a JSON response into a Pydantic model."""
         pass
-    
+
     @abstractmethod
     async def count_tokens(self, text: str) -> int:
         """Count tokens in text."""
         pass
-    
+
     @property
     @abstractmethod
     def model_id(self) -> str:

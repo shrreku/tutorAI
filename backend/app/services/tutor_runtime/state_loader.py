@@ -8,9 +8,7 @@ from app.models.session import TutorTurn, UserSession
 
 
 async def get_session(db: AsyncSession, session_id: uuid.UUID) -> Optional[UserSession]:
-    result = await db.execute(
-        select(UserSession).where(UserSession.id == session_id)
-    )
+    result = await db.execute(select(UserSession).where(UserSession.id == session_id))
     return result.scalar_one_or_none()
 
 
@@ -42,13 +40,12 @@ async def next_turn_index(db: AsyncSession, session_id: uuid.UUID) -> int:
     """Return the next turn_index for a session."""
     # Serialize concurrent turn writers per session to reduce index collisions.
     await db.execute(
-        select(UserSession.id)
-        .where(UserSession.id == session_id)
-        .with_for_update()
+        select(UserSession.id).where(UserSession.id == session_id).with_for_update()
     )
 
     result = await db.execute(
-        select(func.coalesce(func.max(TutorTurn.turn_index), -1))
-        .where(TutorTurn.session_id == session_id)
+        select(func.coalesce(func.max(TutorTurn.turn_index), -1)).where(
+            TutorTurn.session_id == session_id
+        )
     )
     return result.scalar_one() + 1

@@ -11,8 +11,9 @@ T = TypeVar("T")
 
 class PaginatedResponse(BaseModel, Generic[T]):
     """Paginated list response."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     items: List[T]
     total: int
     limit: int
@@ -21,16 +22,18 @@ class PaginatedResponse(BaseModel, Generic[T]):
 
 class ErrorDetail(BaseModel):
     """Error detail for validation errors."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     field: Optional[str] = None
     message: str
 
 
 class ErrorResponse(BaseModel):
     """Canonical error response shape."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     code: str
     message: str
     details: Optional[List[ErrorDetail]] = None
@@ -40,16 +43,18 @@ class ErrorResponse(BaseModel):
 # Resource API schemas
 class ResourceCreate(BaseModel):
     """Request to create/upload a resource."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     filename: str
     topic: Optional[str] = None
 
 
 class ResourceResponse(BaseModel):
     """Resource response."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     id: UUID
     filename: str
     topic: Optional[str]
@@ -64,6 +69,7 @@ class ResourceResponse(BaseModel):
 
 class ResourceArtifactResponse(BaseModel):
     """Internal preparation artifact metadata for a resource."""
+
     model_config = ConfigDict(extra="forbid")
 
     id: UUID
@@ -83,8 +89,9 @@ class ResourceArtifactResponse(BaseModel):
 
 class ResourceDetailResponse(ResourceResponse):
     """Detailed resource response with KB info."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     chunk_count: int = 0
     concept_count: int = 0
     topic_bundles: List[Dict[str, Any]] = Field(default_factory=list)
@@ -93,6 +100,7 @@ class ResourceDetailResponse(ResourceResponse):
 
 class IngestionBillingStatusResponse(BaseModel):
     """Billing lifecycle details attached to an ingestion job."""
+
     model_config = ConfigDict(extra="forbid")
 
     uses_platform_credits: bool = False
@@ -106,6 +114,7 @@ class IngestionBillingStatusResponse(BaseModel):
 
 class IngestionCurriculumBillingStatusResponse(BaseModel):
     """Deferred curriculum-preparation billing attached to an ingestion job."""
+
     model_config = ConfigDict(extra="forbid")
 
     estimated_credits_low: int = 0
@@ -119,6 +128,7 @@ class IngestionCurriculumBillingStatusResponse(BaseModel):
 
 class IngestionAsyncByokStatusResponse(BaseModel):
     """Async BYOK escrow details attached to an ingestion job."""
+
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
@@ -131,6 +141,7 @@ class IngestionAsyncByokStatusResponse(BaseModel):
 
 class IngestionDocumentMetricsResponse(BaseModel):
     """Actual document metrics discovered during ingestion."""
+
     model_config = ConfigDict(extra="forbid")
 
     page_count_actual: int = 0
@@ -141,6 +152,7 @@ class IngestionDocumentMetricsResponse(BaseModel):
 
 class IngestionCapabilityProgressResponse(BaseModel):
     """Session capability readiness unlocked by staged ingestion."""
+
     model_config = ConfigDict(extra="forbid")
 
     search_ready: bool = False
@@ -150,8 +162,9 @@ class IngestionCapabilityProgressResponse(BaseModel):
 
 class IngestionStatusResponse(BaseModel):
     """Ingestion job status response."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     job_id: UUID
     resource_id: UUID
     status: str
@@ -173,6 +186,7 @@ class IngestionStatusResponse(BaseModel):
 
 class KnowledgeBaseConceptOverride(BaseModel):
     """Editable concept-level override for a resource KB."""
+
     model_config = ConfigDict(extra="forbid")
 
     concept_id: str = Field(min_length=1)
@@ -184,6 +198,7 @@ class KnowledgeBaseConceptOverride(BaseModel):
 
 class KnowledgeBaseEdgeUpdate(BaseModel):
     """Edge payload used for graph edit operations."""
+
     model_config = ConfigDict(extra="forbid")
 
     source_concept_id: str = Field(min_length=1)
@@ -195,6 +210,7 @@ class KnowledgeBaseEdgeUpdate(BaseModel):
 
 class KnowledgeBaseConceptRename(BaseModel):
     """Rename operation for concept ids."""
+
     model_config = ConfigDict(extra="forbid")
 
     from_concept_id: str = Field(min_length=1)
@@ -203,6 +219,7 @@ class KnowledgeBaseConceptRename(BaseModel):
 
 class KnowledgeBaseGraphOps(BaseModel):
     """Operation-based graph editing payload."""
+
     model_config = ConfigDict(extra="forbid")
 
     add_concepts: List[str] = Field(default_factory=list)
@@ -214,6 +231,7 @@ class KnowledgeBaseGraphOps(BaseModel):
 
 class KnowledgeBaseTopicBundleUpdate(BaseModel):
     """Editable topic bundle payload for KB curation."""
+
     model_config = ConfigDict(extra="forbid")
 
     topic_id: str = Field(min_length=1)
@@ -225,6 +243,7 @@ class KnowledgeBaseTopicBundleUpdate(BaseModel):
 
 class KnowledgeBaseUpdateRequest(BaseModel):
     """Request payload for updating curated KB metadata."""
+
     model_config = ConfigDict(extra="forbid")
 
     topic: Optional[str] = None
@@ -235,6 +254,7 @@ class KnowledgeBaseUpdateRequest(BaseModel):
 
 class KnowledgeBaseConceptResponse(BaseModel):
     """Concept row returned to KB management UI."""
+
     model_config = ConfigDict(extra="forbid")
 
     concept_id: str
@@ -248,6 +268,7 @@ class KnowledgeBaseConceptResponse(BaseModel):
 
 class KnowledgeBaseEdgeResponse(BaseModel):
     """Concept graph edge returned to KB editor."""
+
     model_config = ConfigDict(extra="forbid")
 
     source_concept_id: str
@@ -259,6 +280,7 @@ class KnowledgeBaseEdgeResponse(BaseModel):
 
 class KnowledgeBaseTopicBundleResponse(BaseModel):
     """Topic bundle row returned to KB management UI."""
+
     model_config = ConfigDict(extra="forbid")
 
     topic_id: str
@@ -270,6 +292,7 @@ class KnowledgeBaseTopicBundleResponse(BaseModel):
 
 class ResourceKnowledgeBaseResponse(BaseModel):
     """Detailed, editable KB snapshot for a resource."""
+
     model_config = ConfigDict(extra="forbid")
 
     resource_id: UUID
@@ -438,8 +461,9 @@ class NotebookArtifactResponse(BaseModel):
 # Session API schemas
 class SessionCreate(BaseModel):
     """Request to create a session."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     resource_id: UUID
     topic: Optional[str] = None
     selected_topics: Optional[List[str]] = None
@@ -451,6 +475,7 @@ class SessionCreate(BaseModel):
 
 class UserSettingsResponse(BaseModel):
     """Current settings for the authenticated user."""
+
     model_config = ConfigDict(extra="forbid")
 
     consent_training_global: bool = False
@@ -463,6 +488,7 @@ class UserSettingsResponse(BaseModel):
 
 class AsyncByokEscrowResponse(BaseModel):
     """Safe metadata for a user's async BYOK escrow objects."""
+
     model_config = ConfigDict(extra="forbid")
 
     id: UUID
@@ -483,6 +509,7 @@ class AsyncByokEscrowResponse(BaseModel):
 
 class UserSettingsUpdateRequest(BaseModel):
     """Partial update for user settings."""
+
     model_config = ConfigDict(extra="forbid")
 
     consent_training_global: Optional[bool] = None
@@ -490,6 +517,7 @@ class UserSettingsUpdateRequest(BaseModel):
 
 class CreditEstimateRequest(BaseModel):
     """Estimate request for token-based credit charging."""
+
     model_config = ConfigDict(extra="forbid")
 
     prompt_tokens: int = Field(ge=0)
@@ -500,6 +528,7 @@ class CreditEstimateRequest(BaseModel):
 
 class CreditEstimateResponse(BaseModel):
     """Estimated credit charge and breakdown."""
+
     model_config = ConfigDict(extra="forbid")
 
     credits_enabled: bool
@@ -512,6 +541,7 @@ class CreditEstimateResponse(BaseModel):
 
 class ObjectiveSummary(BaseModel):
     """Brief summary of a learning objective for the frontend."""
+
     model_config = ConfigDict(extra="forbid")
 
     objective_id: str
@@ -523,6 +553,7 @@ class ObjectiveSummary(BaseModel):
 
 class CurriculumOverview(BaseModel):
     """Overview of the curriculum plan returned at session creation."""
+
     model_config = ConfigDict(extra="forbid")
 
     active_topic: Optional[str] = None
@@ -533,8 +564,9 @@ class CurriculumOverview(BaseModel):
 
 class SessionResponse(BaseModel):
     """Session response."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     id: UUID
     user_id: Optional[UUID] = None
     resource_id: Optional[UUID] = None
@@ -550,8 +582,9 @@ class SessionResponse(BaseModel):
 
 class SessionDetailResponse(SessionResponse):
     """Detailed session response with plan state."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     plan_state: Optional[Dict[str, Any]] = None
     turn_count: int = 0
 
@@ -559,16 +592,18 @@ class SessionDetailResponse(SessionResponse):
 # Tutor API schemas
 class TutorTurnRequest(BaseModel):
     """Request for a tutoring turn."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     session_id: UUID
     message: str = Field(..., min_length=1)
 
 
 class TutorTurnResponse(BaseModel):
     """Response from a tutoring turn."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     turn_id: UUID
     response: str
     tutor_question: Optional[str] = None
@@ -594,6 +629,7 @@ class TutorTurnResponse(BaseModel):
 
 class SessionSummaryResponse(BaseModel):
     """Standalone session summary retrieved after completion."""
+
     model_config = ConfigDict(extra="forbid")
 
     session_id: UUID
@@ -613,8 +649,10 @@ NotebookSessionDetailResponse.model_rebuild()
 
 # ── Quiz schemas ───────────────────────────────────────────────────────
 
+
 class QuizQuestionResponse(BaseModel):
     """A single quiz question (without the correct answer — sent to frontend)."""
+
     model_config = ConfigDict(extra="forbid")
 
     question_id: str
@@ -627,6 +665,7 @@ class QuizQuestionResponse(BaseModel):
 
 class QuizGenerateRequest(BaseModel):
     """Request to generate a quiz from a session."""
+
     model_config = ConfigDict(extra="forbid")
 
     session_id: UUID
@@ -635,6 +674,7 @@ class QuizGenerateRequest(BaseModel):
 
 class QuizGenerateResponse(BaseModel):
     """Response with generated quiz questions."""
+
     model_config = ConfigDict(extra="forbid")
 
     quiz_id: str
@@ -647,6 +687,7 @@ class QuizGenerateResponse(BaseModel):
 
 class QuizAnswerRequest(BaseModel):
     """Submit an answer to a single quiz question."""
+
     model_config = ConfigDict(extra="forbid")
 
     quiz_id: str
@@ -656,6 +697,7 @@ class QuizAnswerRequest(BaseModel):
 
 class QuizAnswerResponse(BaseModel):
     """Grading result for a single answer."""
+
     model_config = ConfigDict(extra="forbid")
 
     question_id: str
@@ -668,6 +710,7 @@ class QuizAnswerResponse(BaseModel):
 
 class QuizResultsResponse(BaseModel):
     """Full quiz results after all questions answered."""
+
     model_config = ConfigDict(extra="forbid")
 
     quiz_id: str

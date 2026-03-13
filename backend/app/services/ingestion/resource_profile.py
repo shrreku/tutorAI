@@ -5,15 +5,53 @@ from collections import Counter
 from typing import Any
 
 STOPWORDS = {
-    "the", "and", "for", "that", "with", "this", "from", "into", "your", "have", "will", "are",
-    "was", "were", "their", "there", "about", "which", "when", "where", "then", "than", "them",
-    "into", "through", "chapter", "section", "page", "pages", "figure", "table", "using", "used",
-    "example", "definition", "practice", "exercise", "introduction", "summary", "conclusion",
+    "the",
+    "and",
+    "for",
+    "that",
+    "with",
+    "this",
+    "from",
+    "into",
+    "your",
+    "have",
+    "will",
+    "are",
+    "was",
+    "were",
+    "their",
+    "there",
+    "about",
+    "which",
+    "when",
+    "where",
+    "then",
+    "than",
+    "them",
+    "into",
+    "through",
+    "chapter",
+    "section",
+    "page",
+    "pages",
+    "figure",
+    "table",
+    "using",
+    "used",
+    "example",
+    "definition",
+    "practice",
+    "exercise",
+    "introduction",
+    "summary",
+    "conclusion",
 }
 
 
 def _tokenize(text: str) -> list[str]:
-    return [token.lower() for token in re.findall(r"[A-Za-z][A-Za-z0-9'-]{2,}", text or "")]
+    return [
+        token.lower() for token in re.findall(r"[A-Za-z][A-Za-z0-9'-]{2,}", text or "")
+    ]
 
 
 def _normalize_heading(section: Any) -> str | None:
@@ -27,14 +65,25 @@ def _normalize_heading(section: Any) -> str | None:
     return normalized[:160] if normalized else None
 
 
-def _detect_document_type(filename: str, headings: list[str], keyword_counts: Counter[str]) -> str:
+def _detect_document_type(
+    filename: str, headings: list[str], keyword_counts: Counter[str]
+) -> str:
     lowered_name = (filename or "").lower()
     heading_blob = " ".join(headings).lower()
-    if any(token in lowered_name for token in ["slide", "ppt", "deck"]) or "agenda" in heading_blob:
+    if (
+        any(token in lowered_name for token in ["slide", "ppt", "deck"])
+        or "agenda" in heading_blob
+    ):
         return "slides"
-    if any(token in lowered_name for token in ["worksheet", "assignment"]) or keyword_counts.get("exercise", 0) >= 2:
+    if (
+        any(token in lowered_name for token in ["worksheet", "assignment"])
+        or keyword_counts.get("exercise", 0) >= 2
+    ):
         return "worksheet"
-    if any(token in lowered_name for token in ["exam", "test", "quiz"]) or keyword_counts.get("question", 0) >= 3:
+    if (
+        any(token in lowered_name for token in ["exam", "test", "quiz"])
+        or keyword_counts.get("question", 0) >= 3
+    ):
         return "assessment"
     if keyword_counts.get("theorem", 0) or keyword_counts.get("proof", 0):
         return "technical_notes"
@@ -50,7 +99,9 @@ def build_resource_profile(
     chunking_metadata: dict | None = None,
 ) -> dict:
     """Build a deterministic lightweight understanding artifact for a resource."""
-    headings = [heading for section in sections if (heading := _normalize_heading(section))]
+    headings = [
+        heading for section in sections if (heading := _normalize_heading(section))
+    ]
     heading_counts = Counter(_tokenize(" ".join(headings)))
 
     body_counter: Counter[str] = Counter()
@@ -74,7 +125,10 @@ def build_resource_profile(
         if "proof" in lowered:
             pedagogy_signals["proof"] += 1
 
-        for page_value in (getattr(chunk, "page_start", None), getattr(chunk, "page_end", None)):
+        for page_value in (
+            getattr(chunk, "page_start", None),
+            getattr(chunk, "page_end", None),
+        ):
             if isinstance(page_value, int):
                 page_numbers.append(page_value)
 

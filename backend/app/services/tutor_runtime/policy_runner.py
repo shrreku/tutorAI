@@ -10,11 +10,12 @@ from app.services.tutor_runtime.step_state import build_curriculum_slice, get_st
 
 
 class PolicyAgentProtocol(Protocol):
-    async def decide(self, state: PolicyState) -> PolicyOrchestratorOutput:
-        ...
+    async def decide(self, state: PolicyState) -> PolicyOrchestratorOutput: ...
 
 
-def _dump_evaluation_result(value: EvaluatorOutput | dict[str, Any] | None) -> dict[str, Any] | None:
+def _dump_evaluation_result(
+    value: EvaluatorOutput | dict[str, Any] | None,
+) -> dict[str, Any] | None:
     if value is None:
         return None
     if hasattr(value, "model_dump"):
@@ -127,7 +128,9 @@ async def run_policy(
                     "skip_target_index": getattr(
                         policy_output, "skip_target_index", None
                     ),
-                    "ad_hoc_step_type": getattr(policy_output, "ad_hoc_step_type", None),
+                    "ad_hoc_step_type": getattr(
+                        policy_output, "ad_hoc_step_type", None
+                    ),
                 }
             )
     finally:

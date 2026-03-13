@@ -3,6 +3,7 @@
 Unit tests only (no real database): we monkeypatch repositories and SQLAlchemy
 sessions so these run entirely in-process and are fast.
 """
+
 import asyncio
 from types import SimpleNamespace
 from uuid import uuid4
@@ -20,8 +21,10 @@ from app.models.alpha import AlphaAccessRequest
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 class _DummyDb:
     """Minimal async session stub."""
+
     def __init__(self, execute_return=None):
         self._added = []
         self._execute_return = execute_return
@@ -42,6 +45,7 @@ class _DummyDb:
 
 class _ScalarResult:
     """Minimal row-result stub for .scalar_one_or_none()."""
+
     def __init__(self, value):
         self._value = value
 
@@ -52,6 +56,7 @@ class _ScalarResult:
 # ---------------------------------------------------------------------------
 # request-access endpoint tests
 # ---------------------------------------------------------------------------
+
 
 def test_request_access_queues_pending_when_alpha_disabled(monkeypatch):
     """When ALPHA_ACCESS_ENABLED is False the endpoint still queues a request."""
@@ -120,7 +125,9 @@ def test_request_access_treats_invalid_promo_as_pending(monkeypatch):
 
 def test_request_access_is_idempotent_for_existing_email(monkeypatch):
     """If the email already exists we must NOT add a second row."""
-    existing = AlphaAccessRequest(email="dup@example.com", display_name="Dup", status="pending")
+    existing = AlphaAccessRequest(
+        email="dup@example.com", display_name="Dup", status="pending"
+    )
     db = _DummyDb(execute_return=_ScalarResult(existing))
 
     resp = asyncio.run(
@@ -141,6 +148,7 @@ def test_request_access_is_idempotent_for_existing_email(monkeypatch):
 # ---------------------------------------------------------------------------
 # register — alpha gate ON
 # ---------------------------------------------------------------------------
+
 
 def _make_register_patches(monkeypatch, *, existing_user=None, alpha_request=None):
     """Set up monkeypatches for the register endpoint."""
@@ -350,6 +358,7 @@ def test_register_open_when_alpha_disabled(monkeypatch):
 # AlphaAccessRequest model helpers
 # ---------------------------------------------------------------------------
 
+
 def test_invite_token_generation_is_unique():
     tokens = {AlphaAccessRequest.generate_token() for _ in range(20)}
     assert len(tokens) == 20  # all unique
@@ -357,14 +366,16 @@ def test_invite_token_generation_is_unique():
 
 def test_invite_token_is_url_safe():
     import re
+
     token = AlphaAccessRequest.generate_token()
-    assert re.match(r'^[A-Za-z0-9_\-]+$', token)
+    assert re.match(r"^[A-Za-z0-9_\-]+$", token)
     assert len(token) >= 40
 
 
 # ---------------------------------------------------------------------------
 # Billing admin approve/reject endpoint tests
 # ---------------------------------------------------------------------------
+
 
 def test_admin_approve_sets_token_and_calls_email(monkeypatch):
     req_id = str(uuid4())
@@ -379,6 +390,7 @@ def test_admin_approve_sets_token_and_calls_email(monkeypatch):
     alpha_req.promo_code_used = None
     alpha_req.notes = None
     from datetime import datetime, timezone
+
     alpha_req.created_at = datetime.now(timezone.utc)
 
     emails_sent = []
@@ -415,6 +427,7 @@ def test_admin_approve_rejects_already_approved(monkeypatch):
     )
     alpha_req.id = uuid4()
     from datetime import datetime, timezone
+
     alpha_req.created_at = datetime.now(timezone.utc)
 
     monkeypatch.setattr(billing_module, "send_email", lambda *a, **kw: None)
@@ -444,6 +457,7 @@ def test_admin_reject_sets_status(monkeypatch):
     alpha_req.promo_code_used = None
     alpha_req.notes = None
     from datetime import datetime, timezone
+
     alpha_req.created_at = datetime.now(timezone.utc)
 
     db = _DummyDb(execute_return=_ScalarResult(alpha_req))
@@ -484,11 +498,17 @@ def test_admin_approve_returns_404_for_missing_request(monkeypatch):
 # Email service tests
 # ---------------------------------------------------------------------------
 
+
 def test_build_alpha_invite_email_contains_token(monkeypatch):
-    monkeypatch.setattr(settings, "APP_BASE_URL", "https://app.example.com", raising=False)
-    monkeypatch.setattr(settings, "RESEND_FROM_EMAIL", "test@example.com", raising=False)
+    monkeypatch.setattr(
+        settings, "APP_BASE_URL", "https://app.example.com", raising=False
+    )
+    monkeypatch.setattr(
+        settings, "RESEND_FROM_EMAIL", "test@example.com", raising=False
+    )
 
     from app.services.email import build_alpha_invite_email
+
     subject, html = build_alpha_invite_email("Alice", "tok-abc")
 
     assert "Alice" in html
@@ -501,6 +521,7 @@ def test_send_email_skips_when_no_api_key(monkeypatch):
     monkeypatch.setattr(settings, "RESEND_API_KEY", "", raising=False)
 
     from app.services.email import send_email
+
     result = asyncio.run(send_email("x@y.com", "Hi", "<p>Hi</p>"))
     assert result is False
 
@@ -508,6 +529,7 @@ def test_send_email_skips_when_no_api_key(monkeypatch):
 # ---------------------------------------------------------------------------
 # Signup grant amount
 # ---------------------------------------------------------------------------
+
 
 def test_signup_grant_uses_credits_signup_grant_setting(monkeypatch):
     """Verify meter issues CREDITS_SIGNUP_GRANT credits, not CREDITS_DEFAULT_MONTHLY_GRANT."""

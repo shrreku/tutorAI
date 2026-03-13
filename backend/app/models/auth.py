@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Boolean, DateTime, func, ForeignKey
+from sqlalchemy import String, Boolean, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,6 +11,7 @@ from app.models.base import Base, UUIDMixin, TimestampMixin
 
 class ApiKey(Base, UUIDMixin, TimestampMixin):
     """API keys for programmatic access."""
+
     __tablename__ = "api_key"
 
     user_id: Mapped[uuid.UUID] = mapped_column(

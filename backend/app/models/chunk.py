@@ -1,9 +1,8 @@
 import uuid
-from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import String, Text, Integer, Float, ForeignKey, Index, UniqueConstraint
+from sqlalchemy import String, Text, Integer, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,6 +14,7 @@ if TYPE_CHECKING:
 
 class Chunk(Base, UUIDMixin, TimestampMixin):
     """A semantically coherent text segment from a resource."""
+
     __tablename__ = "chunk"
 
     resource_id: Mapped[uuid.UUID] = mapped_column(
@@ -38,7 +38,9 @@ class Chunk(Base, UUIDMixin, TimestampMixin):
     )
     embedding: Mapped[Optional[list]] = mapped_column(Vector(384), nullable=True)
     enrichment_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    embedding_model_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    embedding_model_id: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True
+    )
 
     # Relationships
     resource: Mapped["Resource"] = relationship("Resource", back_populates="chunks")
@@ -51,6 +53,7 @@ class Chunk(Base, UUIDMixin, TimestampMixin):
 
 class ChunkConcept(Base):
     """Direct links between chunks and concept IDs."""
+
     __tablename__ = "chunk_concept"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -74,6 +77,7 @@ class ChunkConcept(Base):
 
 class Formula(Base, UUIDMixin, TimestampMixin):
     """Extracted formulas/equations from resources."""
+
     __tablename__ = "formula"
 
     resource_id: Mapped[uuid.UUID] = mapped_column(

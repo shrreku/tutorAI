@@ -1,9 +1,19 @@
 import uuid
 from datetime import datetime
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional, List
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import String, Text, Integer, Float, Boolean, ForeignKey, Index, UniqueConstraint, DateTime, func
+from sqlalchemy import (
+    String,
+    Text,
+    Integer,
+    Float,
+    Boolean,
+    ForeignKey,
+    UniqueConstraint,
+    DateTime,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -12,9 +22,12 @@ from app.models.base import Base, UUIDMixin, TimestampMixin
 
 class UserProfile(Base, UUIDMixin, TimestampMixin):
     """User traits and global mastery."""
+
     __tablename__ = "user_profile"
 
-    external_id: Mapped[Optional[str]] = mapped_column(String(256), nullable=True, unique=True)
+    external_id: Mapped[Optional[str]] = mapped_column(
+        String(256), nullable=True, unique=True
+    )
     display_name: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
     email: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     password_hash: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
@@ -32,6 +45,7 @@ class UserProfile(Base, UUIDMixin, TimestampMixin):
 
 class UserSession(Base, UUIDMixin, TimestampMixin):
     """Session state for tutoring."""
+
     __tablename__ = "user_session"
 
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -48,7 +62,9 @@ class UserSession(Base, UUIDMixin, TimestampMixin):
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     consent_training: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False,
+        Boolean,
+        default=False,
+        nullable=False,
         doc="Explicit user opt-in for training-data usage",
     )
     plan_state: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
@@ -59,7 +75,9 @@ class UserSession(Base, UUIDMixin, TimestampMixin):
         server_default=func.now(),
         nullable=False,
     )
-    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Relationships
     user: Mapped["UserProfile"] = relationship("UserProfile", back_populates="sessions")
@@ -72,6 +90,7 @@ class UserSession(Base, UUIDMixin, TimestampMixin):
 
 class TutorTurn(Base, UUIDMixin, TimestampMixin):
     """A durable turn log suitable for offline training/evaluation."""
+
     __tablename__ = "tutor_turn"
 
     session_id: Mapped[uuid.UUID] = mapped_column(
@@ -81,14 +100,14 @@ class TutorTurn(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
     turn_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    
+
     # Student input
     student_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
+
     # Tutor output
     tutor_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     tutor_question: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
+
     # Curriculum context
     current_step_index: Mapped[Optional[int]] = mapped_column(
         "curriculum_phase_index",
@@ -99,21 +118,25 @@ class TutorTurn(Base, UUIDMixin, TimestampMixin):
     target_concepts: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     pedagogical_action: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     progression_decision: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    
+
     # Full agent outputs
     policy_output: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     evaluator_output: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     retrieved_chunks: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    
+
     # Mastery tracking
     mastery_before: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     mastery_after: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    
+
     # RL fields
     rl_reward: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    rl_state_embedding: Mapped[Optional[list]] = mapped_column(Vector(384), nullable=True)
-    rl_action_embedding: Mapped[Optional[list]] = mapped_column(Vector(384), nullable=True)
-    
+    rl_state_embedding: Mapped[Optional[list]] = mapped_column(
+        Vector(384), nullable=True
+    )
+    rl_action_embedding: Mapped[Optional[list]] = mapped_column(
+        Vector(384), nullable=True
+    )
+
     # Performance tracking
     token_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -122,5 +145,7 @@ class TutorTurn(Base, UUIDMixin, TimestampMixin):
     session: Mapped["UserSession"] = relationship("UserSession", back_populates="turns")
 
     __table_args__ = (
-        UniqueConstraint("session_id", "turn_index", name="uq_tutor_turn_session_index"),
+        UniqueConstraint(
+            "session_id", "turn_index", name="uq_tutor_turn_session_index"
+        ),
     )

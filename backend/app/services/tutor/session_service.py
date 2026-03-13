@@ -3,6 +3,7 @@ Session Service - TICKET-028
 
 Handles session creation and management.
 """
+
 import logging
 import uuid
 from typing import Optional
@@ -78,7 +79,7 @@ def _build_session_overview(objective_queue: list[dict]) -> str:
     titles = [obj.get("title", "Untitled") for obj in objective_queue]
     return (
         f"Welcome! In this session we will cover {len(objective_queue)} learning objective(s): "
-        + "; ".join(f"{i+1}) {title}" for i, title in enumerate(titles))
+        + "; ".join(f"{i + 1}) {title}" for i, title in enumerate(titles))
         + ". Let's get started!"
     )
 
@@ -136,7 +137,9 @@ def _build_doubt_fallback_plan(*, topic_label: str) -> dict:
     }
 
 
-def _mode_session_overview(mode: str, objective_queue: list[dict], active_topic: Optional[str]) -> str:
+def _mode_session_overview(
+    mode: str, objective_queue: list[dict], active_topic: Optional[str]
+) -> str:
     normalized = _normalize_session_mode(mode)
     topic_label = active_topic or "this material"
     if normalized == "doubt":
@@ -201,7 +204,11 @@ def _align_roadmap_to_mode(mode: str, roadmap: list[dict]) -> list[dict]:
             current["max_turns"] = min(int(current.get("max_turns", 2) or 2), 2)
 
         current["type"] = step_type
-        if index == 0 and normalized in {"practice", "revision"} and step_type == "assess":
+        if (
+            index == 0
+            and normalized in {"practice", "revision"}
+            and step_type == "assess"
+        ):
             current["can_skip"] = False
         aligned.append(current)
 
@@ -215,7 +222,9 @@ def _opening_step_goal(step_type: str, topic_label: str) -> str:
         "practice": f"Get the learner attempting a task on {topic_label} immediately.",
         "summarize": f"Condense the key ideas in {topic_label} before testing recall.",
     }
-    return goals.get(step_type, f"Open the session with a focused step on {topic_label}.")
+    return goals.get(
+        step_type, f"Open the session with a focused step on {topic_label}."
+    )
 
 
 def _ensure_opening_step(
@@ -235,16 +244,20 @@ def _ensure_opening_step(
 
     first_step = dict(roadmap[0] or {})
     first_step["type"] = opening_step_type
-    first_step["target_concepts"] = target_concepts or first_step.get("target_concepts", [])
+    first_step["target_concepts"] = target_concepts or first_step.get(
+        "target_concepts", []
+    )
     first_step["can_skip"] = False
     first_step["max_turns"] = 1
-    first_step["goal"] = _opening_step_goal(opening_step_type, topic_label or "this topic")
+    first_step["goal"] = _opening_step_goal(
+        opening_step_type, topic_label or "this topic"
+    )
     return [first_step, *roadmap]
 
 
 class SessionService:
     """Manages tutoring session lifecycle."""
-    
+
     def __init__(
         self,
         db_session: AsyncSession,
@@ -252,7 +265,7 @@ class SessionService:
     ):
         self.db = db_session
         self.curriculum = curriculum_agent
-    
+
     async def create_session(
         self,
         resource_id: uuid.UUID,
@@ -265,12 +278,12 @@ class SessionService:
     ) -> UserSession:
         """
         Create a new tutoring session.
-        
+
         Args:
             resource_id: UUID of the ingested resource
             user_id: Optional user ID
             topic: Optional topic focus
-        
+
         Returns:
             Created UserSession
         """
@@ -278,16 +291,18 @@ class SessionService:
         resource = await self._get_resource(resource_id)
         if not resource:
             raise ValueError(f"Resource {resource_id} not found")
-        
+
         if resource.status != "ready" and resource.status != "completed":
-            raise ValueError(f"Resource {resource_id} is not ready (status: {resource.status})")
-        
+            raise ValueError(
+                f"Resource {resource_id} is not ready (status: {resource.status})"
+            )
+
         # Get or create user
         if user_id:
             user = await self._get_user(user_id)
         else:
             user = await self._get_or_create_default_user()
-        
+
         session_mode = _normalize_session_mode(mode)
         mode_contract = _mode_session_contract(session_mode)
 
@@ -297,7 +312,9 @@ class SessionService:
             existing = await self._get_active_session(user.id, resource_id)
         if existing:
             existing_version = (existing.plan_state or {}).get("version")
-            existing_mode = _normalize_session_mode((existing.plan_state or {}).get("mode"))
+            existing_mode = _normalize_session_mode(
+                (existing.plan_state or {}).get("mode")
+            )
             if existing_version in (None, 3) and existing_mode == session_mode:
                 await self.db.refresh(existing)
                 setattr(existing, "_reused_existing", True)
@@ -312,7 +329,7 @@ class SessionService:
                 existing.id,
                 existing_version,
             )
-        
+
         # Get concepts for resource
         concepts = await self._get_concepts(resource_id)
         if not concepts and session_mode != "doubt":
@@ -320,7 +337,7 @@ class SessionService:
                 f"Resource {resource_id} is marked {resource.status} but has no admitted concepts yet. "
                 "Tutoring sessions cannot start until concept extraction/enrichment succeeds."
             )
-        
+
         if concepts:
             plan_output = await self.curriculum.generate_plan(
                 resource_id=resource_id,
@@ -329,8 +346,10 @@ class SessionService:
                 mode=session_mode,
             )
         else:
-            plan_output = _build_doubt_fallback_plan(topic_label=topic or resource.topic or "this document")
-        
+            plan_output = _build_doubt_fallback_plan(
+                topic_label=topic or resource.topic or "this document"
+            )
+
         # Build initial plan state
         objective_queue = plan_output.get("objective_queue", [])
         for index, obj in enumerate(objective_queue):
@@ -339,9 +358,9 @@ class SessionService:
             if index == 0 and aligned_roadmap:
                 scope = obj.get("concept_scope", {})
                 opening_targets = (
-                    scope.get("primary", []) +
-                    scope.get("support", []) +
-                    scope.get("prereq", [])
+                    scope.get("primary", [])
+                    + scope.get("support", [])
+                    + scope.get("prereq", [])
                 )[:5]
                 aligned_roadmap = _ensure_opening_step(
                     aligned_roadmap,
@@ -354,8 +373,10 @@ class SessionService:
         first_roadmap = get_step_roadmap(first_obj)
         first_step = first_roadmap[0] if first_roadmap else {}
         active_topic = plan_output.get("active_topic", topic or resource.topic)
-        session_overview = _mode_session_overview(session_mode, objective_queue, active_topic)
-        
+        session_overview = _mode_session_overview(
+            session_mode, objective_queue, active_topic
+        )
+
         plan_state = {
             "version": 3,
             "mode": session_mode,
@@ -382,23 +403,29 @@ class SessionService:
                 for i, obj in enumerate(objective_queue)
             },
             "focus_concepts": (
-                first_obj.get("concept_scope", {}).get("primary", []) +
-                first_obj.get("concept_scope", {}).get("support", [])
+                first_obj.get("concept_scope", {}).get("primary", [])
+                + first_obj.get("concept_scope", {}).get("support", [])
             )[:5],
             "session_overview": session_overview,
         }
-        
+
         # Initialize mastery (all discovered concepts at 0)
         initial_mastery = {c: 0.0 for c in concepts}
 
         # Ensure all objective concepts are tracked even if not in concept stats yet.
         for obj in objective_queue:
             scope = obj.get("concept_scope", {})
-            for concept_id in scope.get("primary", []) + scope.get("support", []) + scope.get("prereq", []):
+            for concept_id in (
+                scope.get("primary", [])
+                + scope.get("support", [])
+                + scope.get("prereq", [])
+            ):
                 initial_mastery.setdefault(concept_id, 0.0)
 
-        plan_state["student_concept_state"] = build_student_concept_state(initial_mastery)
-        
+        plan_state["student_concept_state"] = build_student_concept_state(
+            initial_mastery
+        )
+
         # Create session
         session = UserSession(
             user_id=user.id,
@@ -408,7 +435,7 @@ class SessionService:
             mastery=initial_mastery,
             plan_state=plan_state,
         )
-        
+
         self.db.add(session)
 
         # Persist a tutor-only bootstrap turn so the UI can immediately render
@@ -436,51 +463,51 @@ class SessionService:
 
         await self.db.commit()
         await self.db.refresh(session)
-        
+
         logger.info(f"Created session {session.id} for resource {resource_id}")
         setattr(session, "_reused_existing", False)
         return session
-    
+
     async def get_session(self, session_id: uuid.UUID) -> Optional[UserSession]:
         """Get session by ID."""
         result = await self.db.execute(
             select(UserSession).where(UserSession.id == session_id)
         )
         return result.scalar_one_or_none()
-    
+
     async def end_session(self, session_id: uuid.UUID) -> UserSession:
         """End an active session."""
         session = await self.get_session(session_id)
         if not session:
             raise ValueError(f"Session {session_id} not found")
-        
+
         session.status = "completed"
         await self.db.commit()
         await self.db.refresh(session)
-        
+
         return session
-    
+
     async def _get_resource(self, resource_id: uuid.UUID) -> Optional[Resource]:
         """Get resource by ID."""
         result = await self.db.execute(
             select(Resource).where(Resource.id == resource_id)
         )
         return result.scalar_one_or_none()
-    
+
     async def _get_user(self, user_id: uuid.UUID) -> Optional[UserProfile]:
         """Get user by ID."""
         result = await self.db.execute(
             select(UserProfile).where(UserProfile.id == user_id)
         )
         return result.scalar_one_or_none()
-    
+
     async def _get_or_create_default_user(self) -> UserProfile:
         """Get or create default anonymous user."""
         result = await self.db.execute(
             select(UserProfile).where(UserProfile.email == "default@studyagent.local")
         )
         user = result.scalar_one_or_none()
-        
+
         if not user:
             user = UserProfile(
                 email="default@studyagent.local",
@@ -489,9 +516,9 @@ class SessionService:
             self.db.add(user)
             await self.db.commit()
             await self.db.refresh(user)
-        
+
         return user
-    
+
     async def _get_active_session(
         self,
         user_id: uuid.UUID,
@@ -519,11 +546,12 @@ class SessionService:
             )
 
         return active_sessions[0]
-    
+
     async def _get_concepts(self, resource_id: uuid.UUID) -> list[str]:
         """Get admitted concepts for resource."""
         result = await self.db.execute(
-            select(ResourceConceptStats.concept_id)
-            .where(ResourceConceptStats.resource_id == resource_id)
+            select(ResourceConceptStats.concept_id).where(
+                ResourceConceptStats.resource_id == resource_id
+            )
         )
         return [row[0] for row in result.fetchall()]

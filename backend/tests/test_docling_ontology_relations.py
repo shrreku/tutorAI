@@ -2,7 +2,10 @@ import asyncio
 import uuid
 from types import SimpleNamespace
 
-from app.services.ingestion.graph_builder import ConceptGraphBuilder, _score_ontology_relation
+from app.services.ingestion.graph_builder import (
+    ConceptGraphBuilder,
+    _score_ontology_relation,
+)
 from app.services.ingestion.kb_builder import ResourceKBBuilder
 from app.services.ingestion.ontology_extractor import OntologyExtractor
 from app.services.ingestion.ontology_schemas import OntologyWindowResponse
@@ -35,7 +38,9 @@ def test_ontology_relation_scoring_boosts_confidence_with_evidence_fields():
     assert all(score_details["evidence_fields"].values())
 
 
-def test_graph_builder_seeds_ontology_relation_edges_with_evidence_weighting(monkeypatch):
+def test_graph_builder_seeds_ontology_relation_edges_with_evidence_weighting(
+    monkeypatch,
+):
     db = _FakeDB()
     builder = ConceptGraphBuilder(db)
 
@@ -62,8 +67,12 @@ def test_graph_builder_seeds_ontology_relation_edges_with_evidence_weighting(mon
         return {}
 
     monkeypatch.setattr(ConceptGraphBuilder, "_get_evidence", _fake_get_evidence)
-    monkeypatch.setattr(ConceptGraphBuilder, "_get_chunks_with_enrichment", _fake_get_chunks)
-    monkeypatch.setattr(ConceptGraphBuilder, "_get_prereq_lookup", _fake_get_prereq_lookup)
+    monkeypatch.setattr(
+        ConceptGraphBuilder, "_get_chunks_with_enrichment", _fake_get_chunks
+    )
+    monkeypatch.setattr(
+        ConceptGraphBuilder, "_get_prereq_lookup", _fake_get_prereq_lookup
+    )
 
     result = asyncio.run(
         builder.build(
@@ -136,7 +145,10 @@ def test_ontology_merge_dedups_semantic_relations_with_evidence_scope():
     merged = asyncio.run(extractor._merge_results([w1, w2], sections=[]))
 
     assert len(merged.semantic_relations) == 2
-    assert {r["relation_type"] for r in merged.semantic_relations} == {"REQUIRES", "PART_OF"}
+    assert {r["relation_type"] for r in merged.semantic_relations} == {
+        "REQUIRES",
+        "PART_OF",
+    }
 
 
 def test_kb_builder_prereq_hints_include_ontology_relation_evidence():

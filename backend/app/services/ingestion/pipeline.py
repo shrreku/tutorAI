@@ -4,6 +4,7 @@ Upload-time ingestion now stops once a resource is parsed, chunked, embedded,
 and persisted for retrieval. Heavier enrichment and knowledge preparation are
 deferred to later job families.
 """
+
 import logging
 import tempfile
 import uuid
@@ -25,7 +26,10 @@ from app.db.repositories.resource_artifact_repo import ResourceArtifactRepositor
 from app.services.llm.base import BaseLLMProvider
 from app.services.embedding.base import BaseEmbeddingProvider
 from app.services.storage.base import StorageProvider
-from app.services.ingestion.docling_adapter import DoclingAdapter, DoclingConversionResult
+from app.services.ingestion.docling_adapter import (
+    DoclingAdapter,
+    DoclingConversionResult,
+)
 from app.services.ingestion.docling_chunker import DoclingChunker, DoclingChunkingResult
 from app.services.ingestion.ingestion_types import ChunkData, token_len
 from app.services.ingestion.resource_profile import build_resource_profile
@@ -53,7 +57,7 @@ class IngestionStage(str, Enum):
 
 class IngestionPipeline:
     """Orchestrates the core upload-time ingestion pipeline."""
-    
+
     def __init__(
         self,
         db_session: AsyncSession,
@@ -65,7 +69,7 @@ class IngestionPipeline:
         self.llm = llm_provider
         self.embedding = embedding_provider
         self.storage = storage_provider
-        
+
         self.docling_adapter = DoclingAdapter()
         self.docling_chunker = DoclingChunker(
             embedding_model_id=embedding_provider.model_id,
@@ -109,7 +113,9 @@ class IngestionPipeline:
             return metrics
 
         current_job = await get_record(IngestionJob, job_id)
-        current_metrics = getattr(current_job, "metrics", None) if current_job is not None else None
+        current_metrics = (
+            getattr(current_job, "metrics", None) if current_job is not None else None
+        )
         if not isinstance(current_metrics, dict):
             return metrics
 
@@ -117,7 +123,7 @@ class IngestionPipeline:
             **current_metrics,
             **metrics,
         }
-    
+
     @observe(name="ingestion-pipeline", capture_input=False)
     async def run(
         self,
@@ -126,11 +132,11 @@ class IngestionPipeline:
     ) -> dict:
         """
         Run the core upload-time ingestion pipeline for a resource.
-        
+
         Args:
             resource_id: UUID of the resource to ingest
             job_id: Optional job ID for tracking progress
-            
+
         Returns:
             Dict with pipeline results and metrics
         """
@@ -139,19 +145,19 @@ class IngestionPipeline:
             "started_at": datetime.now(timezone.utc).isoformat(),
             "stages": {},
         }
-        
+
         try:
             # Update job status
             await self._update_job_stage(job_id, IngestionStage.PARSE, 0)
-            
+
             # Get resource
             resource = await self._get_resource(resource_id)
             if not resource:
                 raise ValueError(f"Resource {resource_id} not found")
-            
+
             if not resource.file_path_or_uri:
                 raise ValueError(f"Resource {resource_id} has no file path")
-            
+
             # Stage 1: Parse PDF
             logger.info(f"Stage 1: Parsing PDF for resource {resource_id}")
             parse_result = await self._run_parse_stage(resource)
@@ -168,9 +174,9 @@ class IngestionPipeline:
                     resource_id,
                     "; ".join(parse_result.warnings),
                 )
-            
+
             await self._update_job_stage(job_id, IngestionStage.CHUNK, 25)
-            
+
             # Stage 2: Chunk text
             logger.info(f"Stage 2: Chunking text for resource {resource_id}")
             chunking_result = await self._run_chunk_stage(parse_result)
@@ -179,7 +185,9 @@ class IngestionPipeline:
             metrics["stages"]["chunk"] = {
                 "chunks": len(chunks),
                 "strategy": chunking_result.strategy,
-                "embedding_strategy": chunking_result.metadata.get("embedding_strategy"),
+                "embedding_strategy": chunking_result.metadata.get(
+                    "embedding_strategy"
+                ),
             }
             metrics["document"] = document_metrics
 
@@ -190,12 +198,12 @@ class IngestionPipeline:
                 55,
                 metrics=chunk_metrics,
             )
-            
+
             # Stage 3: Embed chunks
             logger.info(f"Stage 3: Embedding chunks for resource {resource_id}")
             embeddings = await self._run_embed_stage(chunks)
             metrics["stages"]["embed"] = {"embeddings": len(embeddings)}
-            
+
             await self._update_job_stage(job_id, IngestionStage.PERSIST, 80)
 
             enrichments = self._build_lightweight_enrichments(chunks)
@@ -268,13 +276,15 @@ class IngestionPipeline:
             commit = getattr(self.db, "commit", None)
             if callable(commit):
                 await commit()
-            
-            logger.info(f"Core ingestion completed successfully for resource {resource_id}")
+
+            logger.info(
+                f"Core ingestion completed successfully for resource {resource_id}"
+            )
             return metrics
-            
+
         except Exception as e:
             logger.error(f"Pipeline failed for resource {resource_id}: {e}")
-            
+
             # Update statuses on failure
             await update_resource_status(
                 self.db,
@@ -283,7 +293,7 @@ class IngestionPipeline:
                 PIPELINE_VERSION,
                 str(e),
             )
-            
+
             metrics["completed_at"] = datetime.now(timezone.utc).isoformat()
             metrics["status"] = "failed"
             metrics["error"] = str(e)
@@ -303,7 +313,7 @@ class IngestionPipeline:
             commit = getattr(self.db, "commit", None)
             if callable(commit):
                 await commit()
-            
+
             raise
 
     def _build_document_metrics(
@@ -313,17 +323,25 @@ class IngestionPipeline:
     ) -> dict:
         page_numbers: set[int] = set()
         for item in parse_result.sections:
-            if item.page_start is not None:
-                page_numbers.add(item.page_start)
-            if item.page_end is not None:
-                page_numbers.add(item.page_end)
+            if isinstance(item, dict):
+                page_start = item.get("page_start")
+                page_end = item.get("page_end")
+            else:
+                page_start = getattr(item, "page_start", None)
+                page_end = getattr(item, "page_end", None)
+            if page_start is not None:
+                page_numbers.add(page_start)
+            if page_end is not None:
+                page_numbers.add(page_end)
         for chunk in chunks:
             if chunk.page_start is not None:
                 page_numbers.add(chunk.page_start)
             if chunk.page_end is not None:
                 page_numbers.add(chunk.page_end)
 
-        docling_pages = ((parse_result.metadata or {}).get("docling") or {}).get("pages")
+        docling_pages = ((parse_result.metadata or {}).get("docling") or {}).get(
+            "pages"
+        )
         if isinstance(docling_pages, list):
             page_count_actual = max(len(docling_pages), len(page_numbers))
         else:
@@ -336,14 +354,14 @@ class IngestionPipeline:
             "chunk_count_actual": len(chunks),
             "token_count_actual": token_count_actual,
         }
-    
+
     async def _get_resource(self, resource_id: uuid.UUID) -> Optional[Resource]:
         """Get resource by ID."""
         result = await self.db.execute(
             select(Resource).where(Resource.id == resource_id)
         )
         return result.scalar_one_or_none()
-    
+
     async def _run_parse_stage(self, resource: Resource) -> DoclingConversionResult:
         """Convert source file with Docling and normalize extracted sections."""
         if not resource.file_path_or_uri:
@@ -356,7 +374,9 @@ class IngestionPipeline:
             parsed = urlparse(source)
             if parsed.scheme == "s3":
                 file_bytes = await self.storage.open_file(source)
-                suffix = Path(parsed.path).suffix or Path(resource.filename or "").suffix
+                suffix = (
+                    Path(parsed.path).suffix or Path(resource.filename or "").suffix
+                )
                 with tempfile.NamedTemporaryFile(
                     prefix="studyagent-ingest-",
                     suffix=suffix,
@@ -372,20 +392,24 @@ class IngestionPipeline:
                 try:
                     temp_path.unlink(missing_ok=True)
                 except OSError as exc:
-                    logger.warning("Failed to clean up temp ingestion file %s: %s", temp_path, exc)
+                    logger.warning(
+                        "Failed to clean up temp ingestion file %s: %s", temp_path, exc
+                    )
 
         if not conversion.sections:
             raise ValueError("Docling conversion produced no extractable sections")
         return conversion
-    
-    async def _run_chunk_stage(self, parse_result: DoclingConversionResult) -> DoclingChunkingResult:
+
+    async def _run_chunk_stage(
+        self, parse_result: DoclingConversionResult
+    ) -> DoclingChunkingResult:
         """Chunk converted Docling document with HybridChunker default."""
         chunking_result = self.docling_chunker.chunk(
             docling_document=parse_result.docling_document,
             sections=parse_result.sections,
         )
         return chunking_result
-    
+
     async def _run_embed_stage(self, chunks: list[ChunkData]) -> list[list[float]]:
         """Generate embeddings for chunks."""
         texts = [chunk.text for chunk in chunks]
@@ -457,7 +481,7 @@ class IngestionPipeline:
                 }
             )
         return enrichments
-    
+
     async def _save_chunks(
         self,
         resource_id: uuid.UUID,
@@ -470,7 +494,9 @@ class IngestionPipeline:
         """Save chunks and their enrichments to database."""
         from app.services.ingestion.docling_adapter import DoclingAdapter
 
-        for i, (chunk, embedding, enrichment) in enumerate(zip(chunks, embeddings, enrichments)):
+        for i, (chunk, embedding, enrichment) in enumerate(
+            zip(chunks, embeddings, enrichments)
+        ):
             enrichment_payload = dict(enrichment)
             enrichment_payload["docling"] = {
                 "chunk_provenance": chunk.metadata,
@@ -494,22 +520,26 @@ class IngestionPipeline:
                 embedding_model_id=self.embedding.model_id,
             )
             self.db.add(db_chunk)
-            
+
             # Add chunk concepts
             for concept in enrichment.get("concepts_taught", []):
-                self.db.add(ChunkConcept(
-                    chunk_id=db_chunk.id,
-                    concept_id=concept,
-                    role="teaches",
-                ))
-            
+                self.db.add(
+                    ChunkConcept(
+                        chunk_id=db_chunk.id,
+                        concept_id=concept,
+                        role="teaches",
+                    )
+                )
+
             for concept in enrichment.get("concepts_mentioned", []):
-                self.db.add(ChunkConcept(
-                    chunk_id=db_chunk.id,
-                    concept_id=concept,
-                    role="mentions",
-                ))
-        
+                self.db.add(
+                    ChunkConcept(
+                        chunk_id=db_chunk.id,
+                        concept_id=concept,
+                        role="mentions",
+                    )
+                )
+
         await self.db.flush()
 
     async def _persist_core_artifacts(
@@ -561,4 +591,3 @@ class IngestionPipeline:
         resource.capabilities_json = capabilities
         await self.db.flush()
         return 1
-    

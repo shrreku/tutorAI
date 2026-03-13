@@ -7,10 +7,10 @@ equal ``SUM(delta)`` over all ledger entries for that account.
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.credits import (
@@ -80,7 +80,9 @@ class CreditAccountRepository:
             )
             found = existing.scalar_one_or_none()
             if found:
-                logger.info("Idempotent ledger entry already exists: %s", idempotency_key)
+                logger.info(
+                    "Idempotent ledger entry already exists: %s", idempotency_key
+                )
                 return found
 
         new_balance = account.balance + delta
@@ -187,7 +189,9 @@ class CreditAccountRepository:
             account,
             "reserve",
             -estimated_credits,
-            idempotency_key=f"reserve:{reference_type}:{reference_id}" if reference_id else None,
+            idempotency_key=f"reserve:{reference_type}:{reference_id}"
+            if reference_id
+            else None,
             reference_type=reference_type,
             reference_id=reference_id,
         )
@@ -214,7 +218,9 @@ class CreditAccountRepository:
                 account,
                 "release",
                 abs(diff),
-                idempotency_key=f"release:{reference_type}:{reference_id}" if reference_id else None,
+                idempotency_key=f"release:{reference_type}:{reference_id}"
+                if reference_id
+                else None,
                 reference_type=reference_type,
                 reference_id=reference_id,
                 metadata={"reserved": reserved_credits, "actual": actual_credits},
@@ -225,7 +231,9 @@ class CreditAccountRepository:
                 account,
                 "debit",
                 -diff,
-                idempotency_key=f"debit_extra:{reference_type}:{reference_id}" if reference_id else None,
+                idempotency_key=f"debit_extra:{reference_type}:{reference_id}"
+                if reference_id
+                else None,
                 reference_type=reference_type,
                 reference_id=reference_id,
                 metadata={"reserved": reserved_credits, "actual": actual_credits},
@@ -236,7 +244,9 @@ class CreditAccountRepository:
             account,
             "debit",
             0,  # balance already adjusted via reserve/release
-            idempotency_key=f"debit:{reference_type}:{reference_id}" if reference_id else None,
+            idempotency_key=f"debit:{reference_type}:{reference_id}"
+            if reference_id
+            else None,
             reference_type=reference_type,
             reference_id=reference_id,
             metadata={
@@ -259,7 +269,9 @@ class CreditAccountRepository:
             account,
             "release",
             reserved_credits,
-            idempotency_key=f"release_full:{reference_type}:{reference_id}" if reference_id else None,
+            idempotency_key=f"release_full:{reference_type}:{reference_id}"
+            if reference_id
+            else None,
             reference_type=reference_type,
             reference_id=reference_id,
         )
@@ -313,7 +325,7 @@ class CreditAccountRepository:
         result = await self.db.execute(
             select(ModelMultiplier).where(
                 ModelMultiplier.model_id == model_id,
-                ModelMultiplier.is_active == True,
+                ModelMultiplier.is_active,
             )
         )
         return result.scalar_one_or_none()
@@ -331,8 +343,16 @@ class CreditAccountRepository:
         from app.config import settings
 
         multiplier = await self.get_model_multiplier(model_id)
-        input_mult = multiplier.input_multiplier if multiplier else settings.CREDITS_INPUT_TOKEN_MULTIPLIER
-        output_mult = multiplier.output_multiplier if multiplier else settings.CREDITS_OUTPUT_TOKEN_MULTIPLIER
+        input_mult = (
+            multiplier.input_multiplier
+            if multiplier
+            else settings.CREDITS_INPUT_TOKEN_MULTIPLIER
+        )
+        output_mult = (
+            multiplier.output_multiplier
+            if multiplier
+            else settings.CREDITS_OUTPUT_TOKEN_MULTIPLIER
+        )
 
         cost = int(round(prompt_tokens * input_mult + completion_tokens * output_mult))
         if uses_ocr:

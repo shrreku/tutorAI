@@ -10,9 +10,16 @@ from app.db.database import get_db
 from app.db.repositories.async_byok_repo import AsyncByokEscrowRepository
 from app.db.repositories.session_repo import UserProfileRepository
 from app.models.session import UserProfile
-from app.schemas.api import AsyncByokEscrowResponse, UserSettingsResponse, UserSettingsUpdateRequest
+from app.schemas.api import (
+    AsyncByokEscrowResponse,
+    UserSettingsResponse,
+    UserSettingsUpdateRequest,
+)
 from app.services.account_cleanup import delete_user_account
-from app.services.async_byok_escrow import AsyncByokEscrowService, async_byok_feature_available
+from app.services.async_byok_escrow import (
+    AsyncByokEscrowService,
+    async_byok_feature_available,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +33,21 @@ async def get_my_settings(
 ):
     """Fetch current user-level settings."""
     user_repo = UserProfileRepository(db)
-    consent_training_global, consent_preference_set = await user_repo.get_global_consent(user)
+    (
+        consent_training_global,
+        consent_preference_set,
+    ) = await user_repo.get_global_consent(user)
     return UserSettingsResponse(
         consent_training_global=consent_training_global,
         consent_preference_set=consent_preference_set,
         is_admin=is_admin_user(user),
         async_byok_escrow_enabled=async_byok_feature_available(),
-        async_byok_escrow_backend=settings.ASYNC_BYOK_ESCROW_BACKEND if async_byok_feature_available() else None,
-        async_byok_escrow_ttl_minutes=settings.ASYNC_BYOK_ESCROW_TTL_MINUTES if async_byok_feature_available() else 0,
+        async_byok_escrow_backend=settings.ASYNC_BYOK_ESCROW_BACKEND
+        if async_byok_feature_available()
+        else None,
+        async_byok_escrow_ttl_minutes=settings.ASYNC_BYOK_ESCROW_TTL_MINUTES
+        if async_byok_feature_available()
+        else 0,
     )
 
 
@@ -49,14 +63,21 @@ async def update_my_settings(
         user,
         consent_training_global=request.consent_training_global,
     )
-    consent_training_global, consent_preference_set = await user_repo.get_global_consent(updated)
+    (
+        consent_training_global,
+        consent_preference_set,
+    ) = await user_repo.get_global_consent(updated)
     return UserSettingsResponse(
         consent_training_global=consent_training_global,
         consent_preference_set=consent_preference_set,
         is_admin=is_admin_user(updated),
         async_byok_escrow_enabled=async_byok_feature_available(),
-        async_byok_escrow_backend=settings.ASYNC_BYOK_ESCROW_BACKEND if async_byok_feature_available() else None,
-        async_byok_escrow_ttl_minutes=settings.ASYNC_BYOK_ESCROW_TTL_MINUTES if async_byok_feature_available() else 0,
+        async_byok_escrow_backend=settings.ASYNC_BYOK_ESCROW_BACKEND
+        if async_byok_feature_available()
+        else None,
+        async_byok_escrow_ttl_minutes=settings.ASYNC_BYOK_ESCROW_TTL_MINUTES
+        if async_byok_feature_available()
+        else 0,
     )
 
 
@@ -70,7 +91,9 @@ async def list_my_async_byok_escrows(
         return []
 
     service = AsyncByokEscrowService(AsyncByokEscrowRepository(db))
-    escrows = await service.list_user_escrows(user.id, include_inactive=include_inactive)
+    escrows = await service.list_user_escrows(
+        user.id, include_inactive=include_inactive
+    )
     return [
         AsyncByokEscrowResponse(
             id=escrow.id,
@@ -92,7 +115,9 @@ async def list_my_async_byok_escrows(
     ]
 
 
-@router.post("/me/async-byok-escrows/{escrow_id}:revoke", response_model=AsyncByokEscrowResponse)
+@router.post(
+    "/me/async-byok-escrows/{escrow_id}:revoke", response_model=AsyncByokEscrowResponse
+)
 async def revoke_my_async_byok_escrow(
     escrow_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -108,7 +133,9 @@ async def revoke_my_async_byok_escrow(
     try:
         escrow = await service.revoke_user_escrow(escrow_id, user.id)
     except RuntimeError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+        ) from exc
 
     return AsyncByokEscrowResponse(
         id=escrow.id,

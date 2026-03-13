@@ -25,7 +25,9 @@ async def save_ontology_data(
     ontology: ResourceOntology,
 ) -> None:
     """Persist ontology-derived topics and learning objectives."""
-    await db.execute(delete(ResourceTopic).where(ResourceTopic.resource_id == resource_id))
+    await db.execute(
+        delete(ResourceTopic).where(ResourceTopic.resource_id == resource_id)
+    )
     await db.execute(
         delete(ResourceLearningObjective).where(
             ResourceLearningObjective.resource_id == resource_id
@@ -70,7 +72,9 @@ async def get_graph_data(
 ) -> tuple[list[dict], list[dict], list[dict]]:
     """Get concepts, graph edges, and prereq hints for Neo4j sync."""
     concept_result = await db.execute(
-        select(ResourceConceptStats).where(ResourceConceptStats.resource_id == resource_id)
+        select(ResourceConceptStats).where(
+            ResourceConceptStats.resource_id == resource_id
+        )
     )
     concepts = [
         {
@@ -84,7 +88,9 @@ async def get_graph_data(
     ]
 
     edge_result = await db.execute(
-        select(ResourceConceptGraph).where(ResourceConceptGraph.resource_id == resource_id)
+        select(ResourceConceptGraph).where(
+            ResourceConceptGraph.resource_id == resource_id
+        )
     )
     edges: list[dict] = []
     for e in edge_result.scalars().all():
@@ -147,7 +153,9 @@ def compute_quality_metrics(
     )
 
     skipped_chunks = sum(1 for e in enrichments if e.get("skipped", False))
-    total_semantic_rels = sum(len(e.get("semantic_relationships", [])) for e in enrichments)
+    total_semantic_rels = sum(
+        len(e.get("semantic_relationships", [])) for e in enrichments
+    )
 
     total_taught = sum(len(e.get("concepts_taught", [])) for e in enrichments)
     total_mentioned = sum(len(e.get("concepts_mentioned", [])) for e in enrichments)
@@ -155,7 +163,10 @@ def compute_quality_metrics(
     distinct_concepts = {
         concept
         for enrichment in enrichments
-        for concept in (enrichment.get("concepts_taught", []) + enrichment.get("concepts_mentioned", []))
+        for concept in (
+            enrichment.get("concepts_taught", [])
+            + enrichment.get("concepts_mentioned", [])
+        )
     }
 
     concepts_admitted = kb_result.get("concepts_admitted", 0)
@@ -173,9 +184,13 @@ def compute_quality_metrics(
     min_concepts = 1 if chunk_count <= 2 else 3
     checks = {
         "has_chunks": chunk_count > 0,
-        "embedding_coverage": embedding_count >= int(chunk_count * 0.8) if chunk_count else False,
+        "embedding_coverage": embedding_count >= int(chunk_count * 0.8)
+        if chunk_count
+        else False,
         "concept_count_ok": concepts_admitted >= min_concepts,
-        "evidence_ok": evidence_created >= concepts_admitted if concepts_admitted else True,
+        "evidence_ok": evidence_created >= concepts_admitted
+        if concepts_admitted
+        else True,
         "graph_edges_ok": graph_edges > 0 if concepts_admitted >= 2 else True,
         "has_semantic_rels": semantic_edges > 0 if concepts_admitted >= 2 else True,
     }
@@ -228,22 +243,24 @@ async def update_resource_status(
         update_data["processing_profile"] = "core_only"
 
         current_resource = await db.get(Resource, resource_id)
-        existing_capabilities = current_resource.capabilities_json if current_resource else None
+        existing_capabilities = (
+            current_resource.capabilities_json if current_resource else None
+        )
         if study_ready:
             update_data["capabilities_json"] = study_ready_capabilities(
                 existing_capabilities,
                 has_concepts=True,
             )
         else:
-            update_data["capabilities_json"] = core_ready_capabilities(existing_capabilities)
+            update_data["capabilities_json"] = core_ready_capabilities(
+                existing_capabilities
+            )
 
     if error_message:
         update_data["error_message"] = error_message
 
     await db.execute(
-        update(Resource)
-        .where(Resource.id == resource_id)
-        .values(**update_data)
+        update(Resource).where(Resource.id == resource_id).values(**update_data)
     )
     await db.flush()
 
@@ -282,8 +299,6 @@ async def update_job(
         update_data["metrics"] = metrics
 
     await db.execute(
-        update(IngestionJob)
-        .where(IngestionJob.id == job_id)
-        .values(**update_data)
+        update(IngestionJob).where(IngestionJob.id == job_id).values(**update_data)
     )
     await db.flush()

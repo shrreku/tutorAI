@@ -102,13 +102,13 @@ async def get_session(
     await verify_session_owner(session_id, user, db)
     session_repo = SessionRepository(db)
     session = await session_repo.get_with_turns(session_id)
-    
+
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Session {session_id} not found",
         )
-    
+
     ps = session.plan_state or {}
     return SessionDetailResponse(
         id=session.id,
@@ -137,19 +137,19 @@ async def end_session(
     await verify_session_owner(session_id, user, db)
     session_repo = SessionRepository(db)
     session = await session_repo.get_with_turns(session_id)
-    
+
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Session {session_id} not found",
         )
-    
+
     if session.status != "active":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Session {session_id} is not active (status: {session.status})",
         )
-    
+
     # Generate summary before ending
     from app.agents.summary_agent import SummaryAgent, SummaryState
     from app.services.llm.factory import create_llm_provider
@@ -228,7 +228,7 @@ async def end_session(
     )
     await db.commit()
     await db.refresh(session)
-    
+
     return SessionSummaryResponse(
         session_id=session.id,
         status=session.status,
@@ -253,19 +253,19 @@ async def get_session_summary(
     await verify_session_owner(session_id, user, db)
     session_repo = SessionRepository(db)
     session = await session_repo.get_with_turns(session_id)
-    
+
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Session {session_id} not found",
         )
-    
+
     plan = session.plan_state or {}
     mastery = dict(session.mastery) if session.mastery else {}
     turn_count = _canonical_turn_count(session)
     plan["turn_count"] = turn_count
     summary_data = plan.get("session_summary")
-    
+
     if not summary_data:
         # Generate on-demand for sessions completed before this feature
         objective_queue = plan.get("objective_queue", [])
@@ -288,7 +288,7 @@ async def get_session_summary(
             "turn_count": turn_count,
             "topic": plan.get("active_topic"),
         }
-    
+
     return SessionSummaryResponse(
         session_id=session.id,
         status=session.status,
@@ -314,7 +314,7 @@ async def list_sessions(
     """List sessions for the current user."""
     session_repo = SessionRepository(db)
     sessions = await session_repo.get_by_student(user.id, status=status, limit=limit)
-    
+
     return PaginatedResponse(
         items=[_session_response(s) for s in sessions],
         total=len(sessions),

@@ -100,7 +100,9 @@ def test_http_auth_login_success(monkeypatch):
 def test_http_ingest_upload_unsupported_extension(monkeypatch):
     monkeypatch.setattr(settings, "FEATURE_UPLOADS_ENABLED", True, raising=False)
     monkeypatch.setattr(settings, "AUTH_ENABLED", False, raising=False)
-    monkeypatch.setattr(settings, "UPLOAD_ALLOWED_EXTENSIONS", ".pdf,.md", raising=False)
+    monkeypatch.setattr(
+        settings, "UPLOAD_ALLOWED_EXTENSIONS", ".pdf,.md", raising=False
+    )
     monkeypatch.setattr(settings, "INGESTION_MAX_CONCURRENT_JOBS", 2, raising=False)
     monkeypatch.setattr(settings, "INGESTION_QUEUE_ENABLED", False, raising=False)
     monkeypatch.setattr(settings, "REDIS_URL", None, raising=False)
@@ -236,7 +238,9 @@ def test_http_resources_list_includes_latest_job(monkeypatch):
     payload = response.json()
     assert payload["items"][0]["latest_job"]["job_id"] == str(job_id)
     assert payload["items"][0]["latest_job"]["current_stage"] == "core_ready"
-    assert payload["items"][0]["latest_job"]["capability_progress"]["doubt_ready"] is True
+    assert (
+        payload["items"][0]["latest_job"]["capability_progress"]["doubt_ready"] is True
+    )
     app.dependency_overrides.clear()
 
 

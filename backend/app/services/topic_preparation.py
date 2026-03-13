@@ -5,15 +5,55 @@ from collections import Counter
 from typing import Any, Optional
 
 STOPWORDS = {
-    "the", "and", "for", "that", "with", "this", "from", "into", "your", "have", "will", "are",
-    "was", "were", "their", "there", "about", "which", "when", "where", "then", "than", "them",
-    "through", "chapter", "section", "page", "pages", "figure", "table", "using", "used", "study",
-    "notes", "topic", "topics", "resource", "material", "content", "learn", "practice", "revision",
+    "the",
+    "and",
+    "for",
+    "that",
+    "with",
+    "this",
+    "from",
+    "into",
+    "your",
+    "have",
+    "will",
+    "are",
+    "was",
+    "were",
+    "their",
+    "there",
+    "about",
+    "which",
+    "when",
+    "where",
+    "then",
+    "than",
+    "them",
+    "through",
+    "chapter",
+    "section",
+    "page",
+    "pages",
+    "figure",
+    "table",
+    "using",
+    "used",
+    "study",
+    "notes",
+    "topic",
+    "topics",
+    "resource",
+    "material",
+    "content",
+    "learn",
+    "practice",
+    "revision",
 }
 
 
 def _tokenize(text: str) -> list[str]:
-    return [token.lower() for token in re.findall(r"[A-Za-z][A-Za-z0-9'-]{2,}", text or "")]
+    return [
+        token.lower() for token in re.findall(r"[A-Za-z][A-Za-z0-9'-]{2,}", text or "")
+    ]
 
 
 def _slugify(parts: list[str]) -> str:
@@ -25,7 +65,11 @@ def _slugify(parts: list[str]) -> str:
     return "-".join(tokens[:8])
 
 
-def _focus_terms(topic: Optional[str], selected_topics: Optional[list[str]], resource_profile: Optional[dict]) -> list[str]:
+def _focus_terms(
+    topic: Optional[str],
+    selected_topics: Optional[list[str]],
+    resource_profile: Optional[dict],
+) -> list[str]:
     terms: list[str] = []
     if selected_topics:
         for item in selected_topics:
@@ -54,8 +98,12 @@ def build_topic_preparation_artifact(
     for chunk in chunks:
         text = getattr(chunk, "text", "") or ""
         heading = getattr(chunk, "section_heading", "") or ""
-        text_tokens = Counter(token for token in _tokenize(text) if token not in STOPWORDS)
-        heading_tokens = set(token for token in _tokenize(heading) if token not in STOPWORDS)
+        text_tokens = Counter(
+            token for token in _tokenize(text) if token not in STOPWORDS
+        )
+        heading_tokens = set(
+            token for token in _tokenize(heading) if token not in STOPWORDS
+        )
 
         overlap = sum(min(2, text_tokens.get(term, 0)) for term in focus_terms)
         heading_boost = sum(2 for term in focus_terms if term in heading_tokens)
@@ -68,7 +116,9 @@ def build_topic_preparation_artifact(
         elif normalized_mode == "revision" and pedagogy in {"definition", "exercise"}:
             pedagogy_boost = 1.0
 
-        summary_boost = 1.0 if "summary" in text.lower() or "summary" in heading.lower() else 0.0
+        summary_boost = (
+            1.0 if "summary" in text.lower() or "summary" in heading.lower() else 0.0
+        )
         score = overlap + heading_boost + pedagogy_boost + summary_boost
         if not focus_terms:
             score += 0.5 if pedagogy else 0.0
@@ -94,7 +144,9 @@ def build_topic_preparation_artifact(
         heading = (getattr(chunk, "section_heading", "") or "").strip()
         if heading and heading not in headings:
             headings.append(heading)
-        keyword_counter.update(token for token in _tokenize(text) if token not in STOPWORDS)
+        keyword_counter.update(
+            token for token in _tokenize(text) if token not in STOPWORDS
+        )
         pedagogy = getattr(chunk, "pedagogy_role", None)
         if pedagogy:
             pedagogy_mix[pedagogy] += 1

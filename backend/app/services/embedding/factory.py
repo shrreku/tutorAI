@@ -13,23 +13,26 @@ _embedding_lock = threading.Lock()
 
 class MockEmbeddingProvider(BaseEmbeddingProvider):
     """Mock embedding provider for when sentence-transformers is not available."""
-    
+
     def __init__(self, model_id: str, dimension: int = 384):
         self._model_id = model_id
         self._dimension = dimension
-    
+
     @property
     def model_id(self) -> str:
         return self._model_id
-    
+
     @property
     def dimension(self) -> int:
         return self._dimension
-    
+
     async def embed(self, texts: list[str]) -> list[list[float]]:
         """Return zero vectors for testing."""
         import random
-        return [[random.uniform(-0.1, 0.1) for _ in range(self._dimension)] for _ in texts]
+
+        return [
+            [random.uniform(-0.1, 0.1) for _ in range(self._dimension)] for _ in texts
+        ]
 
 
 def create_embedding_provider(config: Settings) -> BaseEmbeddingProvider:
@@ -50,6 +53,7 @@ def create_embedding_provider(config: Settings) -> BaseEmbeddingProvider:
 
         try:
             from app.services.embedding.local_provider import LocalEmbeddingProvider
+
             provider = LocalEmbeddingProvider(model_id=config.EMBEDDING_MODEL_ID)
 
             if provider.dimension != config.EMBEDDING_DIMENSION:
@@ -61,7 +65,9 @@ def create_embedding_provider(config: Settings) -> BaseEmbeddingProvider:
 
             _embedding_provider = provider
         except ImportError as e:
-            logger.warning(f"Could not load local embedding provider: {e}. Using mock provider.")
+            logger.warning(
+                f"Could not load local embedding provider: {e}. Using mock provider."
+            )
             _embedding_provider = MockEmbeddingProvider(
                 model_id=config.EMBEDDING_MODEL_ID,
                 dimension=config.EMBEDDING_DIMENSION,

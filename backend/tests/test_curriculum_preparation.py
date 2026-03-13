@@ -27,7 +27,9 @@ class _FakeDb:
 
 
 class _FakeOntology:
-    semantic_relations = [{"source_id": "heat", "target_id": "conduction", "relation_type": "RELATED_TO"}]
+    semantic_relations = [
+        {"source_id": "heat", "target_id": "conduction", "relation_type": "RELATED_TO"}
+    ]
 
     def get_enrichment_context(self, max_tokens=800):
         assert max_tokens == 800
@@ -78,7 +80,11 @@ class _FakeEnricher:
 
 class _FakeKBBuilder:
     async def build(self, *_args, **_kwargs):
-        return {"concepts_admitted": 3, "evidence_created": 4, "prereq_hints_created": 1}
+        return {
+            "concepts_admitted": 3,
+            "evidence_created": 4,
+            "prereq_hints_created": 1,
+        }
 
 
 class _FakeGraphBuilder:
@@ -142,7 +148,9 @@ def test_curriculum_preparation_marks_resource_ready(monkeypatch):
         assert _resource_id == resource_id
         return {"bundles_created": 3, "topic_bundles_created": 2}
 
-    async def _upsert_curriculum_artifact(_resource, kb_result, graph_result, bundle_result, source_chunk_ids):
+    async def _upsert_curriculum_artifact(
+        _resource, kb_result, graph_result, bundle_result, source_chunk_ids
+    ):
         assert _resource is resource
         assert kb_result["concepts_admitted"] == 3
         assert graph_result["edges_created"] == 2
@@ -156,8 +164,12 @@ def test_curriculum_preparation_marks_resource_ready(monkeypatch):
     monkeypatch.setattr(service, "_get_chunks", _get_chunks)
     monkeypatch.setattr(service, "_persist_enrichments", _persist_enrichments)
     monkeypatch.setattr(service, "_build_bundles", _build_bundles)
-    monkeypatch.setattr(service, "_upsert_curriculum_artifact", _upsert_curriculum_artifact)
-    monkeypatch.setattr("app.services.curriculum_preparation.save_ontology_data", _save_ontology_data)
+    monkeypatch.setattr(
+        service, "_upsert_curriculum_artifact", _upsert_curriculum_artifact
+    )
+    monkeypatch.setattr(
+        "app.services.curriculum_preparation.save_ontology_data", _save_ontology_data
+    )
 
     summary = asyncio.run(service.ensure_curriculum_ready(resource_id))
 
@@ -233,7 +245,9 @@ def test_curriculum_preparation_reports_progress(monkeypatch):
     async def _build_bundles(_resource_id):
         return {"bundles_created": 1, "topic_bundles_created": 1}
 
-    async def _upsert_curriculum_artifact(_resource, kb_result, graph_result, bundle_result, source_chunk_ids):
+    async def _upsert_curriculum_artifact(
+        _resource, kb_result, graph_result, bundle_result, source_chunk_ids
+    ):
         return SimpleNamespace(id=uuid4())
 
     async def _save_ontology_data(*_args, **_kwargs):
@@ -245,10 +259,16 @@ def test_curriculum_preparation_reports_progress(monkeypatch):
     monkeypatch.setattr(service, "_get_chunks", _get_chunks)
     monkeypatch.setattr(service, "_persist_enrichments", _persist_enrichments)
     monkeypatch.setattr(service, "_build_bundles", _build_bundles)
-    monkeypatch.setattr(service, "_upsert_curriculum_artifact", _upsert_curriculum_artifact)
-    monkeypatch.setattr("app.services.curriculum_preparation.save_ontology_data", _save_ontology_data)
+    monkeypatch.setattr(
+        service, "_upsert_curriculum_artifact", _upsert_curriculum_artifact
+    )
+    monkeypatch.setattr(
+        "app.services.curriculum_preparation.save_ontology_data", _save_ontology_data
+    )
 
-    asyncio.run(service.ensure_curriculum_ready(resource_id, progress_callback=_progress))
+    asyncio.run(
+        service.ensure_curriculum_ready(resource_id, progress_callback=_progress)
+    )
 
     assert progress_events == [
         ("curriculum_ontology", 78),

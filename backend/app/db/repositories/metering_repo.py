@@ -5,10 +5,9 @@ Handles the new operation-based billing tables introduced by CM-003/CM-004.
 
 import logging
 import uuid
-from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.credits import (
@@ -36,27 +35,33 @@ class MeteringRepository:
         result = await self.db.execute(
             select(ModelPricing).where(
                 ModelPricing.model_id == model_id,
-                ModelPricing.is_active == True,
+                ModelPricing.is_active,
             )
         )
         return result.scalar_one_or_none()
 
     async def list_active_models(self) -> list[ModelPricing]:
         result = await self.db.execute(
-            select(ModelPricing).where(ModelPricing.is_active == True).order_by(ModelPricing.model_class, ModelPricing.display_name)
+            select(ModelPricing)
+            .where(ModelPricing.is_active)
+            .order_by(ModelPricing.model_class, ModelPricing.display_name)
         )
         return list(result.scalars().all())
 
     async def list_user_selectable_models(self) -> list[ModelPricing]:
         result = await self.db.execute(
-            select(ModelPricing).where(
-                ModelPricing.is_active == True,
-                ModelPricing.is_user_selectable == True,
-            ).order_by(ModelPricing.model_class, ModelPricing.display_name)
+            select(ModelPricing)
+            .where(
+                ModelPricing.is_active,
+                ModelPricing.is_user_selectable,
+            )
+            .order_by(ModelPricing.model_class, ModelPricing.display_name)
         )
         return list(result.scalars().all())
 
-    async def update_model_pricing(self, model_id: str, **kwargs) -> Optional[ModelPricing]:
+    async def update_model_pricing(
+        self, model_id: str, **kwargs
+    ) -> Optional[ModelPricing]:
         pricing = await self.get_model_pricing(model_id)
         if not pricing:
             return None
@@ -73,7 +78,9 @@ class MeteringRepository:
 
     async def get_assignment(self, task_type: str) -> Optional[TaskModelAssignment]:
         result = await self.db.execute(
-            select(TaskModelAssignment).where(TaskModelAssignment.task_type == task_type)
+            select(TaskModelAssignment).where(
+                TaskModelAssignment.task_type == task_type
+            )
         )
         return result.scalar_one_or_none()
 
@@ -83,7 +90,9 @@ class MeteringRepository:
         )
         return list(result.scalars().all())
 
-    async def update_assignment(self, task_type: str, **kwargs) -> Optional[TaskModelAssignment]:
+    async def update_assignment(
+        self, task_type: str, **kwargs
+    ) -> Optional[TaskModelAssignment]:
         assignment = await self.get_assignment(task_type)
         if not assignment:
             return None
@@ -127,7 +136,9 @@ class MeteringRepository:
         await self.db.flush()
         return op
 
-    async def get_operation(self, operation_id: uuid.UUID) -> Optional[BillingOperation]:
+    async def get_operation(
+        self, operation_id: uuid.UUID
+    ) -> Optional[BillingOperation]:
         result = await self.db.execute(
             select(BillingOperation).where(BillingOperation.id == operation_id)
         )
@@ -218,7 +229,9 @@ class MeteringRepository:
         await self.db.flush()
         return line
 
-    async def get_operation_usage_lines(self, operation_id: uuid.UUID) -> list[BillingUsageLine]:
+    async def get_operation_usage_lines(
+        self, operation_id: uuid.UUID
+    ) -> list[BillingUsageLine]:
         result = await self.db.execute(
             select(BillingUsageLine)
             .where(BillingUsageLine.operation_id == operation_id)
@@ -230,7 +243,9 @@ class MeteringRepository:
     # Model-task health
     # ------------------------------------------------------------------
 
-    async def get_health(self, model_id: str, task_type: str) -> Optional[ModelTaskHealth]:
+    async def get_health(
+        self, model_id: str, task_type: str
+    ) -> Optional[ModelTaskHealth]:
         result = await self.db.execute(
             select(ModelTaskHealth).where(
                 ModelTaskHealth.model_id == model_id,
@@ -239,7 +254,9 @@ class MeteringRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_or_create_health(self, model_id: str, task_type: str) -> ModelTaskHealth:
+    async def get_or_create_health(
+        self, model_id: str, task_type: str
+    ) -> ModelTaskHealth:
         health = await self.get_health(model_id, task_type)
         if health is None:
             health = ModelTaskHealth(model_id=model_id, task_type=task_type)
@@ -247,8 +264,12 @@ class MeteringRepository:
             await self.db.flush()
         return health
 
-    async def list_health(self, model_id: Optional[str] = None) -> list[ModelTaskHealth]:
-        query = select(ModelTaskHealth).order_by(ModelTaskHealth.model_id, ModelTaskHealth.task_type)
+    async def list_health(
+        self, model_id: Optional[str] = None
+    ) -> list[ModelTaskHealth]:
+        query = select(ModelTaskHealth).order_by(
+            ModelTaskHealth.model_id, ModelTaskHealth.task_type
+        )
         if model_id:
             query = query.where(ModelTaskHealth.model_id == model_id)
         result = await self.db.execute(query)

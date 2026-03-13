@@ -6,6 +6,7 @@ Build ontologically-accurate, pedagogy-aware concept graphs from:
 2. Co-occurrence patterns (supplementary)
 3. Prerequisite hints with transitive closure
 """
+
 import logging
 import uuid
 from collections import defaultdict
@@ -92,12 +93,16 @@ def _edge_priority(edge_data: dict) -> float:
     relation_type = str(edge_data.get("relation_type", "RELATED_TO")).upper().strip()
     source_type = str(edge_data.get("source_type", "semantic"))
 
-    relation_bonus = 0.1 if relation_type in {"REQUIRES", "DERIVES_FROM", "IS_A"} else 0.0
+    relation_bonus = (
+        0.1 if relation_type in {"REQUIRES", "DERIVES_FROM", "IS_A"} else 0.0
+    )
     source_bonus = 0.08 if source_type in {"ontology_relation", "prereq_hint"} else 0.0
     return confidence + (assoc_weight * 0.08) + relation_bonus + source_bonus
 
 
-def _curate_edge_map(edge_map: dict[tuple[str, str], dict], admitted_concepts: set[str]) -> tuple[dict[tuple[str, str], dict], dict]:
+def _curate_edge_map(
+    edge_map: dict[tuple[str, str], dict], admitted_concepts: set[str]
+) -> tuple[dict[tuple[str, str], dict], dict]:
     """
     Curate edges for readability and pedagogical utility.
 
@@ -112,7 +117,9 @@ def _curate_edge_map(edge_map: dict[tuple[str, str], dict], admitted_concepts: s
     removed_by_confidence = 0
 
     for edge_key, edge_data in edge_map.items():
-        relation_type = str(edge_data.get("relation_type", "RELATED_TO")).upper().strip()
+        relation_type = (
+            str(edge_data.get("relation_type", "RELATED_TO")).upper().strip()
+        )
         source_type = str(edge_data.get("source_type", "semantic"))
         confidence = float(edge_data.get("confidence", 0.0) or 0.0)
 
@@ -136,7 +143,10 @@ def _curate_edge_map(edge_map: dict[tuple[str, str], dict], admitted_concepts: s
     for edge_key, edge_data in filtered:
         source = edge_data["source"]
         target = edge_data["target"]
-        if degree[source] >= MAX_INCIDENT_EDGES_PER_CONCEPT or degree[target] >= MAX_INCIDENT_EDGES_PER_CONCEPT:
+        if (
+            degree[source] >= MAX_INCIDENT_EDGES_PER_CONCEPT
+            or degree[target] >= MAX_INCIDENT_EDGES_PER_CONCEPT
+        ):
             removed_by_density += 1
             continue
         curated[edge_key] = edge_data
@@ -154,7 +164,10 @@ def _curate_edge_map(edge_map: dict[tuple[str, str], dict], admitted_concepts: s
                 continue
             source = edge_data["source"]
             target = edge_data["target"]
-            if degree[source] >= MAX_INCIDENT_EDGES_PER_CONCEPT + 1 or degree[target] >= MAX_INCIDENT_EDGES_PER_CONCEPT + 1:
+            if (
+                degree[source] >= MAX_INCIDENT_EDGES_PER_CONCEPT + 1
+                or degree[target] >= MAX_INCIDENT_EDGES_PER_CONCEPT + 1
+            ):
                 continue
             curated[edge_key] = edge_data
             degree[source] += 1
@@ -173,10 +186,10 @@ def _curate_edge_map(edge_map: dict[tuple[str, str], dict], admitted_concepts: s
 
 class ConceptGraphBuilder:
     """Builds ontologically-accurate concept graphs with typed semantic edges."""
-    
+
     def __init__(self, db_session: AsyncSession):
         self.db = db_session
-    
+
     async def build(
         self,
         resource_id: uuid.UUID,
@@ -191,47 +204,49 @@ class ConceptGraphBuilder:
     ) -> dict:
         """
         Build ontologically-accurate concept graph for a resource.
-        
+
         The graph is built in two phases:
         1. Explicit semantic relationships from enrichment (high confidence)
         2. Co-occurrence relationships via PPMI (supplementary)
-        
+
         Args:
             resource_id: UUID of the resource
             top_k: Maximum co-occurrence neighbors per concept
             min_similarity: Minimum similarity threshold for co-occurrence edges
             use_ppmi: Use PPMI scoring instead of raw cosine
             force_rebuild: If True, clear existing graph before rebuilding
-            
+
         Returns:
             Dict with build metrics
         """
         if force_rebuild:
             await self._clear_graph(resource_id)
-        
+
         # Get evidence and chunks with enrichment
         evidence = await self._get_evidence(resource_id)
         if not evidence:
             logger.warning(f"No evidence found for resource {resource_id}")
             return {"edges_created": 0, "semantic_edges": 0, "cooccurrence_edges": 0}
-        
+
         # Get chunks with enrichment metadata for semantic relationships
         chunks = await self._get_chunks_with_enrichment(resource_id)
-        
+
         # Get prereq hints
         prereq_lookup = await self._get_prereq_lookup(resource_id)
 
         # Build Q-hat vectors for co-occurrence
         qhat = compute_qhat_vectors(evidence)
         admitted_concepts = set(qhat.keys())
-        
+
         if len(admitted_concepts) < 2:
-            logger.info(f"Only {len(admitted_concepts)} concepts, skipping graph building")
+            logger.info(
+                f"Only {len(admitted_concepts)} concepts, skipping graph building"
+            )
             return {"edges_created": 0, "semantic_edges": 0, "cooccurrence_edges": 0}
-        
+
         # Track edges to avoid duplicates
         edge_map: dict[tuple[str, str], dict] = {}
-        
+
         # ============================================================
         # PHASE 1: Build edges from explicit semantic relationships
         # ============================================================
@@ -245,24 +260,29 @@ class ConceptGraphBuilder:
                 target_id = rel.get("target_id")
                 rel_type = rel.get("relation_type", "RELATED_TO")
                 confidence = rel.get("confidence", 0.8)
-                
+
                 # Only include edges between admitted concepts
                 if not source_id or not target_id:
                     continue
-                if source_id not in admitted_concepts or target_id not in admitted_concepts:
+                if (
+                    source_id not in admitted_concepts
+                    or target_id not in admitted_concepts
+                ):
                     continue
                 if source_id == target_id:
                     continue
-                
+
                 # Get relationship properties
-                rel_props = RELATIONSHIP_PROPERTIES.get(rel_type, RELATIONSHIP_PROPERTIES["RELATED_TO"])
-                
+                rel_props = RELATIONSHIP_PROPERTIES.get(
+                    rel_type, RELATIONSHIP_PROPERTIES["RELATED_TO"]
+                )
+
                 # Create edge key (ordered for directed, unordered for undirected)
                 if rel_props["directed"]:
                     edge_key = (source_id, target_id)
                 else:
                     edge_key = tuple(sorted([source_id, target_id]))
-                
+
                 # Merge with existing edge or create new
                 if edge_key in edge_map:
                     existing = edge_map[edge_key]
@@ -270,7 +290,10 @@ class ConceptGraphBuilder:
                     if confidence > existing["confidence"]:
                         existing["confidence"] = confidence
                     # Keep the more specific relationship type
-                    if rel_type != "RELATED_TO" and existing["relation_type"] == "RELATED_TO":
+                    if (
+                        rel_type != "RELATED_TO"
+                        and existing["relation_type"] == "RELATED_TO"
+                    ):
                         existing["relation_type"] = rel_type
                         existing["dir_forward"] = rel_props["dir_forward"]
                         existing["dir_backward"] = 1.0 - rel_props["dir_forward"]
@@ -299,8 +322,14 @@ class ConceptGraphBuilder:
             if source_id not in admitted_concepts or target_id not in admitted_concepts:
                 continue
 
-            rel_props = RELATIONSHIP_PROPERTIES.get(rel_type, RELATIONSHIP_PROPERTIES["RELATED_TO"])
-            edge_key = (source_id, target_id) if rel_props["directed"] else tuple(sorted([source_id, target_id]))
+            rel_props = RELATIONSHIP_PROPERTIES.get(
+                rel_type, RELATIONSHIP_PROPERTIES["RELATED_TO"]
+            )
+            edge_key = (
+                (source_id, target_id)
+                if rel_props["directed"]
+                else tuple(sorted([source_id, target_id]))
+            )
 
             if edge_key in edge_map:
                 existing = edge_map[edge_key]
@@ -309,7 +338,10 @@ class ConceptGraphBuilder:
                     existing["assoc_weight"] = max(existing["assoc_weight"], confidence)
                     existing["score_details"] = score_detail
                 existing["source_type"] = "ontology_relation"
-                if rel_type != "RELATED_TO" and existing["relation_type"] == "RELATED_TO":
+                if (
+                    rel_type != "RELATED_TO"
+                    and existing["relation_type"] == "RELATED_TO"
+                ):
                     existing["relation_type"] = rel_type
                     existing["dir_forward"] = rel_props["dir_forward"]
                     existing["dir_backward"] = 1.0 - rel_props["dir_forward"]
@@ -329,7 +361,7 @@ class ConceptGraphBuilder:
             }
             semantic_edge_count += 1
             ontology_edges_seeded += 1
-        
+
         # ============================================================
         # PHASE 2: Build edges from prereq hints (if not already covered)
         # ============================================================
@@ -338,7 +370,7 @@ class ConceptGraphBuilder:
                 continue
             if source == target:
                 continue
-            
+
             edge_key = (source, target)
             if edge_key not in edge_map:
                 confidence = min(1.0, 0.5 + 0.1 * support)
@@ -353,14 +385,14 @@ class ConceptGraphBuilder:
                     "source_type": "prereq_hint",
                 }
                 semantic_edge_count += 1
-        
+
         # ============================================================
         # PHASE 3: Supplement with co-occurrence edges (PPMI)
         # ============================================================
         concepts = list(admitted_concepts)
         total_chunks = len(set(str(e.chunk_id) for e in evidence))
         concept_chunk_counts = {c: len(qhat[c]) for c in concepts}
-        
+
         # Adaptive thresholds based on graph size
         effective_top_k = top_k
         effective_min_similarity = min_similarity
@@ -371,29 +403,27 @@ class ConceptGraphBuilder:
             elif len(concepts) >= 15:
                 effective_top_k = min(effective_top_k, 3)
                 effective_min_similarity = max(effective_min_similarity, 0.30)
-        
+
         # Compute co-occurrence for concepts not yet connected
         cooccurrence_edge_count = 0
         for i, c1 in enumerate(concepts):
             # Count existing edges for this concept
-            existing_neighbors = sum(
-                1 for k in edge_map 
-                if k[0] == c1 or k[1] == c1
-            )
-            
+            existing_neighbors = sum(1 for k in edge_map if k[0] == c1 or k[1] == c1)
+
             # Skip if concept already has enough edges from semantic phase
             if existing_neighbors >= effective_top_k:
                 continue
-            
+
             candidates = []
-            for c2 in concepts[i+1:]:
+            for c2 in concepts[i + 1 :]:
                 edge_key = tuple(sorted([c1, c2]))
                 if edge_key in edge_map:
                     continue
-                
+
                 if use_ppmi:
                     sim = ppmi_score(
-                        qhat[c1], qhat[c2],
+                        qhat[c1],
+                        qhat[c2],
                         concept_chunk_counts[c1],
                         concept_chunk_counts[c2],
                         total_chunks,
@@ -401,29 +431,29 @@ class ConceptGraphBuilder:
                     )
                 else:
                     sim = cosine_similarity(qhat[c1], qhat[c2])
-                
+
                 if sim >= effective_min_similarity:
                     candidates.append((c2, sim))
-            
+
             # Take top-k candidates
             candidates.sort(key=lambda x: -x[1])
             slots_available = effective_top_k - existing_neighbors
-            
+
             for c2, sim in candidates[:slots_available]:
                 edge_key = tuple(sorted([c1, c2]))
                 if edge_key in edge_map:
                     continue
-                
+
                 # Compute directionality from document order
                 dir_fwd, dir_bwd = compute_direction(c1, c2, evidence, prereq_lookup)
-                
+
                 # Determine if this looks like a prerequisite relationship
                 rel_type = "RELATED_TO"
                 if dir_fwd >= 0.75:
                     rel_type = "ENABLES"  # c1 likely enables c2
                 elif dir_bwd >= 0.75:
                     rel_type = "REQUIRES"  # c1 likely requires c2
-                
+
                 edge_map[edge_key] = {
                     "source": edge_key[0],
                     "target": edge_key[1],
@@ -435,7 +465,7 @@ class ConceptGraphBuilder:
                     "source_type": "cooccurrence",
                 }
                 cooccurrence_edge_count += 1
-        
+
         # ============================================================
         # PHASE 4: Enforce DAG on prerequisite edges (before DB insert)
         # ============================================================
@@ -443,37 +473,39 @@ class ConceptGraphBuilder:
 
         prereq_rel_types = {"REQUIRES", "ENABLES", "DERIVES_FROM"}
         cycles_broken = enforce_dag_on_map(edge_map, prereq_rel_types, logger=logger)
-        
+
         # Compute topological ordering on the cleaned edge_map
         topo_order = compute_topo_order_from_map(edge_map, admitted_concepts)
-        
+
         # ============================================================
         # PHASE 5: Create database edges
         # ============================================================
         edges = []
         for edge_data in edge_map.values():
-            edges.append(ResourceConceptGraph(
-                resource_id=resource_id,
-                source_concept_id=edge_data["source"],
-                target_concept_id=edge_data["target"],
-                relation_type=edge_data["relation_type"],
-                assoc_weight=edge_data["assoc_weight"],
-                confidence=edge_data["confidence"],
-                dir_forward=edge_data["dir_forward"],
-                dir_backward=edge_data["dir_backward"],
-                source=edge_data["source_type"],
-            ))
-        
+            edges.append(
+                ResourceConceptGraph(
+                    resource_id=resource_id,
+                    source_concept_id=edge_data["source"],
+                    target_concept_id=edge_data["target"],
+                    relation_type=edge_data["relation_type"],
+                    assoc_weight=edge_data["assoc_weight"],
+                    confidence=edge_data["confidence"],
+                    dir_forward=edge_data["dir_forward"],
+                    dir_backward=edge_data["dir_backward"],
+                    source=edge_data["source_type"],
+                )
+            )
+
         # Bulk insert
         self.db.add_all(edges)
         await self.db.flush()
-        
+
         logger.info(
             f"Created {len(edges)} graph edges for resource {resource_id} "
             f"(semantic: {semantic_edge_count}, cooccurrence: {cooccurrence_edge_count}, "
             f"cycles_broken: {cycles_broken}, curation: {curation_metrics})"
         )
-        
+
         return {
             "edges_created": len(edges),
             "semantic_edges": semantic_edge_count,
@@ -484,7 +516,7 @@ class ConceptGraphBuilder:
             "curation": curation_metrics,
             "topo_order": topo_order,
         }
-    
+
     async def _get_chunks_with_enrichment(self, resource_id: uuid.UUID) -> list[Chunk]:
         """Get all chunks for a resource with their enrichment metadata."""
         result = await self.db.execute(
@@ -493,20 +525,26 @@ class ConceptGraphBuilder:
             .order_by(Chunk.chunk_index)
         )
         return list(result.scalars().all())
-    
-    async def _get_evidence(self, resource_id: uuid.UUID) -> list[ResourceConceptEvidence]:
+
+    async def _get_evidence(
+        self, resource_id: uuid.UUID
+    ) -> list[ResourceConceptEvidence]:
         """Get all evidence for a resource."""
         result = await self.db.execute(
-            select(ResourceConceptEvidence)
-            .where(ResourceConceptEvidence.resource_id == resource_id)
+            select(ResourceConceptEvidence).where(
+                ResourceConceptEvidence.resource_id == resource_id
+            )
         )
         return list(result.scalars().all())
 
-    async def _get_prereq_lookup(self, resource_id: uuid.UUID) -> dict[tuple[str, str], int]:
+    async def _get_prereq_lookup(
+        self, resource_id: uuid.UUID
+    ) -> dict[tuple[str, str], int]:
         """Build prereq hint lookup keyed by (source, target)."""
         result = await self.db.execute(
-            select(ResourcePrereqHint)
-            .where(ResourcePrereqHint.resource_id == resource_id)
+            select(ResourcePrereqHint).where(
+                ResourcePrereqHint.resource_id == resource_id
+            )
         )
         prereq_lookup: dict[tuple[str, str], int] = defaultdict(int)
         for hint in result.scalars().all():
@@ -517,10 +555,12 @@ class ConceptGraphBuilder:
                 )
 
         return prereq_lookup
-    
+
     async def _clear_graph(self, resource_id: uuid.UUID) -> None:
         """Clear existing graph for a resource."""
         await self.db.execute(
-            delete(ResourceConceptGraph).where(ResourceConceptGraph.resource_id == resource_id)
+            delete(ResourceConceptGraph).where(
+                ResourceConceptGraph.resource_id == resource_id
+            )
         )
         await self.db.flush()

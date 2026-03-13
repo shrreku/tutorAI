@@ -8,7 +8,6 @@ found challenging.
 
 import logging
 import json
-import random
 from typing import Optional, List, Dict, Any
 
 from langfuse import observe
@@ -22,8 +21,10 @@ logger = logging.getLogger(__name__)
 
 # ── Schemas ───────────────────────────────────────────────────────────
 
+
 class QuizQuestion(BaseModel):
     """A single quiz question."""
+
     model_config = ConfigDict(extra="forbid")
 
     question_id: str = Field(..., description="Unique question identifier")
@@ -37,10 +38,12 @@ class QuizQuestion(BaseModel):
         description="Answer options for MCQ (4 options, A-D)",
     )
     correct_answer: str = Field(
-        ..., description="Correct answer: option letter (A/B/C/D) or short text",
+        ...,
+        description="Correct answer: option letter (A/B/C/D) or short text",
     )
     explanation: str = Field(
-        default="", description="Brief explanation of the correct answer",
+        default="",
+        description="Brief explanation of the correct answer",
     )
     concept: str = Field(..., description="Primary concept being tested")
     difficulty: str = Field(
@@ -51,6 +54,7 @@ class QuizQuestion(BaseModel):
 
 class QuizGenerateState(BaseModel):
     """Input to the Quiz Agent for generating questions."""
+
     model_config = ConfigDict(extra="ignore")
 
     concepts: List[str] = Field(
@@ -67,13 +71,16 @@ class QuizGenerateState(BaseModel):
         description="Objective queue with titles",
     )
     num_questions: int = Field(
-        default=5, ge=1, le=15,
+        default=5,
+        ge=1,
+        le=15,
         description="Number of questions to generate",
     )
 
 
 class QuizGenerateOutput(BaseModel):
     """Output: a batch of quiz questions."""
+
     model_config = ConfigDict(extra="forbid")
 
     questions: List[QuizQuestion] = Field(default_factory=list)
@@ -85,6 +92,7 @@ class QuizGenerateOutput(BaseModel):
 
 class QuizGradeState(BaseModel):
     """Input to grade a single answer."""
+
     model_config = ConfigDict(extra="ignore")
 
     question: QuizQuestion
@@ -93,21 +101,27 @@ class QuizGradeState(BaseModel):
 
 class QuizGradeOutput(BaseModel):
     """Output: grade for a single answer."""
+
     model_config = ConfigDict(extra="forbid")
 
     is_correct: bool = Field(..., description="Whether the answer is correct")
     score: float = Field(
-        ..., ge=0.0, le=1.0,
+        ...,
+        ge=0.0,
+        le=1.0,
         description="Score: 1.0 correct, 0.5 partial, 0.0 incorrect",
     )
     feedback: str = Field(
-        default="", description="Feedback on the answer",
+        default="",
+        description="Feedback on the answer",
     )
     correct_answer: str = Field(
-        default="", description="The correct answer",
+        default="",
+        description="The correct answer",
     )
     explanation: str = Field(
-        default="", description="Explanation of the correct answer",
+        default="",
+        description="Explanation of the correct answer",
     )
 
 
@@ -178,7 +192,9 @@ class QuizAgent(BaseAgent[QuizGenerateState, QuizGenerateOutput]):
     async def run(self, state: QuizGenerateState) -> QuizGenerateOutput:
         logger.info(
             "QuizAgent: generating %d questions for topic=%s, concepts=%d",
-            state.num_questions, state.topic, len(state.concepts),
+            state.num_questions,
+            state.topic,
+            len(state.concepts),
         )
 
         if self.llm:
@@ -203,11 +219,9 @@ class QuizAgent(BaseAgent[QuizGenerateState, QuizGenerateOutput]):
                     cleaned = cleaned.strip()
 
                     data = json.loads(cleaned)
-                    questions = [
-                        QuizQuestion(**q) for q in data.get("questions", [])
-                    ]
+                    questions = [QuizQuestion(**q) for q in data.get("questions", [])]
                     return QuizGenerateOutput(
-                        questions=questions[:state.num_questions],
+                        questions=questions[: state.num_questions],
                         quiz_focus=data.get("quiz_focus", ""),
                     )
             except Exception as e:
@@ -252,7 +266,9 @@ class QuizAgent(BaseAgent[QuizGenerateState, QuizGenerateOutput]):
                         is_correct=data.get("is_correct", False),
                         score=float(data.get("score", 0.0)),
                         feedback=data.get("feedback", ""),
-                        correct_answer=data.get("correct_answer", state.question.correct_answer),
+                        correct_answer=data.get(
+                            "correct_answer", state.question.correct_answer
+                        ),
                         explanation=data.get("explanation", state.question.explanation),
                     )
             except Exception as e:
@@ -267,7 +283,9 @@ class QuizAgent(BaseAgent[QuizGenerateState, QuizGenerateOutput]):
         for concept in state.concepts:
             val = state.mastery.get(concept, 0.0)
             label = "strong" if val >= 0.5 else "developing" if val >= 0.15 else "weak"
-            mastery_lines.append(f"  - {concept.replace('_', ' ')}: {val:.0%} ({label})")
+            mastery_lines.append(
+                f"  - {concept.replace('_', ' ')}: {val:.0%} ({label})"
+            )
 
         obj_lines = []
         for i, obj in enumerate(state.objectives, 1):
@@ -276,13 +294,13 @@ class QuizAgent(BaseAgent[QuizGenerateState, QuizGenerateOutput]):
 
         return f"""Generate exactly {state.num_questions} quiz questions.
 
-TOPIC: {state.topic or 'General'}
+TOPIC: {state.topic or "General"}
 
 OBJECTIVES COVERED:
-{chr(10).join(obj_lines) if obj_lines else '  (no specific objectives)'}
+{chr(10).join(obj_lines) if obj_lines else "  (no specific objectives)"}
 
 CONCEPT MASTERY (session results):
-{chr(10).join(mastery_lines) if mastery_lines else '  (no mastery data)'}
+{chr(10).join(mastery_lines) if mastery_lines else "  (no mastery data)"}
 
 IMPORTANT: Generate MORE questions for weaker concepts. Mix in some confidence-building questions for stronger concepts too.
 All questions should be multiple_choice with 4 options (A, B, C, D).
@@ -304,7 +322,9 @@ STUDENT'S ANSWER: {state.student_answer}
 
 Grade this answer now as JSON."""
 
-    def _deterministic_grade_mcq(self, state: QuizGradeState) -> Optional[QuizGradeOutput]:
+    def _deterministic_grade_mcq(
+        self, state: QuizGradeState
+    ) -> Optional[QuizGradeOutput]:
         """Deterministic MCQ grading — works for clear A/B/C/D answers."""
         answer = state.student_answer.strip().upper()
         correct = state.question.correct_answer.strip().upper()
@@ -350,9 +370,9 @@ Grade this answer now as JSON."""
                     question_type="multiple_choice",
                     options=[
                         f"A. A core concept in {state.topic or 'this subject'}",
-                        f"B. An unrelated topic",
-                        f"C. A derived concept only",
-                        f"D. None of the above",
+                        "B. An unrelated topic",
+                        "C. A derived concept only",
+                        "D. None of the above",
                     ],
                     correct_answer="A",
                     explanation=f"{readable} is a core concept covered in this session.",
@@ -376,7 +396,9 @@ Grade this answer now as JSON."""
         return QuizGradeOutput(
             is_correct=is_correct,
             score=1.0 if is_correct else 0.0,
-            feedback="Correct!" if is_correct else f"The correct answer was: {state.question.correct_answer}",
+            feedback="Correct!"
+            if is_correct
+            else f"The correct answer was: {state.question.correct_answer}",
             correct_answer=state.question.correct_answer,
             explanation=state.question.explanation,
         )

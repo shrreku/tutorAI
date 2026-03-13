@@ -4,6 +4,7 @@ Semantic Deduplication Utility - TICKET-054
 Embedding-based deduplication for learning objectives, topics, concepts,
 prerequisites, and terminology. Used by ontology extractor merge step.
 """
+
 import logging
 from typing import Callable, Optional, Awaitable
 

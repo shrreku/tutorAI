@@ -12,7 +12,9 @@ def build_docling_converter():
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import PdfPipelineOptions
         from docling.document_converter import DocumentConverter, PdfFormatOption
-    except ImportError as exc:  # pragma: no cover - exercised only when dependency missing
+    except (
+        ImportError
+    ) as exc:  # pragma: no cover - exercised only when dependency missing
         raise RuntimeError(
             "Docling is not installed. Add 'docling' to backend dependencies to use ingestion."
         ) from exc
@@ -110,7 +112,9 @@ def _apply_profile_options(pipeline_options: Any) -> None:
         pipeline_options.do_picture_description = True
         pipeline_options.do_chart_extraction = True
         pipeline_options.generate_picture_images = True
-        pipeline_options.images_scale = max(2.0, float(getattr(pipeline_options, "images_scale", 1.0)))
+        pipeline_options.images_scale = max(
+            2.0, float(getattr(pipeline_options, "images_scale", 1.0))
+        )
 
 
 def _apply_override_options(pipeline_options: Any) -> None:
@@ -155,7 +159,10 @@ def _apply_override_options(pipeline_options: Any) -> None:
         settings.INGESTION_DOCLING_CHART_EXTRACTION,
     )
 
-    if pipeline_options.generate_picture_images and getattr(pipeline_options, "images_scale", 1.0) < 1.0:
+    if (
+        pipeline_options.generate_picture_images
+        and getattr(pipeline_options, "images_scale", 1.0) < 1.0
+    ):
         pipeline_options.images_scale = 1.0
 
 
@@ -168,7 +175,12 @@ def _configure_ocr(pipeline_options: Any) -> None:
         ocr_options.lang = langs
 
     raw_engine = (settings.INGESTION_DOCLING_OCR_ENGINE or "").strip().lower()
-    if raw_engine and raw_engine != "auto" and ocr_options is not None and hasattr(ocr_options, "kind"):
+    if (
+        raw_engine
+        and raw_engine != "auto"
+        and ocr_options is not None
+        and hasattr(ocr_options, "kind")
+    ):
         ocr_options.kind = raw_engine
 
 
@@ -182,9 +194,7 @@ def _set_table_mode(pipeline_options: Any, mode: str) -> None:
         from docling.datamodel.pipeline_options import TableFormerMode
 
         table_options.mode = (
-            TableFormerMode.FAST
-            if target_mode == "fast"
-            else TableFormerMode.ACCURATE
+            TableFormerMode.FAST if target_mode == "fast" else TableFormerMode.ACCURATE
         )
     except Exception:
         # Keep compatibility if enum path changes across Docling versions.

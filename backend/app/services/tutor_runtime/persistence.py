@@ -50,7 +50,8 @@ def _serialize_policy_output(
         {
             label
             for label in guard_labels
-            if label in {
+            if label
+            in {
                 "low_evidence_response_guard",
                 "safety_block",
                 "unsupported_citation_pruned",
@@ -183,7 +184,8 @@ async def persist_turn(
                         }
                         for c in retrieved_chunks
                     ],
-                    mastery_before=mastery_before or (dict(session.mastery) if session.mastery else None),
+                    mastery_before=mastery_before
+                    or (dict(session.mastery) if session.mastery else None),
                     mastery_after=dict(session.mastery) if session.mastery else None,
                     latency_ms=latency_ms,
                 )
@@ -278,6 +280,7 @@ async def handle_session_complete(
     plan["session_summary"] = summary_data
     session.plan_state = plan
     from sqlalchemy.orm.attributes import flag_modified
+
     flag_modified(session, "plan_state")
     await db.execute(
         update(NotebookSession)

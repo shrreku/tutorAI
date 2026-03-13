@@ -120,7 +120,9 @@ class PolicyAgent(BaseAgent[PolicyState, PolicyOrchestratorOutput]):
 
     @observe(name="agent.policy", capture_input=False)
     async def run(self, state: PolicyState) -> PolicyOrchestratorOutput:
-        logger.info(f"PolicyAgent: step={state.current_step}, msg={state.student_message[:50]}...")
+        logger.info(
+            f"PolicyAgent: step={state.current_step}, msg={state.student_message[:50]}..."
+        )
 
         if self.llm:
             try:
@@ -156,12 +158,22 @@ class PolicyAgent(BaseAgent[PolicyState, PolicyOrchestratorOutput]):
         # Session journey context
         journey_lines = []
         for oq in state.objective_queue_summary:
-            marker = "→" if oq.get("is_current") else ("✓" if oq.get("is_completed") else " ")
-            journey_lines.append(f"  {marker} {oq.get('id','?')}: {oq.get('title','?')} [{', '.join(oq.get('primary_concepts', []))}]")
+            marker = (
+                "→"
+                if oq.get("is_current")
+                else ("✓" if oq.get("is_completed") else " ")
+            )
+            journey_lines.append(
+                f"  {marker} {oq.get('id', '?')}: {oq.get('title', '?')} [{', '.join(oq.get('primary_concepts', []))}]"
+            )
         journey_block = (
-            f"SESSION PROGRESS: Objective {state.current_objective_index + 1}/{state.total_objectives}\n"
-            + "\n".join(journey_lines)
-        ) if journey_lines else ""
+            (
+                f"SESSION PROGRESS: Objective {state.current_objective_index + 1}/{state.total_objectives}\n"
+                + "\n".join(journey_lines)
+            )
+            if journey_lines
+            else ""
+        )
 
         # Objective context
         roadmap = obj.get("step_roadmap") or []
@@ -192,14 +204,18 @@ class PolicyAgent(BaseAgent[PolicyState, PolicyOrchestratorOutput]):
         look_block = ""
         if lookahead:
             look_lines = [
-                f"  [{i+1}] {p.get('type','?')} → {p.get('target_concepts',[])}"
+                f"  [{i + 1}] {p.get('type', '?')} → {p.get('target_concepts', [])}"
                 for i, p in enumerate(lookahead)
             ]
             look_block = "\nUPCOMING STEPS:\n" + "\n".join(look_lines)
 
         # Mastery
         mastery_lines = [f"  {c}: {v:.2f}" for c, v in state.mastery_snapshot.items()]
-        mastery_block = "MASTERY:\n" + "\n".join(mastery_lines) if mastery_lines else "MASTERY: (none)"
+        mastery_block = (
+            "MASTERY:\n" + "\n".join(mastery_lines)
+            if mastery_lines
+            else "MASTERY: (none)"
+        )
 
         # Recent conversation
         hist_block = "RECENT CONVERSATION: (none)"
@@ -208,7 +224,7 @@ class PolicyAgent(BaseAgent[PolicyState, PolicyOrchestratorOutput]):
             for t in state.recent_turns[-3:]:
                 lines.append(
                     f"  Student: {(t.get('student_message') or '')[:80]}\n"
-                    f"  Tutor [{t.get('pedagogical_action','?')}/{t.get('current_step','?')}]: "
+                    f"  Tutor [{t.get('pedagogical_action', '?')}/{t.get('current_step', '?')}]: "
                     f"{(t.get('tutor_response') or '')[:80]}"
                 )
             hist_block = "RECENT CONVERSATION:\n" + "\n".join(lines)
@@ -264,10 +280,7 @@ Based on all the above, decide the pedagogical_action and progression_decision f
         reasoning_suffix: list[str] = []
 
         # Guard 1: ad-hoc budget enforcement
-        if (
-            decision == ProgressionDecision.INSERT_AD_HOC
-            and ad_hoc_count >= max_ad_hoc
-        ):
+        if decision == ProgressionDecision.INSERT_AD_HOC and ad_hoc_count >= max_ad_hoc:
             decision = ProgressionDecision.ADVANCE_STEP
             output.ad_hoc_step_type = None
             reasoning_suffix.append("guard:ad_hoc_budget_forced_advance")
@@ -311,10 +324,14 @@ Based on all the above, decide the pedagogical_action and progression_decision f
                 ]
                 avg_mastery = (sum(vals) / len(vals)) if vals else 0.0
             turns_at_step = int(getattr(state, "turns_at_step", 0) or 0)
-            if output.progression_decision in {
-                ProgressionDecision.CONTINUE_STEP,
-                ProgressionDecision.INSERT_AD_HOC,
-            } and "guard:skip_rejected" not in reasoning_suffix:
+            if (
+                output.progression_decision
+                in {
+                    ProgressionDecision.CONTINUE_STEP,
+                    ProgressionDecision.INSERT_AD_HOC,
+                }
+                and "guard:skip_rejected" not in reasoning_suffix
+            ):
                 has_eval_checkpoint = eval_score is not None and eval_score >= 0.6
                 has_mastery_checkpoint = avg_mastery >= 0.45
                 has_engagement_checkpoint = turns_at_step >= 1 and avg_mastery >= 0.35
@@ -367,11 +384,15 @@ Based on all the above, decide the pedagogical_action and progression_decision f
             return "frustrated"
         if any(k in msg for k in ("move on", "next", "skip", "done")):
             return "move_on"
-        if any(k in msg for k in ("confused", "don't get", "dont get", "stuck", "help")):
+        if any(
+            k in msg for k in ("confused", "don't get", "dont get", "stuck", "help")
+        ):
             return "confused"
         if "?" in msg or any(k in msg for k in ("why", "how", "what", "can you")):
             return "asking_question"
-        if any(k in msg for k in ("i think", "my answer", "is it", "equals", "therefore")):
+        if any(
+            k in msg for k in ("i think", "my answer", "is it", "equals", "therefore")
+        ):
             return "answer_attempt"
         if any(k in msg for k in ("boring", "bored")):
             return "bored"
@@ -399,17 +420,30 @@ Based on all the above, decide the pedagogical_action and progression_decision f
             eval_label = state.latest_evaluation.get("correctness_label", "partial")
 
         step = state.current_step
-        reasoning_parts = [f"mode={session_mode}", f"step={step}", f"avg_mastery={avg_mastery:.2f}", f"eval={eval_label}({eval_score:.1f})"]
+        reasoning_parts = [
+            f"mode={session_mode}",
+            f"step={step}",
+            f"avg_mastery={avg_mastery:.2f}",
+            f"eval={eval_label}({eval_score:.1f})",
+        ]
 
         if session_mode == "doubt":
-            action = PedagogicalAction.CLARIFY if "?" in msg or "confused" in msg else PedagogicalAction.EXPLAIN
+            action = (
+                PedagogicalAction.CLARIFY
+                if "?" in msg or "confused" in msg
+                else PedagogicalAction.EXPLAIN
+            )
             strategy = "direct"
             if eval_label == "correct" or avg_mastery >= 0.55:
                 decision = ProgressionDecision.ADVANCE_STEP
                 reasoning_parts.append("clarification_resolved")
         elif session_mode == "practice":
             action = PedagogicalAction.QUESTION
-            strategy = "assessment" if step in {"assess", "practice", "probe"} else "scaffolded"
+            strategy = (
+                "assessment"
+                if step in {"assess", "practice", "probe"}
+                else "scaffolded"
+            )
             if eval_label in {"incorrect", "partial"} and eval_score < 0.5:
                 action = PedagogicalAction.HINT
                 decision = ProgressionDecision.CONTINUE_STEP
@@ -418,8 +452,14 @@ Based on all the above, decide the pedagogical_action and progression_decision f
                 decision = ProgressionDecision.ADVANCE_STEP
                 reasoning_parts.append("practice_checkpoint_met")
         elif session_mode == "revision":
-            action = PedagogicalAction.SUMMARIZE if step in {"summarize", "connect", "compare_contrast"} else PedagogicalAction.ASSESS
-            strategy = "review" if action == PedagogicalAction.SUMMARIZE else "assessment"
+            action = (
+                PedagogicalAction.SUMMARIZE
+                if step in {"summarize", "connect", "compare_contrast"}
+                else PedagogicalAction.ASSESS
+            )
+            strategy = (
+                "review" if action == PedagogicalAction.SUMMARIZE else "assessment"
+            )
             if eval_label == "incorrect":
                 action = PedagogicalAction.CORRECT
                 strategy = "review"
@@ -428,7 +468,11 @@ Based on all the above, decide the pedagogical_action and progression_decision f
                 decision = ProgressionDecision.ADVANCE_STEP
                 reasoning_parts.append("revision_checkpoint_met")
         elif step in {"motivate", "activate_prior"}:
-            action = PedagogicalAction.MOTIVATE if step == "motivate" else PedagogicalAction.QUESTION
+            action = (
+                PedagogicalAction.MOTIVATE
+                if step == "motivate"
+                else PedagogicalAction.QUESTION
+            )
             strategy = "direct" if step == "motivate" else "socratic"
             if eval_label in ("correct", "partial") and eval_score >= 0.6:
                 decision = ProgressionDecision.ADVANCE_STEP
@@ -438,7 +482,9 @@ Based on all the above, decide the pedagogical_action and progression_decision f
                 action = PedagogicalAction.EXPLAIN
                 decision = ProgressionDecision.ADVANCE_STEP
                 strategy = "socratic" if avg_mastery >= 0.2 else "direct"
-                reasoning_parts.append("advancing: mastery sufficient or correct answer")
+                reasoning_parts.append(
+                    "advancing: mastery sufficient or correct answer"
+                )
             elif "help" in msg or "confused" in msg:
                 action = PedagogicalAction.HINT
                 strategy = "scaffolded"

@@ -37,8 +37,14 @@ def build_policy_replay_row(turn: Any) -> dict[str, Any]:
     if not isinstance(guard_override_labels, list):
         guard_override_labels = []
 
-    requested = policy_output.get("decision_requested") or policy_output.get("progression")
-    applied = policy_output.get("decision_applied") or policy_output.get("progression_applied") or requested
+    requested = policy_output.get("decision_requested") or policy_output.get(
+        "progression"
+    )
+    applied = (
+        policy_output.get("decision_applied")
+        or policy_output.get("progression_applied")
+        or requested
+    )
 
     return {
         "session_id": str(getattr(turn, "session_id", "")),
@@ -52,7 +58,8 @@ def build_policy_replay_row(turn: Any) -> dict[str, Any]:
             "mastery_before": getattr(turn, "mastery_before", None),
             "mastery_after": getattr(turn, "mastery_after", None),
         },
-        "policy_action": policy_output.get("action") or getattr(turn, "pedagogical_action", None),
+        "policy_action": policy_output.get("action")
+        or getattr(turn, "pedagogical_action", None),
         "decision_requested": requested,
         "decision_applied": applied,
         "student_intent": policy_output.get("student_intent"),
@@ -93,16 +100,21 @@ def summarize_policy_replay(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
         }
 
     guard_override_turns = sum(1 for row in rows if row.get("guard_override_labels"))
-    delegated_turns = sum(1 for row in rows if (row.get("delegation") or {}).get("delegated"))
+    delegated_turns = sum(
+        1 for row in rows if (row.get("delegation") or {}).get("delegated")
+    )
     aligned_turns = sum(
         1
         for row in rows
         if row.get("decision_requested") == row.get("decision_applied")
     )
-    avg_coverage = sum(
-        _safe_float((row.get("evidence_metrics") or {}).get("coverage"), 0.0)
-        for row in rows
-    ) / total
+    avg_coverage = (
+        sum(
+            _safe_float((row.get("evidence_metrics") or {}).get("coverage"), 0.0)
+            for row in rows
+        )
+        / total
+    )
 
     return {
         "total_turns": total,
@@ -113,7 +125,9 @@ def summarize_policy_replay(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def export_policy_replay_jsonl(rows: Sequence[dict[str, Any]], output_path: str | Path) -> int:
+def export_policy_replay_jsonl(
+    rows: Sequence[dict[str, Any]], output_path: str | Path
+) -> int:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:

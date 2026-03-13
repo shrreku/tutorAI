@@ -18,7 +18,13 @@ from app.services.tutor_runtime.progression import apply_progression
 from app.services.tutor_runtime.response_runner import generate_response
 
 
-def _make_objective(*, objective_id: str = "obj_1", step_roadmap: list[dict], min_correct: int = 1, min_mastery: float = 0.6) -> dict:
+def _make_objective(
+    *,
+    objective_id: str = "obj_1",
+    step_roadmap: list[dict],
+    min_correct: int = 1,
+    min_mastery: float = 0.6,
+) -> dict:
     return {
         "objective_id": objective_id,
         "title": "Heat transfer foundations",
@@ -82,7 +88,11 @@ def test_progression_guard_forces_advance_when_ad_hoc_budget_exhausted():
 
     assert updated_plan["last_decision"] == ProgressionDecision.ADVANCE_STEP.name
     assert updated_plan["ad_hoc_count"] == 0
-    guard_events = [e for e in updated_plan.get("__trace_events", []) if e.get("name") == "guard_override"]
+    guard_events = [
+        e
+        for e in updated_plan.get("__trace_events", [])
+        if e.get("name") == "guard_override"
+    ]
     assert any(
         e.get("guard_name") == "forced_return_from_ad_hoc_budget"
         and e.get("decision_requested") == ProgressionDecision.INSERT_AD_HOC.name
@@ -112,7 +122,11 @@ def test_progression_guard_forces_advance_on_step_turn_limit():
     )
 
     assert updated_plan["last_decision"] == ProgressionDecision.ADVANCE_STEP.name
-    guard_events = [e for e in updated_plan.get("__trace_events", []) if e.get("name") == "guard_override"]
+    guard_events = [
+        e
+        for e in updated_plan.get("__trace_events", [])
+        if e.get("name") == "guard_override"
+    ]
     assert any(
         e.get("guard_name") == "forced_advance_max_turns"
         and e.get("decision_requested") == ProgressionDecision.CONTINUE_STEP.name
@@ -148,8 +162,14 @@ def test_progression_guard_respects_evaluator_not_ready():
 
     assert updated_plan["last_decision"] == ProgressionDecision.CONTINUE_STEP.name
     assert updated_plan["current_step_index"] == 0
-    guard_events = [e for e in updated_plan.get("__trace_events", []) if e.get("name") == "guard_override"]
-    assert not any(e.get("guard_name") == "forced_advance_max_turns" for e in guard_events)
+    guard_events = [
+        e
+        for e in updated_plan.get("__trace_events", [])
+        if e.get("name") == "guard_override"
+    ]
+    assert not any(
+        e.get("guard_name") == "forced_advance_max_turns" for e in guard_events
+    )
 
 
 def test_progression_guard_keeps_off_topic_redirect_out_of_step_budget():
@@ -200,7 +220,11 @@ def test_progression_guard_rejects_invalid_skip_target():
     )
 
     assert updated_plan["last_decision"] == ProgressionDecision.CONTINUE_STEP.name
-    guard_events = [e for e in updated_plan.get("__trace_events", []) if e.get("name") == "guard_override"]
+    guard_events = [
+        e
+        for e in updated_plan.get("__trace_events", [])
+        if e.get("name") == "guard_override"
+    ]
     assert any(
         e.get("guard_name") == "skip_rejected_by_guard"
         and e.get("decision_requested") == ProgressionDecision.SKIP_TO_STEP.name
@@ -234,7 +258,11 @@ def test_progression_guard_blocks_objective_advance_until_required_steps():
 
     assert updated_plan["last_decision"] == ProgressionDecision.ADVANCE_STEP.name
     assert updated_plan["current_step_index"] == 1
-    guard_events = [e for e in updated_plan.get("__trace_events", []) if e.get("name") == "guard_override"]
+    guard_events = [
+        e
+        for e in updated_plan.get("__trace_events", [])
+        if e.get("name") == "guard_override"
+    ]
     assert any(
         e.get("guard_name") == "objective_readiness_not_met"
         and e.get("decision_requested") == ProgressionDecision.ADVANCE_OBJECTIVE.name
@@ -318,8 +346,12 @@ def test_response_runner_low_evidence_path_is_explicit_and_traced():
     assert "I want to keep this accurate" in result.response_text
     assert result.evidence_chunk_ids is None
     assert tutor_stub.seen_state is None
-    guard_events = [e for e in plan.get("__trace_events", []) if e.get("name") == "guard_override"]
-    assert any(e.get("guard_name") == "low_evidence_response_guard" for e in guard_events)
+    guard_events = [
+        e for e in plan.get("__trace_events", []) if e.get("name") == "guard_override"
+    ]
+    assert any(
+        e.get("guard_name") == "low_evidence_response_guard" for e in guard_events
+    )
 
 
 def test_response_runner_backfills_evidence_ids_into_tutor_output():
@@ -339,7 +371,9 @@ def test_response_runner_backfills_evidence_ids_into_tutor_output():
             retrieval_reason="concept match",
         )
     ]
-    tutor_stub = _TutorStub(TutorOutput(response_text="Conduction transfers heat through solids."))
+    tutor_stub = _TutorStub(
+        TutorOutput(response_text="Conduction transfers heat through solids.")
+    )
 
     result = asyncio.run(
         generate_response(
@@ -396,8 +430,12 @@ def test_response_runner_prunes_unsupported_cited_evidence_ids():
     )
 
     assert result.evidence_chunk_ids == [str(chunk_id)]
-    guard_events = [e for e in plan.get("__trace_events", []) if e.get("name") == "guard_override"]
-    assert any(e.get("guard_name") == "unsupported_citation_pruned" for e in guard_events)
+    guard_events = [
+        e for e in plan.get("__trace_events", []) if e.get("name") == "guard_override"
+    ]
+    assert any(
+        e.get("guard_name") == "unsupported_citation_pruned" for e in guard_events
+    )
 
 
 class _LLMStub:
@@ -412,7 +450,10 @@ def test_safety_critic_blocks_unsupported_cited_evidence_ids():
         critic.evaluate(
             response_text="Conduction transfers heat in solids.",
             retrieved_chunks=[{"chunk_id": "chunk-a", "text": "Conduction in solids."}],
-            current_objective={"title": "Heat transfer", "concept_scope": {"primary": ["conduction"]}},
+            current_objective={
+                "title": "Heat transfer",
+                "concept_scope": {"primary": ["conduction"]},
+            },
             student_message="What is conduction?",
             cited_evidence_chunk_ids=["chunk-missing"],
         )
@@ -468,7 +509,9 @@ def test_openai_provider_coerces_malformed_policy_and_evaluator_payloads():
             }
         ],
     }
-    coerced_eval = provider._coerce_data(evaluator_payload, schema=type("S", (), {"__name__": "EvaluatorOutput"}))
+    coerced_eval = provider._coerce_data(
+        evaluator_payload, schema=type("S", (), {"__name__": "EvaluatorOutput"})
+    )
 
     policy_payload = {
         "pedagogical_action": "ask",
@@ -477,7 +520,9 @@ def test_openai_provider_coerces_malformed_policy_and_evaluator_payloads():
         "reasoning": "advance now",
         "turn_plan": {"goal": "check understanding", "interaction_type": "custom"},
     }
-    coerced_policy = provider._coerce_data(policy_payload, schema=type("S", (), {"__name__": "PolicyOrchestratorOutput"}))
+    coerced_policy = provider._coerce_data(
+        policy_payload, schema=type("S", (), {"__name__": "PolicyOrchestratorOutput"})
+    )
 
     assert isinstance(coerced_eval["concept_deltas"], dict)
     assert "conduction" in coerced_eval["concept_deltas"]

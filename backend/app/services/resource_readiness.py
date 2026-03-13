@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.models.resource import default_resource_capabilities, core_ready_capabilities, study_ready_capabilities
+from app.models.resource import (
+    default_resource_capabilities,
+    core_ready_capabilities,
+    study_ready_capabilities,
+)
 
 
 def _job_capability_progress(latest_job: Any | None) -> dict[str, bool]:
@@ -13,7 +17,9 @@ def _job_capability_progress(latest_job: Any | None) -> dict[str, bool]:
     return capability_progress if isinstance(capability_progress, dict) else {}
 
 
-def normalized_resource_capabilities(resource: Any, *, latest_job: Any | None = None) -> dict[str, bool]:
+def normalized_resource_capabilities(
+    resource: Any, *, latest_job: Any | None = None
+) -> dict[str, bool]:
     capabilities = default_resource_capabilities()
     existing = getattr(resource, "capabilities_json", None) or {}
     if isinstance(existing, dict):

@@ -101,12 +101,18 @@ def _build_curriculum_overview(plan_state: dict) -> Optional[CurriculumOverview]
     )
 
 
-def _estimate_curriculum_prepare_for_resource(resource, latest_job, meter: CreditMeter) -> dict:
+def _estimate_curriculum_prepare_for_resource(
+    resource, latest_job, meter: CreditMeter
+) -> dict:
     metrics = (getattr(latest_job, "metrics", None) or {}) if latest_job else {}
     billing = metrics.get("billing") if isinstance(metrics, dict) else {}
     document = metrics.get("document") if isinstance(metrics, dict) else {}
     file_size_bytes = int((billing or {}).get("file_size_bytes") or 0)
-    if file_size_bytes <= 0 and getattr(resource, "file_path_or_uri", None) and urlparse(resource.file_path_or_uri).scheme in {"", "file"}:
+    if (
+        file_size_bytes <= 0
+        and getattr(resource, "file_path_or_uri", None)
+        and urlparse(resource.file_path_or_uri).scheme in {"", "file"}
+    ):
         try:
             file_size_bytes = Path(resource.file_path_or_uri).stat().st_size
         except OSError:
@@ -134,7 +140,9 @@ def _to_notebook_response(notebook: Notebook) -> NotebookResponse:
     )
 
 
-def _to_notebook_resource_response(link: NotebookResource, resource=None, latest_job=None) -> NotebookResourceResponse:
+def _to_notebook_resource_response(
+    link: NotebookResource, resource=None, latest_job=None
+) -> NotebookResourceResponse:
     return NotebookResourceResponse(
         id=link.id,
         notebook_id=link.notebook_id,
@@ -144,18 +152,24 @@ def _to_notebook_resource_response(link: NotebookResource, resource=None, latest
         added_at=link.added_at,
         created_at=link.created_at,
         updated_at=link.updated_at,
-        resource=ResourceResponse(**{
-            "id": resource.id,
-            "filename": resource.filename,
-            "topic": resource.topic,
-            "status": resource.status,
-            "lifecycle_status": resource.status,
-            "processing_profile": getattr(resource, "processing_profile", None),
-            "capabilities": normalized_resource_capabilities(resource, latest_job=latest_job),
-            "uploaded_at": resource.uploaded_at,
-            "processed_at": resource.processed_at,
-            "latest_job": None,
-        }) if resource is not None else None,
+        resource=ResourceResponse(
+            **{
+                "id": resource.id,
+                "filename": resource.filename,
+                "topic": resource.topic,
+                "status": resource.status,
+                "lifecycle_status": resource.status,
+                "processing_profile": getattr(resource, "processing_profile", None),
+                "capabilities": normalized_resource_capabilities(
+                    resource, latest_job=latest_job
+                ),
+                "uploaded_at": resource.uploaded_at,
+                "processed_at": resource.processed_at,
+                "latest_job": None,
+            }
+        )
+        if resource is not None
+        else None,
     )
 
 
@@ -189,7 +203,9 @@ def _to_session_response(session: UserSession) -> SessionResponse:
     )
 
 
-def _to_notebook_artifact_response(artifact: NotebookArtifact) -> NotebookArtifactResponse:
+def _to_notebook_artifact_response(
+    artifact: NotebookArtifact,
+) -> NotebookArtifactResponse:
     return NotebookArtifactResponse(
         id=artifact.id,
         notebook_id=artifact.notebook_id,
@@ -210,7 +226,9 @@ async def _compute_and_persist_notebook_progress(
     session_repo = SessionRepository(db)
     progress_repo = NotebookProgressRepository(db)
 
-    links = await notebook_session_repo.get_by_notebook(notebook_id, limit=1000, offset=0)
+    links = await notebook_session_repo.get_by_notebook(
+        notebook_id, limit=1000, offset=0
+    )
 
     sessions_count = len(links)
     completed_sessions_count = 0
@@ -231,10 +249,14 @@ async def _compute_and_persist_notebook_progress(
                 numeric_score = float(score)
             except (TypeError, ValueError):
                 continue
-            mastery_accumulator[concept] = mastery_accumulator.get(concept, 0.0) + numeric_score
+            mastery_accumulator[concept] = (
+                mastery_accumulator.get(concept, 0.0) + numeric_score
+            )
             mastery_counts[concept] = mastery_counts.get(concept, 0) + 1
 
-        session_objective_progress = (session.plan_state or {}).get("objective_progress", {})
+        session_objective_progress = (session.plan_state or {}).get(
+            "objective_progress", {}
+        )
         for objective_id, progress in session_objective_progress.items():
             if objective_id not in objective_progress:
                 objective_progress[objective_id] = {
@@ -243,10 +265,18 @@ async def _compute_and_persist_notebook_progress(
                     "steps_completed": 0,
                     "steps_skipped": 0,
                 }
-            objective_progress[objective_id]["attempts"] += int(progress.get("attempts", 0) or 0)
-            objective_progress[objective_id]["correct"] += int(progress.get("correct", 0) or 0)
-            objective_progress[objective_id]["steps_completed"] += int(progress.get("steps_completed", 0) or 0)
-            objective_progress[objective_id]["steps_skipped"] += int(progress.get("steps_skipped", 0) or 0)
+            objective_progress[objective_id]["attempts"] += int(
+                progress.get("attempts", 0) or 0
+            )
+            objective_progress[objective_id]["correct"] += int(
+                progress.get("correct", 0) or 0
+            )
+            objective_progress[objective_id]["steps_completed"] += int(
+                progress.get("steps_completed", 0) or 0
+            )
+            objective_progress[objective_id]["steps_skipped"] += int(
+                progress.get("steps_skipped", 0) or 0
+            )
 
     mastery_snapshot = {
         concept: (mastery_accumulator[concept] / mastery_counts[concept])
@@ -254,9 +284,7 @@ async def _compute_and_persist_notebook_progress(
         if mastery_counts.get(concept, 0) > 0
     }
     weak_concepts_snapshot = [
-        concept
-        for concept, score in mastery_snapshot.items()
-        if score < 0.4
+        concept for concept, score in mastery_snapshot.items() if score < 0.4
     ]
 
     progress = await progress_repo.get_by_notebook(notebook_id)
@@ -323,7 +351,9 @@ async def list_notebooks(
     user: UserProfile = Depends(require_auth),
 ):
     notebook_repo = NotebookRepository(db)
-    notebooks = await notebook_repo.get_by_student(user.id, status=status_filter, limit=limit, offset=offset)
+    notebooks = await notebook_repo.get_by_student(
+        user.id, status=status_filter, limit=limit, offset=offset
+    )
     total = await notebook_repo.count_by_student(user.id, status=status_filter)
     return PaginatedResponse(
         items=[_to_notebook_response(n) for n in notebooks],
@@ -379,7 +409,11 @@ async def archive_notebook(
     return _to_notebook_response(notebook)
 
 
-@router.post("/{notebook_id}/resources", response_model=NotebookResourceResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{notebook_id}/resources",
+    response_model=NotebookResourceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def attach_resource_to_notebook(
     notebook_id: UUID,
     request: NotebookResourceAttachRequest,
@@ -392,14 +426,24 @@ async def attach_resource_to_notebook(
     await verify_notebook_owner(notebook_id, user, db)
     resource = await resource_repo.get_by_id(request.resource_id)
     if not resource:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found"
+        )
     if resource.owner_user_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+        )
 
-    existing = await notebook_resource_repo.get_by_pair(notebook_id, request.resource_id)
+    existing = await notebook_resource_repo.get_by_pair(
+        notebook_id, request.resource_id
+    )
     if existing:
-        latest_job = await IngestionJobRepository(db).get_by_resource(request.resource_id)
-        return _to_notebook_resource_response(existing, resource=resource, latest_job=latest_job)
+        latest_job = await IngestionJobRepository(db).get_by_resource(
+            request.resource_id
+        )
+        return _to_notebook_resource_response(
+            existing, resource=resource, latest_job=latest_job
+        )
 
     link = NotebookResource(
         notebook_id=notebook_id,
@@ -411,10 +455,15 @@ async def attach_resource_to_notebook(
     await db.commit()
     await db.refresh(link)
     latest_job = await IngestionJobRepository(db).get_by_resource(request.resource_id)
-    return _to_notebook_resource_response(link, resource=resource, latest_job=latest_job)
+    return _to_notebook_resource_response(
+        link, resource=resource, latest_job=latest_job
+    )
 
 
-@router.get("/{notebook_id}/resources", response_model=PaginatedResponse[NotebookResourceResponse])
+@router.get(
+    "/{notebook_id}/resources",
+    response_model=PaginatedResponse[NotebookResourceResponse],
+)
 async def list_notebook_resources(
     notebook_id: UUID,
     limit: int = 200,
@@ -428,11 +477,15 @@ async def list_notebook_resources(
 
     await verify_notebook_owner(notebook_id, user, db)
     resources = await notebook_resource_repo.get_by_notebook(notebook_id)
-    sliced = resources[offset: offset + limit]
+    sliced = resources[offset : offset + limit]
     resource_ids = [item.resource_id for item in sliced]
     resource_rows = await resource_repo.get_by_ids(resource_ids, owner_user_id=user.id)
     resources_by_id = {resource.id: resource for resource in resource_rows}
-    latest_jobs = await ingestion_repo.get_latest_by_resource_ids(resource_ids) if resource_ids else {}
+    latest_jobs = (
+        await ingestion_repo.get_latest_by_resource_ids(resource_ids)
+        if resource_ids
+        else {}
+    )
     return PaginatedResponse(
         items=[
             _to_notebook_resource_response(
@@ -448,7 +501,9 @@ async def list_notebook_resources(
     )
 
 
-@router.delete("/{notebook_id}/resources/{resource_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{notebook_id}/resources/{resource_id}", status_code=status.HTTP_204_NO_CONTENT
+)
 async def detach_resource_from_notebook(
     notebook_id: UUID,
     resource_id: UUID,
@@ -460,13 +515,19 @@ async def detach_resource_from_notebook(
     await verify_notebook_owner(notebook_id, user, db)
     link = await notebook_resource_repo.get_by_pair(notebook_id, resource_id)
     if not link:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notebook resource not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Notebook resource not found"
+        )
 
     await notebook_resource_repo.delete(link.id)
     await db.commit()
 
 
-@router.post("/{notebook_id}/sessions", response_model=NotebookSessionDetailResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{notebook_id}/sessions",
+    response_model=NotebookSessionDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_notebook_session(
     notebook_id: UUID,
     request: NotebookSessionCreateRequest,
@@ -487,13 +548,19 @@ async def create_notebook_session(
         and hasattr(db, "flush")
         and all(
             hasattr(meter, method_name)
-            for method_name in ("create_operation", "append_usage_line", "finalize_operation")
+            for method_name in (
+                "create_operation",
+                "append_usage_line",
+                "finalize_operation",
+            )
         )
     )
 
     await verify_notebook_owner(notebook_id, user, db)
 
-    notebook_resource = await notebook_resource_repo.get_by_pair(notebook_id, request.resource_id)
+    notebook_resource = await notebook_resource_repo.get_by_pair(
+        notebook_id, request.resource_id
+    )
     if not notebook_resource:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -502,7 +569,9 @@ async def create_notebook_session(
 
     anchor_resource = await resource_repo.get_by_id(request.resource_id)
     if not anchor_resource or anchor_resource.owner_user_id != user.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found"
+        )
 
     curriculum_summary = None
     curriculum_prepare_operation_id = None
@@ -511,18 +580,33 @@ async def create_notebook_session(
     if request.mode in CURRICULUM_REQUIRED_MODES:
         try:
             capabilities = normalized_resource_capabilities(anchor_resource)
-            curriculum_needed = not (capabilities.get("curriculum_ready") and capabilities.get("has_topic_bundles"))
+            curriculum_needed = not (
+                capabilities.get("curriculum_ready")
+                and capabilities.get("has_topic_bundles")
+            )
             if curriculum_needed:
-                latest_job = await IngestionJobRepository(db).get_by_resource(request.resource_id)
-                curriculum_estimate = _estimate_curriculum_prepare_for_resource(anchor_resource, latest_job, meter)
+                latest_job = await IngestionJobRepository(db).get_by_resource(
+                    request.resource_id
+                )
+                curriculum_estimate = _estimate_curriculum_prepare_for_resource(
+                    anchor_resource, latest_job, meter
+                )
                 op = await meter.create_operation(
                     user.id,
                     "curriculum_prepare",
                     resource_id=str(request.resource_id),
                     selected_model_id=settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
-                    estimate_credits_low=int(curriculum_estimate.get("estimated_credits_low") or 0),
-                    estimate_credits_high=int(curriculum_estimate.get("estimated_credits_high") or 0),
-                    metadata={"mode": request.mode, "notebook_id": str(notebook_id), "source": "session_launch"},
+                    estimate_credits_low=int(
+                        curriculum_estimate.get("estimated_credits_low") or 0
+                    ),
+                    estimate_credits_high=int(
+                        curriculum_estimate.get("estimated_credits_high") or 0
+                    ),
+                    metadata={
+                        "mode": request.mode,
+                        "notebook_id": str(notebook_id),
+                        "source": "session_launch",
+                    },
                 )
                 curriculum_prepare_operation_id = getattr(op, "id", None)
                 reserved = await meter.reserve_operation(
@@ -564,16 +648,49 @@ async def create_notebook_session(
                     enrichment_model=settings.LLM_MODEL_ENRICHMENT,
                 ),
             )
-            ontology_before = dict(getattr(ontology_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
-            enrichment_before = dict(getattr(enrichment_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
-            curriculum_summary = await curriculum_preparation.ensure_curriculum_ready(request.resource_id)
-            if curriculum_prepare_operation_id and curriculum_prepare_reserved_credits > 0:
-                ontology_after = dict(getattr(ontology_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
-                enrichment_after = dict(getattr(enrichment_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
-                ontology_prompt = max(0, int(ontology_after.get("prompt_tokens", 0)) - int(ontology_before.get("prompt_tokens", 0)))
-                ontology_completion = max(0, int(ontology_after.get("completion_tokens", 0)) - int(ontology_before.get("completion_tokens", 0)))
-                enrichment_prompt = max(0, int(enrichment_after.get("prompt_tokens", 0)) - int(enrichment_before.get("prompt_tokens", 0)))
-                enrichment_completion = max(0, int(enrichment_after.get("completion_tokens", 0)) - int(enrichment_before.get("completion_tokens", 0)))
+            ontology_before = dict(
+                getattr(ontology_llm, "total_tokens_used", None)
+                or {"prompt_tokens": 0, "completion_tokens": 0}
+            )
+            enrichment_before = dict(
+                getattr(enrichment_llm, "total_tokens_used", None)
+                or {"prompt_tokens": 0, "completion_tokens": 0}
+            )
+            curriculum_summary = await curriculum_preparation.ensure_curriculum_ready(
+                request.resource_id
+            )
+            if (
+                curriculum_prepare_operation_id
+                and curriculum_prepare_reserved_credits > 0
+            ):
+                ontology_after = dict(
+                    getattr(ontology_llm, "total_tokens_used", None)
+                    or {"prompt_tokens": 0, "completion_tokens": 0}
+                )
+                enrichment_after = dict(
+                    getattr(enrichment_llm, "total_tokens_used", None)
+                    or {"prompt_tokens": 0, "completion_tokens": 0}
+                )
+                ontology_prompt = max(
+                    0,
+                    int(ontology_after.get("prompt_tokens", 0))
+                    - int(ontology_before.get("prompt_tokens", 0)),
+                )
+                ontology_completion = max(
+                    0,
+                    int(ontology_after.get("completion_tokens", 0))
+                    - int(ontology_before.get("completion_tokens", 0)),
+                )
+                enrichment_prompt = max(
+                    0,
+                    int(enrichment_after.get("prompt_tokens", 0))
+                    - int(enrichment_before.get("prompt_tokens", 0)),
+                )
+                enrichment_completion = max(
+                    0,
+                    int(enrichment_after.get("completion_tokens", 0))
+                    - int(enrichment_before.get("completion_tokens", 0)),
+                )
                 if ontology_prompt or ontology_completion:
                     await meter.append_usage_line(
                         curriculum_prepare_operation_id,
@@ -598,7 +715,10 @@ async def create_notebook_session(
                     reference_type="curriculum_prepare",
                 )
         except HTTPException:
-            if curriculum_prepare_operation_id and curriculum_prepare_reserved_credits > 0:
+            if (
+                curriculum_prepare_operation_id
+                and curriculum_prepare_reserved_credits > 0
+            ):
                 await meter.release_operation(
                     user.id,
                     curriculum_prepare_operation_id,
@@ -608,7 +728,10 @@ async def create_notebook_session(
                 )
             raise
         except ValueError as exc:
-            if curriculum_prepare_operation_id and curriculum_prepare_reserved_credits > 0:
+            if (
+                curriculum_prepare_operation_id
+                and curriculum_prepare_reserved_credits > 0
+            ):
                 await meter.release_operation(
                     user.id,
                     curriculum_prepare_operation_id,
@@ -621,7 +744,10 @@ async def create_notebook_session(
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
         except Exception:
-            if curriculum_prepare_operation_id and curriculum_prepare_reserved_credits > 0:
+            if (
+                curriculum_prepare_operation_id
+                and curriculum_prepare_reserved_credits > 0
+            ):
                 await meter.release_operation(
                     user.id,
                     curriculum_prepare_operation_id,
@@ -639,7 +765,11 @@ async def create_notebook_session(
         )
     except ValueError as exc:
         detail = str(exc)
-        if "not study-ready" in detail or "not doubt-ready" in detail or "no chunks available" in detail:
+        if (
+            "not study-ready" in detail
+            or "not doubt-ready" in detail
+            or "no chunks available" in detail
+        ):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
@@ -681,7 +811,8 @@ async def create_notebook_session(
     # CM-006: Record curriculum/session-launch usage once the session exists.
     if supports_operation_metering:
         op = await meter.create_operation(
-            user.id, "session_launch",
+            user.id,
+            "session_launch",
             session_id=str(session.id),
             resource_id=str(request.resource_id),
             selected_model_id=settings.LLM_MODEL_ONTOLOGY or settings.LLM_MODEL,
@@ -693,14 +824,17 @@ async def create_notebook_session(
 
     if operation_id and supports_operation_metering:
         await meter.append_usage_line(
-            operation_id, "curriculum_planning",
+            operation_id,
+            "curriculum_planning",
             settings.LLM_MODEL_CURRICULUM or settings.LLM_MODEL,
             input_tokens=2000,
             output_tokens=1500,
         )
         # CM-006: Finalize session launch operation
         await meter.finalize_operation(
-            user.id, operation_id, 0,
+            user.id,
+            operation_id,
+            0,
             reference_id=str(request.resource_id),
             reference_type="session_launch",
         )
@@ -749,7 +883,9 @@ async def create_notebook_session(
     )
 
 
-@router.get("/{notebook_id}/sessions", response_model=PaginatedResponse[NotebookSessionResponse])
+@router.get(
+    "/{notebook_id}/sessions", response_model=PaginatedResponse[NotebookSessionResponse]
+)
 async def list_notebook_sessions(
     notebook_id: UUID,
     limit: int = 50,
@@ -760,7 +896,9 @@ async def list_notebook_sessions(
     notebook_session_repo = NotebookSessionRepository(db)
 
     await verify_notebook_owner(notebook_id, user, db)
-    links = await notebook_session_repo.get_by_notebook(notebook_id, limit=limit, offset=offset)
+    links = await notebook_session_repo.get_by_notebook(
+        notebook_id, limit=limit, offset=offset
+    )
     return PaginatedResponse(
         items=[_to_notebook_session_response(link) for link in links],
         total=len(links),
@@ -769,7 +907,9 @@ async def list_notebook_sessions(
     )
 
 
-@router.get("/{notebook_id}/sessions/{session_id}", response_model=NotebookSessionDetailResponse)
+@router.get(
+    "/{notebook_id}/sessions/{session_id}", response_model=NotebookSessionDetailResponse
+)
 async def get_notebook_session(
     notebook_id: UUID,
     session_id: UUID,
@@ -782,14 +922,20 @@ async def get_notebook_session(
     await verify_notebook_owner(notebook_id, user, db)
     link = await notebook_session_repo.get_by_pair(notebook_id, session_id)
     if not link:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notebook session not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Notebook session not found"
+        )
 
     session = await session_repo.get_by_id(session_id)
     if not session:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
 
     if session.user_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+        )
 
     return NotebookSessionDetailResponse(
         notebook_session=_to_notebook_session_response(link),
@@ -817,7 +963,10 @@ async def get_notebook_progress(
     return progress
 
 
-@router.get("/{notebook_id}/artifacts", response_model=PaginatedResponse[NotebookArtifactResponse])
+@router.get(
+    "/{notebook_id}/artifacts",
+    response_model=PaginatedResponse[NotebookArtifactResponse],
+)
 async def list_notebook_artifacts(
     notebook_id: UUID,
     artifact_type: Optional[str] = None,
@@ -834,7 +983,9 @@ async def list_notebook_artifacts(
         limit=limit,
         offset=offset,
     )
-    total = await artifact_repo.count_by_notebook(notebook_id=notebook_id, artifact_type=artifact_type)
+    total = await artifact_repo.count_by_notebook(
+        notebook_id=notebook_id, artifact_type=artifact_type
+    )
     return PaginatedResponse(
         items=[_to_notebook_artifact_response(a) for a in artifacts],
         total=total,
@@ -843,7 +994,11 @@ async def list_notebook_artifacts(
     )
 
 
-@router.post("/{notebook_id}/artifacts:generate", response_model=NotebookArtifactResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{notebook_id}/artifacts:generate",
+    response_model=NotebookArtifactResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def generate_notebook_artifact(
     notebook_id: UUID,
     request: NotebookArtifactGenerateRequest,
@@ -866,7 +1021,9 @@ async def generate_notebook_artifact(
     notebook_resource_repo = NotebookResourceRepository(db)
     turn_repo = TutorTurnRepository(db)
 
-    notebook_session_links = await notebook_session_repo.get_by_notebook(notebook_id, limit=5000, offset=0)
+    notebook_session_links = await notebook_session_repo.get_by_notebook(
+        notebook_id, limit=5000, offset=0
+    )
     notebook_session_ids = {str(link.session_id) for link in notebook_session_links}
     notebook_resource_links = await notebook_resource_repo.get_by_notebook(notebook_id)
     notebook_resource_ids = {str(link.resource_id) for link in notebook_resource_links}
@@ -905,7 +1062,9 @@ async def generate_notebook_artifact(
         if not session or session.user_id != user.id:
             continue
         source_sessions.append(session)
-        turns_by_session[session_id] = await turn_repo.get_by_session(session.id, limit=20)
+        turns_by_session[session_id] = await turn_repo.get_by_session(
+            session.id, limit=20
+        )
 
     progress = await _compute_and_persist_notebook_progress(notebook_id, db)
 
@@ -917,17 +1076,25 @@ async def generate_notebook_artifact(
         and hasattr(db, "flush")
         and all(
             hasattr(meter, method_name)
-            for method_name in ("create_operation", "append_usage_line", "finalize_operation")
+            for method_name in (
+                "create_operation",
+                "append_usage_line",
+                "finalize_operation",
+            )
         )
     )
     artifact_model_id = settings.LLM_MODEL_TUTORING or settings.LLM_MODEL
     operation_id = None
     if supports_operation_metering:
         op = await meter.create_operation(
-            user.id, "artifact_generation",
+            user.id,
+            "artifact_generation",
             resource_id=str(notebook_id),
             selected_model_id=artifact_model_id,
-            metadata={"artifact_type": request.artifact_type, "notebook_id": str(notebook_id)},
+            metadata={
+                "artifact_type": request.artifact_type,
+                "notebook_id": str(notebook_id),
+            },
         )
         operation_id = getattr(op, "id", None)
 
@@ -963,13 +1130,16 @@ async def generate_notebook_artifact(
         est_output_tokens = max(500, payload_chars // 4)
         est_input_tokens = max(1000, est_output_tokens * 2)
         await meter.append_usage_line(
-            operation_id, "artifact_generation",
+            operation_id,
+            "artifact_generation",
             artifact_model_id,
             input_tokens=est_input_tokens,
             output_tokens=est_output_tokens,
         )
         await meter.finalize_operation(
-            user.id, operation_id, 0,
+            user.id,
+            operation_id,
+            0,
             reference_id=str(notebook_id),
             reference_type="artifact",
         )

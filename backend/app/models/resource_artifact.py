@@ -45,7 +45,9 @@ class ResourceArtifactState(Base, UUIDMixin, TimestampMixin):
     )
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    resource: Mapped[Optional["Resource"]] = relationship("Resource", back_populates="artifact_states")
+    resource: Mapped[Optional["Resource"]] = relationship(
+        "Resource", back_populates="artifact_states"
+    )
     notebook: Mapped[Optional["Notebook"]] = relationship("Notebook")
 
     __table_args__ = (

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, List, TYPE_CHECKING
 
-from sqlalchemy import String, Text, Integer, DateTime, func
+from sqlalchemy import String, Text, DateTime, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import ForeignKey
@@ -67,7 +67,9 @@ def core_ready_capabilities(existing: Optional[dict] = None) -> dict:
     return capabilities
 
 
-def study_ready_capabilities(existing: Optional[dict] = None, *, has_concepts: bool = True) -> dict:
+def study_ready_capabilities(
+    existing: Optional[dict] = None, *, has_concepts: bool = True
+) -> dict:
     capabilities = core_ready_capabilities(existing)
     capabilities.update(
         {
@@ -82,6 +84,7 @@ def study_ready_capabilities(existing: Optional[dict] = None, *, has_concepts: b
 
 class Resource(Base, UUIDMixin, TimestampMixin):
     """Represents one ingested document/resource."""
+
     __tablename__ = "resource"
 
     filename: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -124,7 +127,9 @@ class Resource(Base, UUIDMixin, TimestampMixin):
         nullable=True,
     )
     pipeline_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    processing_profile: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, default="core_only")
+    processing_profile: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, default="core_only"
+    )
     capabilities_json: Mapped[Optional[dict]] = mapped_column(
         JSONB,
         nullable=True,

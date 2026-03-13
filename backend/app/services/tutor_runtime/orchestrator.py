@@ -61,7 +61,9 @@ from app.services.tutor_runtime.persistence import (
     handle_session_complete as _handle_session_complete,
     persist_turn as _persist_turn,
 )
-from app.services.tutor_runtime.progression import apply_progression as _apply_progression
+from app.services.tutor_runtime.progression import (
+    apply_progression as _apply_progression,
+)
 from app.services.tutor_runtime.scoring import emit_scores as _emit_scores
 from app.services.tutor_runtime.telemetry_contract import (
     build_turn_telemetry_contract as _build_turn_telemetry_contract,
@@ -167,19 +169,22 @@ class TurnPipeline:
         try:
             critic_output = await self.critic.evaluate(
                 tutor_output.response_text,
-                [{"text": c.text, "chunk_id": str(c.chunk_id)} for c in retrieved_chunks],
+                [
+                    {"text": c.text, "chunk_id": str(c.chunk_id)}
+                    for c in retrieved_chunks
+                ],
                 current_obj,
                 student_message,
-                cited_evidence_chunk_ids=getattr(tutor_output, "evidence_chunk_ids", None),
+                cited_evidence_chunk_ids=getattr(
+                    tutor_output, "evidence_chunk_ids", None
+                ),
             )
         finally:
             self._close_optional_span(
                 safety_span_ctx,
                 span=safety_span,
                 output={
-                    "blocked": bool(
-                        getattr(critic_output, "should_block", False)
-                    ),
+                    "blocked": bool(getattr(critic_output, "should_block", False)),
                     "safety_decision": getattr(
                         critic_output,
                         "safety_decision",
@@ -189,7 +194,9 @@ class TurnPipeline:
             )
 
         if critic_output and critic_output.should_block:
-            safety_decision = getattr(critic_output, "safety_decision", "refuse_and_redirect")
+            safety_decision = getattr(
+                critic_output, "safety_decision", "refuse_and_redirect"
+            )
             _append_trace_event(
                 plan,
                 "guard_override",
@@ -202,9 +209,7 @@ class TurnPipeline:
                 },
             )
             if safety_decision == "refuse":
-                blocked_text = (
-                    "I can't help with that request. We can continue with the learning topic instead."
-                )
+                blocked_text = "I can't help with that request. We can continue with the learning topic instead."
             else:
                 blocked_text = (
                     "I can't help with that request. Let's stay on the learning topic. "
@@ -264,9 +269,7 @@ class TurnPipeline:
     ) -> None:
         """Track recently cited evidence chunks for novelty-aware retrieval."""
         prior_recent = [
-            str(cid)
-            for cid in (plan.get("recent_evidence_chunk_ids") or [])
-            if cid
+            str(cid) for cid in (plan.get("recent_evidence_chunk_ids") or []) if cid
         ]
         new_recent = [str(cid) for cid in (evidence_chunk_ids or []) if cid]
         merged_recent = prior_recent + new_recent
@@ -434,39 +437,40 @@ class TurnPipeline:
                 guard_override_count = sum(
                     1
                     for event in (result.guard_events or [])
-                    if isinstance(event, dict)
-                    and event.get("name") == "guard_override"
+                    if isinstance(event, dict) and event.get("name") == "guard_override"
                 )
                 root_span.update(
-                    output=normalize_trace_metadata({
-                        "turn": {
-                            "turn_id": turn_id,
-                            "latency_ms": latency,
-                            "session_complete": result.session_complete,
-                            "degraded": result.degraded_mode,
-                        },
-                        "agent_outcome": {
-                            "action": result.action,
-                            "decision_requested": result.decision_requested,
-                            "decision_applied": result.decision_applied,
-                            "delegated": result.delegated,
-                            "delegation_reason": result.delegation_reason,
-                        },
-                        "learning_state": {
-                            "objective_id": result.objective_id,
-                            "objective": result.objective_title,
-                            "step": result.current_step,
-                            "step_index": result.current_step_index,
-                            "transition": result.step_transition,
-                        },
-                        "signals": {
-                            "guard_override_count": guard_override_count,
-                            "evidence_count": len(result.evidence_chunk_ids or []),
-                            "score_contract_version": (
-                                (result.telemetry_contract or {}).get("version")
-                            ),
-                        },
-                    })
+                    output=normalize_trace_metadata(
+                        {
+                            "turn": {
+                                "turn_id": turn_id,
+                                "latency_ms": latency,
+                                "session_complete": result.session_complete,
+                                "degraded": result.degraded_mode,
+                            },
+                            "agent_outcome": {
+                                "action": result.action,
+                                "decision_requested": result.decision_requested,
+                                "decision_applied": result.decision_applied,
+                                "delegated": result.delegated,
+                                "delegation_reason": result.delegation_reason,
+                            },
+                            "learning_state": {
+                                "objective_id": result.objective_id,
+                                "objective": result.objective_title,
+                                "step": result.current_step,
+                                "step_index": result.current_step_index,
+                                "transition": result.step_transition,
+                            },
+                            "signals": {
+                                "guard_override_count": guard_override_count,
+                                "evidence_count": len(result.evidence_chunk_ids or []),
+                                "score_contract_version": (
+                                    (result.telemetry_contract or {}).get("version")
+                                ),
+                            },
+                        }
+                    )
                 )
 
                 trace_id = getattr(root_span, "trace_id", None)
@@ -524,7 +528,9 @@ class TurnPipeline:
 
         if obj_idx >= len(objective_queue):
             return await _handle_session_complete(
-                self.db, session, turn_id,
+                self.db,
+                session,
+                turn_id,
                 llm_provider=self.tutor.llm,
             )
 
@@ -588,12 +594,19 @@ class TurnPipeline:
     ) -> TurnResult:
         roadmap = _get_step_roadmap(current_obj)
         current_step_data = roadmap[step_idx] if step_idx < len(roadmap) else {}
-        step_type = _get_step_type(current_step_data) or plan.get("current_step", "explain")
+        step_type = _get_step_type(current_step_data) or plan.get(
+            "current_step", "explain"
+        )
         plan["effective_step_type"] = step_type
         objective_queue = plan.get("objective_queue", [])
         student_concept_state_before = plan.get("student_concept_state") or {}
         uncertainty_before = {
-            concept: float((student_concept_state_before.get(concept) or {}).get("mastery_uncertainty", 0.0) or 0.0)
+            concept: float(
+                (student_concept_state_before.get(concept) or {}).get(
+                    "mastery_uncertainty", 0.0
+                )
+                or 0.0
+            )
             for concept in focus_concepts
         }
 
@@ -626,7 +639,9 @@ class TurnPipeline:
                         lf=lf,
                     )
                     _apply_evaluation_plan_updates(plan, current_obj, evaluation_result)
-                    mastery_snap = {c: session.mastery.get(c, 0.0) for c in focus_concepts}
+                    mastery_snap = {
+                        c: session.mastery.get(c, 0.0) for c in focus_concepts
+                    }
 
                 recent_turns = await recent_turns_task
             except Exception:
@@ -645,7 +660,9 @@ class TurnPipeline:
                 notebook_id=(notebook_context or {}).get("notebook_id"),
                 notebook_resource_ids=[
                     str(resource_id)
-                    for resource_id in ((notebook_context or {}).get("resource_ids") or [])
+                    for resource_id in (
+                        (notebook_context or {}).get("resource_ids") or []
+                    )
                     if resource_id
                 ],
             )
@@ -719,11 +736,12 @@ class TurnPipeline:
             )
 
             evidence_chunk_ids = (
-                getattr(tutor_output, "evidence_chunk_ids", None)
-                or evidence_chunk_ids
+                getattr(tutor_output, "evidence_chunk_ids", None) or evidence_chunk_ids
             )
 
-            has_question, detected_question = _detect_question(tutor_output.response_text)
+            has_question, detected_question = _detect_question(
+                tutor_output.response_text
+            )
             if has_question:
                 plan["awaiting_evaluation"] = True
                 plan["awaiting_turn_id"] = turn_id
@@ -831,6 +849,7 @@ class TurnPipeline:
             _clear_transient_runtime_flags(plan)
             try:
                 from app.agents.summary_agent import SummaryAgent, SummaryState
+
                 mastery_dict = dict(session.mastery) if session.mastery else {}
                 summary_state = SummaryState(
                     objectives=objective_queue,
@@ -851,8 +870,12 @@ class TurnPipeline:
                         {
                             "objective_id": obj.get("objective_id", ""),
                             "title": obj.get("title", ""),
-                            "primary_concepts": obj.get("concept_scope", {}).get("primary", []),
-                            "progress": plan.get("objective_progress", {}).get(obj.get("objective_id", ""), {}),
+                            "primary_concepts": obj.get("concept_scope", {}).get(
+                                "primary", []
+                            ),
+                            "progress": plan.get("objective_progress", {}).get(
+                                obj.get("objective_id", ""), {}
+                            ),
                         }
                         for obj in objective_queue
                     ],
@@ -865,7 +888,10 @@ class TurnPipeline:
                 flag_modified(session, "plan_state")
             except Exception as e:
                 import logging as _logging
-                _logging.getLogger(__name__).warning(f"Summary generation failed in orchestrator: {e}")
+
+                _logging.getLogger(__name__).warning(
+                    f"Summary generation failed in orchestrator: {e}"
+                )
 
             await self.db.execute(
                 update(NotebookSession)

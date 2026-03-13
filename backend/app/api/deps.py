@@ -5,6 +5,7 @@ When AUTH_ENABLED=false (local dev), all endpoints use a default user
 and no token is required.  When AUTH_ENABLED=true (hosted/production),
 a valid JWT Bearer token is mandatory on protected routes.
 """
+
 import logging
 import time
 import uuid
@@ -33,18 +34,24 @@ logger = logging.getLogger(__name__)
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def create_access_token(user_id: str, *, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    user_id: str, *, expires_delta: Optional[timedelta] = None
+) -> str:
     """Issue a signed JWT for *user_id*."""
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=settings.AUTH_TOKEN_EXPIRE_MINUTES)
     )
     payload = {"sub": user_id, "exp": expire}
-    return jwt.encode(payload, settings.AUTH_SECRET_KEY, algorithm=settings.AUTH_ALGORITHM)
+    return jwt.encode(
+        payload, settings.AUTH_SECRET_KEY, algorithm=settings.AUTH_ALGORITHM
+    )
 
 
 def decode_access_token(token: str) -> dict:
     """Decode & verify a JWT.  Raises on invalid/expired tokens."""
-    return jwt.decode(token, settings.AUTH_SECRET_KEY, algorithms=[settings.AUTH_ALGORITHM])
+    return jwt.decode(
+        token, settings.AUTH_SECRET_KEY, algorithms=[settings.AUTH_ALGORITHM]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +144,9 @@ def get_configured_admin_external_id() -> Optional[str]:
 def is_admin_user(user: UserProfile) -> bool:
     """Return whether the user matches the sole configured admin identity."""
     configured_admin = get_configured_admin_external_id()
-    return bool(configured_admin and user.external_id and user.external_id == configured_admin)
+    return bool(
+        configured_admin and user.external_id and user.external_id == configured_admin
+    )
 
 
 async def require_admin(
@@ -185,9 +194,13 @@ async def verify_session_owner(
     session_repo = SessionRepository(db)
     session = await session_repo.get_by_id(session_id)
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
     if session.user_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+        )
 
 
 async def verify_notebook_owner(
@@ -201,9 +214,13 @@ async def verify_notebook_owner(
     notebook_repo = NotebookRepository(db)
     notebook = await notebook_repo.get_by_id(notebook_id)
     if notebook is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notebook not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Notebook not found"
+        )
     if notebook.student_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+        )
     return notebook
 
 
@@ -254,7 +271,9 @@ async def _get_rate_limit_redis() -> Optional[aioredis.Redis]:
     return _rate_limit_redis
 
 
-async def check_rate_limit(user: UserProfile = Depends(get_current_user)) -> UserProfile:
+async def check_rate_limit(
+    user: UserProfile = Depends(get_current_user),
+) -> UserProfile:
     """Basic per-user request rate-limiter.  Returns the user on success."""
     if not settings.RATE_LIMIT_ENABLED:
         return user
@@ -289,7 +308,10 @@ async def check_rate_limit(user: UserProfile = Depends(get_current_user)) -> Use
             global _rate_limit_redis_disabled_until
             _rate_limit_redis = None
             _rate_limit_redis_disabled_until = time.time() + 30
-            logger.warning("Redis rate-limit backend unavailable, falling back to local limiter: %s", exc)
+            logger.warning(
+                "Redis rate-limit backend unavailable, falling back to local limiter: %s",
+                exc,
+            )
 
     timestamps = _rate_limit_store.get(key, [])
     timestamps = [t for t in timestamps if now - t < window]
@@ -353,7 +375,10 @@ async def check_auth_rate_limit(request: Request) -> None:
             global _rate_limit_redis_disabled_until
             _rate_limit_redis = None
             _rate_limit_redis_disabled_until = time.time() + 30
-            logger.warning("Redis auth rate-limit backend unavailable, falling back to local limiter: %s", exc)
+            logger.warning(
+                "Redis auth rate-limit backend unavailable, falling back to local limiter: %s",
+                exc,
+            )
 
     timestamps.append(now)
     _auth_rate_limit_store[key] = timestamps
@@ -366,7 +391,9 @@ async def check_auth_rate_limit(request: Request) -> None:
 
 def get_byok_api_key(
     x_llm_api_key: Optional[str] = Header(default=None, alias="X-LLM-Api-Key"),
-    x_llm_api_base_url: Optional[str] = Header(default=None, alias="X-LLM-Api-Base-Url"),
+    x_llm_api_base_url: Optional[str] = Header(
+        default=None, alias="X-LLM-Api-Base-Url"
+    ),
 ) -> dict:
     """Extract BYOK LLM credentials from request headers.
 

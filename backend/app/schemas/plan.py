@@ -7,8 +7,9 @@ from app.schemas.objective import Objective, ObjectiveProgress, StepType
 
 class CurriculumObjectiveSummary(BaseModel):
     """Summary of an objective for curriculum slice."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     objective_id: str = Field(..., min_length=1)
     title: str = Field(..., min_length=1)
     description: str = Field(..., min_length=1)
@@ -19,6 +20,7 @@ class CurriculumObjectiveSummary(BaseModel):
 
 class CurriculumStepView(BaseModel):
     """A step within the curriculum for agent consumption."""
+
     model_config = ConfigDict(extra="forbid")
 
     type: StepType = Field(...)
@@ -32,6 +34,7 @@ class CurriculumStepView(BaseModel):
 
 class CurriculumSlice(BaseModel):
     """A compact view of the current curriculum state for agent consumption."""
+
     model_config = ConfigDict(extra="forbid")
 
     current_objective: CurriculumObjectiveSummary
@@ -54,8 +57,9 @@ class CurriculumSlice(BaseModel):
 
 class PlanState(BaseModel):
     """The canonical session plan state."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     version: Literal[3] = 3
     resource_id: str = Field(..., min_length=1)
     objective_queue: List[Objective] = Field(..., min_length=1)
@@ -66,7 +70,10 @@ class PlanState(BaseModel):
         serialization_alias="current_step_index",
         description="Canonical progression pointer into step_roadmap",
     )
-    current_step: StepType = Field(..., description="Human-readable step type derived from step_roadmap[current_step_index].type")
+    current_step: StepType = Field(
+        ...,
+        description="Human-readable step type derived from step_roadmap[current_step_index].type",
+    )
     turns_at_step: int = Field(default=0, ge=0)
     step_status: Dict[str, str] = Field(default_factory=dict)
     ad_hoc_count: int = Field(

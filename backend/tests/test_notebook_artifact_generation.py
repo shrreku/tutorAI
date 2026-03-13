@@ -38,8 +38,12 @@ def _sample_sessions():
 
 def _sample_turns(sessions):
     return {
-        str(sessions[0].id): [SimpleNamespace(tutor_response="Entropy measures disorder in a system.")],
-        str(sessions[1].id): [SimpleNamespace(tutor_response="Velocity is displacement over time.")],
+        str(sessions[0].id): [
+            SimpleNamespace(tutor_response="Entropy measures disorder in a system.")
+        ],
+        str(sessions[1].id): [
+            SimpleNamespace(tutor_response="Velocity is displacement over time.")
+        ],
     }
 
 
@@ -82,7 +86,9 @@ def test_build_artifact_payload_rejects_unsupported_type():
         asyncio.run(
             service.generate_payload(
                 artifact_type="mind_map",
-                notebook=SimpleNamespace(title="Physics Notebook", goal="Prepare for exam"),
+                notebook=SimpleNamespace(
+                    title="Physics Notebook", goal="Prepare for exam"
+                ),
                 sessions=_sample_sessions(),
                 turns_by_session={},
                 progress=_sample_progress(),

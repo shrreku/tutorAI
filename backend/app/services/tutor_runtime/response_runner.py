@@ -15,8 +15,7 @@ from app.services.tutor_runtime.step_state import build_curriculum_slice, get_st
 
 
 class TutorAgentProtocol(Protocol):
-    async def generate(self, state: TutorState) -> TutorOutput:
-        ...
+    async def generate(self, state: TutorState) -> TutorOutput: ...
 
 
 def _augment_guidance(

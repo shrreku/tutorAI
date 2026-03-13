@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
 from langfuse import observe
 
@@ -70,7 +70,9 @@ class TutorAgent(BaseAgent[TutorState, TutorOutput]):
 
     @observe(name="agent.tutor", capture_input=False)
     async def run(self, state: TutorState) -> TutorOutput:
-        logger.info(f"TutorAgent: step={state.current_step}, msg={state.student_message[:50]}...")
+        logger.info(
+            f"TutorAgent: step={state.current_step}, msg={state.student_message[:50]}..."
+        )
 
         if self.llm:
             try:
@@ -124,7 +126,9 @@ class TutorAgent(BaseAgent[TutorState, TutorOutput]):
         )
 
         # Target concepts from policy
-        targets = f"\nTARGET CONCEPTS THIS TURN: {state.target_concepts or 'same as step'}"
+        targets = (
+            f"\nTARGET CONCEPTS THIS TURN: {state.target_concepts or 'same as step'}"
+        )
 
         # Guidance from policy
         guidance = ""
@@ -174,13 +178,9 @@ Write your tutoring response now."""
                 "and then I’ll check whether the confusion is gone."
             )
         elif mode == "practice":
-            response = (
-                "Try the next step yourself first. Show me your attempt, and I’ll give only the smallest hint needed to keep you moving."
-            )
+            response = "Try the next step yourself first. Show me your attempt, and I’ll give only the smallest hint needed to keep you moving."
         elif mode == "revision":
-            response = (
-                "Quick revision pass: state the key idea in one or two sentences, then we’ll test whether you can retrieve it cleanly without support."
-            )
+            response = "Quick revision pass: state the key idea in one or two sentences, then we’ll test whether you can retrieve it cleanly without support."
         elif step in {"motivate", "activate_prior"}:
             response = (
                 "Great starting point. Before we dive in, what related idea do you already feel confident about? "

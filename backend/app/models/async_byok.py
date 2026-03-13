@@ -30,11 +30,23 @@ class AsyncByokEscrow(Base, UUIDMixin, TimestampMixin):
     key_reference: Mapped[str] = mapped_column(String(256), nullable=False)
     key_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     aad_hash: Mapped[str] = mapped_column(String(128), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
-    hard_delete_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    last_accessed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="active", index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    hard_delete_after: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    last_accessed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     access_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     deletion_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

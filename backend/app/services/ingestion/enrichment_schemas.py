@@ -94,7 +94,9 @@ class ConceptMetadataSchema(BaseModel):
         default="principle",
         description="Ontological type of the concept",
     )
-    bloom_level: Literal["remember", "understand", "apply", "analyze", "evaluate", "create"] = Field(
+    bloom_level: Literal[
+        "remember", "understand", "apply", "analyze", "evaluate", "create"
+    ] = Field(
         default="understand",
         description="Bloom's taxonomy level for this concept in this chunk",
     )
@@ -148,7 +150,9 @@ class PrereqHintSchema(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    source_concept: str = Field(..., description="Concept that requires the prerequisite")
+    source_concept: str = Field(
+        ..., description="Concept that requires the prerequisite"
+    )
     target_concept: str = Field(..., description="Prerequisite concept")
     confidence: Optional[float] = Field(default=0.8, ge=0.0, le=1.0)
 

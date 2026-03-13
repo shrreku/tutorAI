@@ -93,7 +93,9 @@ class _DbStub:
 
 
 class _CurriculumStub:
-    async def generate_plan(self, resource_id, topic=None, selected_topics=None, mode=None):
+    async def generate_plan(
+        self, resource_id, topic=None, selected_topics=None, mode=None
+    ):
         return {
             "active_topic": topic,
             "mode": mode,
@@ -105,7 +107,9 @@ class _CurriculumCountingStub:
     def __init__(self):
         self.calls = 0
 
-    async def generate_plan(self, resource_id, topic=None, selected_topics=None, mode=None):
+    async def generate_plan(
+        self, resource_id, topic=None, selected_topics=None, mode=None
+    ):
         self.calls += 1
         return {
             "active_topic": topic,
@@ -144,7 +148,9 @@ def test_session_service_writes_new_sessions_as_v3(monkeypatch):
         return ["conduction"]
 
     monkeypatch.setattr(SessionService, "_get_resource", _get_resource)
-    monkeypatch.setattr(SessionService, "_get_or_create_default_user", _get_or_create_default_user)
+    monkeypatch.setattr(
+        SessionService, "_get_or_create_default_user", _get_or_create_default_user
+    )
     monkeypatch.setattr(SessionService, "_get_active_session", _get_active_session)
     monkeypatch.setattr(SessionService, "_get_concepts", _get_concepts)
 
@@ -218,7 +224,9 @@ def test_session_service_can_force_new_session_without_resuming(monkeypatch):
         return ["conduction"]
 
     monkeypatch.setattr(SessionService, "_get_resource", _get_resource)
-    monkeypatch.setattr(SessionService, "_get_or_create_default_user", _get_or_create_default_user)
+    monkeypatch.setattr(
+        SessionService, "_get_or_create_default_user", _get_or_create_default_user
+    )
     monkeypatch.setattr(SessionService, "_get_active_session", _get_active_session)
     monkeypatch.setattr(SessionService, "_get_concepts", _get_concepts)
 
@@ -263,7 +271,9 @@ def test_session_service_bootstraps_first_step_from_mode_contract(monkeypatch):
         return ["conduction"]
 
     monkeypatch.setattr(SessionService, "_get_resource", _get_resource)
-    monkeypatch.setattr(SessionService, "_get_or_create_default_user", _get_or_create_default_user)
+    monkeypatch.setattr(
+        SessionService, "_get_or_create_default_user", _get_or_create_default_user
+    )
     monkeypatch.setattr(SessionService, "_get_active_session", _get_active_session)
     monkeypatch.setattr(SessionService, "_get_concepts", _get_concepts)
 
@@ -295,7 +305,9 @@ def test_session_service_fails_early_when_ready_resource_has_no_concepts(monkeyp
         return []
 
     monkeypatch.setattr(SessionService, "_get_resource", _get_resource)
-    monkeypatch.setattr(SessionService, "_get_or_create_default_user", _get_or_create_default_user)
+    monkeypatch.setattr(
+        SessionService, "_get_or_create_default_user", _get_or_create_default_user
+    )
     monkeypatch.setattr(SessionService, "_get_active_session", _get_active_session)
     monkeypatch.setattr(SessionService, "_get_concepts", _get_concepts)
 
@@ -322,15 +334,21 @@ def test_session_service_allows_doubt_mode_without_concepts(monkeypatch):
         return []
 
     monkeypatch.setattr(SessionService, "_get_resource", _get_resource)
-    monkeypatch.setattr(SessionService, "_get_or_create_default_user", _get_or_create_default_user)
+    monkeypatch.setattr(
+        SessionService, "_get_or_create_default_user", _get_or_create_default_user
+    )
     monkeypatch.setattr(SessionService, "_get_active_session", _get_active_session)
     monkeypatch.setattr(SessionService, "_get_concepts", _get_concepts)
 
     curriculum = _CurriculumCountingStub()
     service = SessionService(_DbStub(), curriculum)
-    session = asyncio.run(service.create_session(resource_id=uuid.uuid4(), mode="doubt"))
+    session = asyncio.run(
+        service.create_session(resource_id=uuid.uuid4(), mode="doubt")
+    )
 
     assert curriculum.calls == 0
     assert session.plan_state["mode"] == "doubt"
-    assert session.plan_state["objective_queue"][0]["objective_id"] == "obj_doubt_clarify"
+    assert (
+        session.plan_state["objective_queue"][0]["objective_id"] == "obj_doubt_clarify"
+    )
     assert session.plan_state["current_step"] == "clarify"

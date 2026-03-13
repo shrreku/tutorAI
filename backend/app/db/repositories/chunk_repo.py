@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import List
 from uuid import UUID
 
 from sqlalchemy import select, func
@@ -34,14 +34,14 @@ class ChunkRepository(BaseRepository[Chunk]):
         """Get chunks by a list of IDs."""
         if not chunk_ids:
             return []
-        result = await self.db.execute(
-            select(Chunk).where(Chunk.id.in_(chunk_ids))
-        )
+        result = await self.db.execute(select(Chunk).where(Chunk.id.in_(chunk_ids)))
         return list(result.scalars().all())
 
     async def count_by_resource(self, resource_id: UUID) -> int:
         """Count chunks for a resource."""
         result = await self.db.execute(
-            select(func.count()).select_from(Chunk).where(Chunk.resource_id == resource_id)
+            select(func.count())
+            .select_from(Chunk)
+            .where(Chunk.resource_id == resource_id)
         )
         return int(result.scalar_one() or 0)

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.repositories.credits_repo import CreditAccountRepository
 from app.db.repositories.metering_repo import MeteringRepository
-from app.services.telemetry.billing_events import emit_billing_event, emit_cost_drift, emit_estimation_quality
+from app.services.telemetry.billing_events import emit_billing_event, emit_cost_drift
 
 if TYPE_CHECKING:
     from app.models.credits import BillingOperation, BillingUsageLine
@@ -42,7 +42,9 @@ class CreditMeter:
 
     @staticmethod
     def credit_units_to_usd(units: int | float) -> float:
-        return (float(units) / CREDIT_UNITS_PER_CREDIT) * settings.CREDITS_USD_PER_CREDIT
+        return (
+            float(units) / CREDIT_UNITS_PER_CREDIT
+        ) * settings.CREDITS_USD_PER_CREDIT
 
     @staticmethod
     def default_signup_grant_memo(now: datetime | None = None) -> str:
@@ -158,7 +160,10 @@ class CreditMeter:
         )
         logger.info(
             "Turn %s cost %d credits (reserved %d) for model %s",
-            turn_id, actual, reserved_credits, model_id,
+            turn_id,
+            actual,
+            reserved_credits,
+            model_id,
         )
         return actual
 
@@ -274,7 +279,9 @@ class CreditMeter:
 
         if chunk_count_estimate <= 0:
             if is_pdf and page_count_estimate > 0:
-                chunk_count_estimate = max(page_count_estimate * 2, math.ceil(token_count_estimate / 800))
+                chunk_count_estimate = max(
+                    page_count_estimate * 2, math.ceil(token_count_estimate / 800)
+                )
             else:
                 chunk_count_estimate = max(1, math.ceil(token_count_estimate / 800))
 
@@ -294,12 +301,16 @@ class CreditMeter:
         eco_out = 0.06 / 1_000_000
 
         usd_low = (
-            ontology_tokens_low * std_in + ontology_output_low * std_out
-            + enrich_input_low * eco_in + enrich_output_low * eco_out
+            ontology_tokens_low * std_in
+            + ontology_output_low * std_out
+            + enrich_input_low * eco_in
+            + enrich_output_low * eco_out
         )
         usd_high = (
-            ontology_tokens_high * std_in + ontology_output_high * std_out
-            + enrich_input_high * eco_in + enrich_output_high * eco_out
+            ontology_tokens_high * std_in
+            + ontology_output_high * std_out
+            + enrich_input_high * eco_in
+            + enrich_output_high * eco_out
         )
 
         credits_low = max(100, self._usd_to_credits(usd_low))
@@ -344,7 +355,9 @@ class CreditMeter:
         )
         if entry is None:
             return None
-        logger.info("Reserved %d credits for ingestion job %s", estimated_credits, job_id)
+        logger.info(
+            "Reserved %d credits for ingestion job %s", estimated_credits, job_id
+        )
         return estimated_credits
 
     async def finalize_ingestion(
@@ -387,7 +400,11 @@ class CreditMeter:
             reference_type="ingestion",
             reference_id=job_id,
         )
-        logger.info("Released %d reserved credits for ingestion job %s", reserved_credits, job_id)
+        logger.info(
+            "Released %d reserved credits for ingestion job %s",
+            reserved_credits,
+            job_id,
+        )
 
     # ------------------------------------------------------------------
     # Operation-based metering (CM-004)
@@ -409,14 +426,20 @@ class CreditMeter:
         """Create a new billing operation."""
         if not settings.OPERATION_METERING_ENABLED:
             from app.models.credits import BillingOperation
+
             # Return a transient object so callers don't need to branch
             return BillingOperation(
-                id=uuid.uuid4(), user_id=user_id, operation_type=operation_type,
+                id=uuid.uuid4(),
+                user_id=user_id,
+                operation_type=operation_type,
                 status="disabled",
             )
         return await self.metering_repo.create_operation(
-            user_id, operation_type,
-            resource_id=resource_id, session_id=session_id, artifact_id=artifact_id,
+            user_id,
+            operation_type,
+            resource_id=resource_id,
+            session_id=session_id,
+            artifact_id=artifact_id,
             selected_model_id=selected_model_id,
             estimate_credits_low=estimate_credits_low,
             estimate_credits_high=estimate_credits_high,
@@ -436,14 +459,18 @@ class CreditMeter:
             return 0
         await self.ensure_account(user_id)
         entry = await self.repo.reserve_credits(
-            user_id, estimated_credits,
-            reference_type=reference_type, reference_id=reference_id,
+            user_id,
+            estimated_credits,
+            reference_type=reference_type,
+            reference_id=reference_id,
         )
         if entry is None:
             return None
         if settings.OPERATION_METERING_ENABLED:
             await self.metering_repo.update_operation_status(
-                operation_id, "reserved", reserved_credits=estimated_credits,
+                operation_id,
+                "reserved",
+                reserved_credits=estimated_credits,
             )
         return estimated_credits
 
@@ -465,11 +492,17 @@ class CreditMeter:
             return None
 
         raw_usd = await self._compute_raw_usd(
-            model_id, input_tokens, output_tokens,
-            cache_write_tokens, cache_read_tokens, tool_units,
+            model_id,
+            input_tokens,
+            output_tokens,
+            cache_write_tokens,
+            cache_read_tokens,
+            tool_units,
         )
         return await self.metering_repo.append_usage_line(
-            operation_id, task_type, model_id,
+            operation_id,
+            task_type,
+            model_id,
             provider_name=provider_name,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -509,20 +542,28 @@ class CreditMeter:
 
         if settings.OPERATION_METERING_ENABLED:
             await self.metering_repo.update_operation_status(
-                operation_id, "finalized",
+                operation_id,
+                "finalized",
                 final_credits=final_credits,
                 final_usd=total_usd,
             )
 
         logger.info(
             "Finalized operation %s: %d credits ($%.6f), reserved was %d",
-            operation_id, final_credits, total_usd, reserved_credits,
+            operation_id,
+            final_credits,
+            total_usd,
+            reserved_credits,
         )
         emit_billing_event(
             "billing.operation.finalized",
             user_id=str(user_id),
             operation_id=str(operation_id),
-            metadata={"final_credits": final_credits, "final_usd": total_usd, "reference_type": reference_type},
+            metadata={
+                "final_credits": final_credits,
+                "final_usd": total_usd,
+                "reference_type": reference_type,
+            },
         )
 
         # CM-018: Emit cost drift metric when estimate was provided
@@ -550,18 +591,24 @@ class CreditMeter:
         if not settings.CREDITS_ENABLED or reserved_credits <= 0:
             return
         await self.repo.release_reservation(
-            user_id, reserved_credits,
-            reference_type=reference_type, reference_id=reference_id,
+            user_id,
+            reserved_credits,
+            reference_type=reference_type,
+            reference_id=reference_id,
         )
         if settings.OPERATION_METERING_ENABLED:
             await self.metering_repo.update_operation_status(
-                operation_id, "released",
+                operation_id,
+                "released",
             )
         emit_billing_event(
             "billing.operation.released",
             user_id=str(user_id),
             operation_id=str(operation_id),
-            metadata={"reserved_credits": reserved_credits, "reference_type": reference_type},
+            metadata={
+                "reserved_credits": reserved_credits,
+                "reference_type": reference_type,
+            },
         )
 
     async def _compute_raw_usd(
@@ -577,7 +624,9 @@ class CreditMeter:
         pricing = await self.metering_repo.get_model_pricing(model_id)
         if pricing is None:
             # Fallback: use old multiplier-based calc, convert to rough USD
-            old_credits = await self.repo.compute_credits(model_id, input_tokens, output_tokens)
+            old_credits = await self.repo.compute_credits(
+                model_id, input_tokens, output_tokens
+            )
             return self.credit_units_to_usd(old_credits)
 
         raw = (
@@ -621,7 +670,9 @@ class CreditMeter:
 
         for line in lines:
             pricing = await self.metering_repo.get_model_pricing(line.model_id)
-            model_class = pricing.model_class if pricing and pricing.model_class else "economy"
+            model_class = (
+                pricing.model_class if pricing and pricing.model_class else "economy"
+            )
             rank = class_rank.get(model_class, class_rank["economy"])
             if rank > highest_rank:
                 highest_class = model_class
@@ -672,8 +723,12 @@ class CreditMeter:
         )
         core_upload_usd = round(self.credit_units_to_usd(core_upload_credits), 6)
 
-        total_credits_low = core_upload_credits + int(curriculum["estimated_credits_low"])
-        total_credits_high = core_upload_credits + int(curriculum["estimated_credits_high"])
+        total_credits_low = core_upload_credits + int(
+            curriculum["estimated_credits_low"]
+        )
+        total_credits_high = core_upload_credits + int(
+            curriculum["estimated_credits_high"]
+        )
         total_usd_low = core_upload_usd + float(curriculum["estimated_usd_low"])
         total_usd_high = core_upload_usd + float(curriculum["estimated_usd_high"])
 

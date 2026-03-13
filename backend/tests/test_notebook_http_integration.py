@@ -104,7 +104,9 @@ def test_http_notebook_tutor_turn_requires_notebook_session_mapping(monkeypatch)
         return None
 
     async def _fake_verify_notebook_session_link(*_args, **_kwargs):
-        raise HTTPException(status_code=404, detail="Notebook session mapping not found")
+        raise HTTPException(
+            status_code=404, detail="Notebook session mapping not found"
+        )
 
     class _SessionRepo:
         def __init__(self, _db):
@@ -121,11 +123,20 @@ def test_http_notebook_tutor_turn_requires_notebook_session_mapping(monkeypatch)
             return []
 
     app.dependency_overrides[tutor_module.check_rate_limit] = _fake_user
-    app.dependency_overrides[tutor_module.get_byok_api_key] = lambda: {"api_key": None, "api_base_url": None}
-    monkeypatch.setattr(tutor_module, "verify_session_owner", _fake_verify_session_owner)
-    monkeypatch.setattr(tutor_module, "verify_notebook_session_link", _fake_verify_notebook_session_link)
+    app.dependency_overrides[tutor_module.get_byok_api_key] = lambda: {
+        "api_key": None,
+        "api_base_url": None,
+    }
+    monkeypatch.setattr(
+        tutor_module, "verify_session_owner", _fake_verify_session_owner
+    )
+    monkeypatch.setattr(
+        tutor_module, "verify_notebook_session_link", _fake_verify_notebook_session_link
+    )
     monkeypatch.setattr(tutor_module, "SessionRepository", _SessionRepo)
-    monkeypatch.setattr(tutor_module, "NotebookResourceRepository", _NotebookResourceRepo)
+    monkeypatch.setattr(
+        tutor_module, "NotebookResourceRepository", _NotebookResourceRepo
+    )
 
     with _build_client() as client:
         response = client.post(
@@ -165,7 +176,10 @@ def test_http_legacy_tutor_turn_endpoint_gone_when_notebooks_enabled(monkeypatch
         return SimpleNamespace(id=uuid4())
 
     app.dependency_overrides[tutor_module.check_rate_limit] = _fake_user
-    app.dependency_overrides[tutor_module.get_byok_api_key] = lambda: {"api_key": None, "api_base_url": None}
+    app.dependency_overrides[tutor_module.get_byok_api_key] = lambda: {
+        "api_key": None,
+        "api_base_url": None,
+    }
 
     with _build_client() as client:
         response = client.post(
@@ -208,7 +222,10 @@ def test_http_notebook_session_creation_returns_preparation_summary(monkeypatch)
                 id=resource_id,
                 owner_user_id=user_id,
                 filename="chapter-2.pdf",
-                capabilities_json={"curriculum_ready": False, "has_topic_bundles": False},
+                capabilities_json={
+                    "curriculum_ready": False,
+                    "has_topic_bundles": False,
+                },
                 file_path_or_uri=None,
             )
 
@@ -308,23 +325,50 @@ def test_http_notebook_session_creation_returns_preparation_summary(monkeypatch)
         async def get_by_resource(self, _resource_id):
             return None
 
-    monkeypatch.setattr(notebooks_module, "NotebookResourceRepository", _NotebookResourceRepo)
+    monkeypatch.setattr(
+        notebooks_module, "NotebookResourceRepository", _NotebookResourceRepo
+    )
     monkeypatch.setattr(notebooks_module, "ResourceRepository", _ResourceRepo)
-    monkeypatch.setattr(notebooks_module, "NotebookSessionRepository", _NotebookSessionRepo)
+    monkeypatch.setattr(
+        notebooks_module, "NotebookSessionRepository", _NotebookSessionRepo
+    )
     monkeypatch.setattr(notebooks_module, "UserProfileRepository", _UserRepo)
-    monkeypatch.setattr(notebooks_module, "NotebookPreparationService", _PreparationService)
-    monkeypatch.setattr(notebooks_module, "CurriculumPreparationService", _CurriculumPreparationService)
+    monkeypatch.setattr(
+        notebooks_module, "NotebookPreparationService", _PreparationService
+    )
+    monkeypatch.setattr(
+        notebooks_module, "CurriculumPreparationService", _CurriculumPreparationService
+    )
     monkeypatch.setattr(notebooks_module, "CreditMeter", _CreditMeter)
     monkeypatch.setattr(notebooks_module, "IngestionJobRepository", _IngestionRepo)
     monkeypatch.setattr(notebooks_module, "SessionService", _SessionService)
-    monkeypatch.setattr(notebooks_module, "CurriculumAgent", lambda *_args, **_kwargs: SimpleNamespace())
-    monkeypatch.setattr(notebooks_module, "create_embedding_provider", lambda *_args, **_kwargs: SimpleNamespace(embed=lambda *_a, **_k: []))
-    monkeypatch.setattr(notebooks_module, "create_llm_provider", lambda *_args, **_kwargs: SimpleNamespace())
-    monkeypatch.setattr(notebooks_module, "create_llm_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(
+        notebooks_module, "CurriculumAgent", lambda *_args, **_kwargs: SimpleNamespace()
+    )
+    monkeypatch.setattr(
+        notebooks_module,
+        "create_embedding_provider",
+        lambda *_args, **_kwargs: SimpleNamespace(embed=lambda *_a, **_k: []),
+    )
+    monkeypatch.setattr(
+        notebooks_module,
+        "create_llm_provider",
+        lambda *_args, **_kwargs: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        notebooks_module,
+        "create_llm_provider",
+        lambda *_args, **_kwargs: SimpleNamespace(),
+    )
     monkeypatch.setattr(notebooks_module, "verify_notebook_owner", _fake_owner)
-    monkeypatch.setattr(notebooks_module, "emit_notebook_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        notebooks_module, "emit_notebook_event", lambda *_args, **_kwargs: None
+    )
     app.dependency_overrides[notebooks_module.require_auth] = _fake_user
-    app.dependency_overrides[notebooks_module.get_byok_api_key] = lambda: {"api_key": None, "api_base_url": None}
+    app.dependency_overrides[notebooks_module.get_byok_api_key] = lambda: {
+        "api_key": None,
+        "api_base_url": None,
+    }
 
     with _build_client() as client:
         response = client.post(
@@ -389,7 +433,10 @@ def test_http_notebook_resources_include_resource_snapshot(monkeypatch):
                     topic="Mechanics",
                     status="ready",
                     processing_profile="prepared_for_curriculum",
-                    capabilities_json={"curriculum_ready": True, "has_topic_bundles": True},
+                    capabilities_json={
+                        "curriculum_ready": True,
+                        "has_topic_bundles": True,
+                    },
                     uploaded_at="2026-03-12T00:00:00Z",
                     processed_at="2026-03-12T00:10:00Z",
                     processed=True,
@@ -404,7 +451,9 @@ def test_http_notebook_resources_include_resource_snapshot(monkeypatch):
             assert resource_ids == [resource_id]
             return {}
 
-    monkeypatch.setattr(notebooks_module, "NotebookResourceRepository", _NotebookResourceRepo)
+    monkeypatch.setattr(
+        notebooks_module, "NotebookResourceRepository", _NotebookResourceRepo
+    )
     monkeypatch.setattr(notebooks_module, "ResourceRepository", _ResourceRepo)
     monkeypatch.setattr(notebooks_module, "IngestionJobRepository", _IngestionRepo)
     monkeypatch.setattr(notebooks_module, "verify_notebook_owner", _fake_owner)
@@ -452,7 +501,10 @@ def test_http_notebook_session_creation_runs_curriculum_before_preparation(monke
                 id=resource_id,
                 owner_user_id=user_id,
                 filename="chapter-2.pdf",
-                capabilities_json={"curriculum_ready": False, "has_topic_bundles": False},
+                capabilities_json={
+                    "curriculum_ready": False,
+                    "has_topic_bundles": False,
+                },
                 file_path_or_uri=None,
             )
 
@@ -484,7 +536,10 @@ def test_http_notebook_session_creation_runs_curriculum_before_preparation(monke
 
         async def prepare_session_context(self, **_kwargs):
             assert calls["curriculum"] == 1
-            return {"scope_type": "single_resource", "scope_resource_ids": [str(resource_id)]}
+            return {
+                "scope_type": "single_resource",
+                "scope_resource_ids": [str(resource_id)],
+            }
 
     class _CurriculumPreparationService:
         def __init__(self, _db, **_kwargs):
@@ -539,22 +594,45 @@ def test_http_notebook_session_creation_runs_curriculum_before_preparation(monke
         async def get_by_resource(self, _resource_id):
             return None
 
-    monkeypatch.setattr(notebooks_module, "NotebookResourceRepository", _NotebookResourceRepo)
+    monkeypatch.setattr(
+        notebooks_module, "NotebookResourceRepository", _NotebookResourceRepo
+    )
     monkeypatch.setattr(notebooks_module, "ResourceRepository", _ResourceRepo)
-    monkeypatch.setattr(notebooks_module, "NotebookSessionRepository", _NotebookSessionRepo)
+    monkeypatch.setattr(
+        notebooks_module, "NotebookSessionRepository", _NotebookSessionRepo
+    )
     monkeypatch.setattr(notebooks_module, "UserProfileRepository", _UserRepo)
-    monkeypatch.setattr(notebooks_module, "NotebookPreparationService", _PreparationService)
-    monkeypatch.setattr(notebooks_module, "CurriculumPreparationService", _CurriculumPreparationService)
+    monkeypatch.setattr(
+        notebooks_module, "NotebookPreparationService", _PreparationService
+    )
+    monkeypatch.setattr(
+        notebooks_module, "CurriculumPreparationService", _CurriculumPreparationService
+    )
     monkeypatch.setattr(notebooks_module, "CreditMeter", _CreditMeter)
     monkeypatch.setattr(notebooks_module, "IngestionJobRepository", _IngestionRepo)
     monkeypatch.setattr(notebooks_module, "SessionService", _SessionService)
-    monkeypatch.setattr(notebooks_module, "CurriculumAgent", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(
+        notebooks_module, "CurriculumAgent", lambda *_args, **_kwargs: SimpleNamespace()
+    )
     monkeypatch.setattr(notebooks_module, "verify_notebook_owner", _fake_owner)
-    monkeypatch.setattr(notebooks_module, "emit_notebook_event", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(notebooks_module, "create_embedding_provider", lambda *_args, **_kwargs: SimpleNamespace(embed=lambda *_a, **_k: []))
-    monkeypatch.setattr(notebooks_module, "create_llm_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(
+        notebooks_module, "emit_notebook_event", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        notebooks_module,
+        "create_embedding_provider",
+        lambda *_args, **_kwargs: SimpleNamespace(embed=lambda *_a, **_k: []),
+    )
+    monkeypatch.setattr(
+        notebooks_module,
+        "create_llm_provider",
+        lambda *_args, **_kwargs: SimpleNamespace(),
+    )
     app.dependency_overrides[notebooks_module.require_auth] = _fake_user
-    app.dependency_overrides[notebooks_module.get_byok_api_key] = lambda: {"api_key": None, "api_base_url": None}
+    app.dependency_overrides[notebooks_module.get_byok_api_key] = lambda: {
+        "api_key": None,
+        "api_base_url": None,
+    }
 
     with _build_client() as client:
         response = client.post(
@@ -597,7 +675,10 @@ def test_http_notebook_doubt_session_skips_curriculum_preparation(monkeypatch):
                 id=resource_id,
                 owner_user_id=user_id,
                 filename="chapter-2.pdf",
-                capabilities_json={"can_answer_doubts": True, "vector_search_ready": True},
+                capabilities_json={
+                    "can_answer_doubts": True,
+                    "vector_search_ready": True,
+                },
                 file_path_or_uri=None,
             )
 
@@ -628,7 +709,10 @@ def test_http_notebook_doubt_session_skips_curriculum_preparation(monkeypatch):
             pass
 
         async def prepare_session_context(self, **_kwargs):
-            return {"scope_type": "single_resource", "scope_resource_ids": [str(resource_id)]}
+            return {
+                "scope_type": "single_resource",
+                "scope_resource_ids": [str(resource_id)],
+            }
 
     class _CurriculumPreparationService:
         def __init__(self, _db, **_kwargs):
@@ -654,19 +738,40 @@ def test_http_notebook_doubt_session_skips_curriculum_preparation(monkeypatch):
                 created_at="2026-03-08T00:00:00Z",
             )
 
-    monkeypatch.setattr(notebooks_module, "NotebookResourceRepository", _NotebookResourceRepo)
+    monkeypatch.setattr(
+        notebooks_module, "NotebookResourceRepository", _NotebookResourceRepo
+    )
     monkeypatch.setattr(notebooks_module, "ResourceRepository", _ResourceRepo)
-    monkeypatch.setattr(notebooks_module, "NotebookSessionRepository", _NotebookSessionRepo)
+    monkeypatch.setattr(
+        notebooks_module, "NotebookSessionRepository", _NotebookSessionRepo
+    )
     monkeypatch.setattr(notebooks_module, "UserProfileRepository", _UserRepo)
-    monkeypatch.setattr(notebooks_module, "NotebookPreparationService", _PreparationService)
-    monkeypatch.setattr(notebooks_module, "CurriculumPreparationService", _CurriculumPreparationService)
+    monkeypatch.setattr(
+        notebooks_module, "NotebookPreparationService", _PreparationService
+    )
+    monkeypatch.setattr(
+        notebooks_module, "CurriculumPreparationService", _CurriculumPreparationService
+    )
     monkeypatch.setattr(notebooks_module, "SessionService", _SessionService)
-    monkeypatch.setattr(notebooks_module, "CurriculumAgent", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(
+        notebooks_module, "CurriculumAgent", lambda *_args, **_kwargs: SimpleNamespace()
+    )
     monkeypatch.setattr(notebooks_module, "verify_notebook_owner", _fake_owner)
-    monkeypatch.setattr(notebooks_module, "create_embedding_provider", lambda *_args, **_kwargs: SimpleNamespace(embed=lambda *_a, **_k: []))
-    monkeypatch.setattr(notebooks_module, "create_llm_provider", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(
+        notebooks_module,
+        "create_embedding_provider",
+        lambda *_args, **_kwargs: SimpleNamespace(embed=lambda *_a, **_k: []),
+    )
+    monkeypatch.setattr(
+        notebooks_module,
+        "create_llm_provider",
+        lambda *_args, **_kwargs: SimpleNamespace(),
+    )
     app.dependency_overrides[notebooks_module.require_auth] = _fake_user
-    app.dependency_overrides[notebooks_module.get_byok_api_key] = lambda: {"api_key": None, "api_base_url": None}
+    app.dependency_overrides[notebooks_module.get_byok_api_key] = lambda: {
+        "api_key": None,
+        "api_base_url": None,
+    }
 
     with _build_client() as client:
         response = client.post(

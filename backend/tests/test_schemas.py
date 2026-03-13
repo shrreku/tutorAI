@@ -13,7 +13,7 @@ from app.schemas.agent_output import (
 
 class TestConceptScope:
     """Tests for ConceptScope schema."""
-    
+
     def test_valid_concept_scope(self):
         """Test valid concept scope."""
         scope = ConceptScope(
@@ -23,18 +23,18 @@ class TestConceptScope:
         )
         assert scope.primary == ["heat_transfer"]
         assert len(scope.support) == 2
-    
+
     def test_primary_required(self):
         """Test primary is required and must have at least one element."""
         with pytest.raises(ValidationError):
             ConceptScope(primary=[])
-    
+
     def test_defaults(self):
         """Test support and prereq default to empty lists."""
         scope = ConceptScope(primary=["heat_transfer"])
         assert scope.support == []
         assert scope.prereq == []
-    
+
     def test_extra_fields_forbidden(self):
         """Test extra fields are rejected."""
         with pytest.raises(ValidationError):
@@ -43,7 +43,7 @@ class TestConceptScope:
 
 class TestCurriculumStep:
     """Tests for CurriculumStep schema."""
-    
+
     def test_valid_step(self):
         """Test valid curriculum step."""
         step = CurriculumStep(
@@ -52,7 +52,7 @@ class TestCurriculumStep:
             goal="Connect heat transfer to real-world systems.",
         )
         assert step.type == StepType.MOTIVATE
-    
+
     def test_legacy_step_type_field_rejected(self):
         """Legacy step_type alias should be rejected by strict schema."""
         with pytest.raises(ValidationError):
@@ -70,7 +70,7 @@ class TestCurriculumStep:
                 target_concepts=["heat_transfer"],
                 goal="Introduce the concept.",
             )
-    
+
     def test_step_type_enum(self):
         """Test type must be valid enum."""
         with pytest.raises(ValidationError):
@@ -93,7 +93,7 @@ class TestCurriculumStep:
 
 class TestPolicyOrchestratorOutput:
     """Tests for PolicyOrchestratorOutput schema."""
-    
+
     def test_valid_output(self):
         """Test valid policy output."""
         output = PolicyOrchestratorOutput(
@@ -106,7 +106,7 @@ class TestPolicyOrchestratorOutput:
             skip_target_index=2,
         )
         assert output.confidence == 0.85
-    
+
     def test_confidence_bounds(self):
         """Test confidence must be between 0 and 1."""
         with pytest.raises(ValidationError):
@@ -116,7 +116,7 @@ class TestPolicyOrchestratorOutput:
                 confidence=1.5,  # Invalid
                 reasoning="x",
             )
-    
+
     def test_reasoning_required(self):
         """Test reasoning is required and non-empty."""
         with pytest.raises(ValidationError):
@@ -141,7 +141,7 @@ class TestPolicyOrchestratorOutput:
 
 class TestTutorOutput:
     """Tests for TutorOutput schema."""
-    
+
     def test_valid_output(self):
         """Test valid tutor output."""
         output = TutorOutput(
@@ -149,7 +149,7 @@ class TestTutorOutput:
             tutor_question="Can you describe the three modes?",
         )
         assert output.response_text.startswith("Let me")
-    
+
     def test_response_required(self):
         """Test response_text is required."""
         with pytest.raises(ValidationError):
@@ -163,7 +163,7 @@ class TestTutorOutput:
 
 class TestEvaluatorOutput:
     """Tests for EvaluatorOutput schema."""
-    
+
     def test_valid_output(self):
         """Test valid evaluator output."""
         output = EvaluatorOutput(
@@ -173,7 +173,7 @@ class TestEvaluatorOutput:
             misconceptions=["confused conduction with convection"],
         )
         assert output.overall_score == 0.75
-    
+
     def test_correctness_label_literal(self):
         """Test correctness_label must be valid literal."""
         with pytest.raises(ValidationError):
@@ -182,7 +182,7 @@ class TestEvaluatorOutput:
                 correctness_label="invalid",
                 multi_concept=False,
             )
-    
+
     def test_score_bounds(self):
         """Test overall_score must be between 0 and 1."""
         with pytest.raises(ValidationError):

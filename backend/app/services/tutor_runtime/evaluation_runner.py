@@ -12,8 +12,7 @@ from app.services.student_state import (
 
 
 class EvaluatorAgentProtocol(Protocol):
-    async def evaluate(self, state: EvaluatorState) -> EvaluatorOutput:
-        ...
+    async def evaluate(self, state: EvaluatorState) -> EvaluatorOutput: ...
 
 
 def _delta_payload(value: Any) -> dict[str, Any]:
@@ -107,7 +106,8 @@ async def evaluate_response(
 
             mastery_delta = {
                 concept: round(
-                    session.mastery.get(concept, 0.0) - before_mastery.get(concept, 0.0),
+                    session.mastery.get(concept, 0.0)
+                    - before_mastery.get(concept, 0.0),
                     6,
                 )
                 for concept in touched

@@ -29,7 +29,9 @@ class AsyncByokEscrowRepository(BaseRepository[AsyncByokEscrow]):
             await self.db.flush()
         return len(rows)
 
-    async def list_for_user(self, user_id: UUID, *, include_inactive: bool = False, limit: int = 50) -> list[AsyncByokEscrow]:
+    async def list_for_user(
+        self, user_id: UUID, *, include_inactive: bool = False, limit: int = 50
+    ) -> list[AsyncByokEscrow]:
         query = (
             select(AsyncByokEscrow)
             .where(AsyncByokEscrow.user_id == user_id)
@@ -41,7 +43,9 @@ class AsyncByokEscrowRepository(BaseRepository[AsyncByokEscrow]):
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
-    async def get_for_user(self, escrow_id: UUID, user_id: UUID) -> AsyncByokEscrow | None:
+    async def get_for_user(
+        self, escrow_id: UUID, user_id: UUID
+    ) -> AsyncByokEscrow | None:
         result = await self.db.execute(
             select(AsyncByokEscrow).where(
                 AsyncByokEscrow.id == escrow_id,
@@ -50,7 +54,9 @@ class AsyncByokEscrowRepository(BaseRepository[AsyncByokEscrow]):
         )
         return result.scalar_one_or_none()
 
-    async def get_for_decrypt(self, escrow_id: UUID, *, purpose_type: str, purpose_id: str) -> AsyncByokEscrow | None:
+    async def get_for_decrypt(
+        self, escrow_id: UUID, *, purpose_type: str, purpose_id: str
+    ) -> AsyncByokEscrow | None:
         result = await self.db.execute(
             select(AsyncByokEscrow).where(
                 AsyncByokEscrow.id == escrow_id,
@@ -60,13 +66,17 @@ class AsyncByokEscrowRepository(BaseRepository[AsyncByokEscrow]):
         )
         return result.scalar_one_or_none()
 
-    async def mark_accessed(self, escrow: AsyncByokEscrow, *, when: datetime | None = None) -> None:
+    async def mark_accessed(
+        self, escrow: AsyncByokEscrow, *, when: datetime | None = None
+    ) -> None:
         current = when or datetime.now(timezone.utc)
         escrow.last_accessed_at = current
         escrow.access_count = int(escrow.access_count or 0) + 1
         await self.db.flush()
 
-    async def revoke(self, escrow: AsyncByokEscrow, *, reason: str, when: datetime | None = None) -> None:
+    async def revoke(
+        self, escrow: AsyncByokEscrow, *, reason: str, when: datetime | None = None
+    ) -> None:
         current = when or datetime.now(timezone.utc)
         escrow.status = "revoked"
         escrow.revoked_at = current
@@ -74,7 +84,14 @@ class AsyncByokEscrowRepository(BaseRepository[AsyncByokEscrow]):
         escrow.deletion_reason = reason
         await self.db.flush()
 
-    async def finalize_terminal(self, escrow: AsyncByokEscrow, *, reason: str, success: bool, when: datetime | None = None) -> None:
+    async def finalize_terminal(
+        self,
+        escrow: AsyncByokEscrow,
+        *,
+        reason: str,
+        success: bool,
+        when: datetime | None = None,
+    ) -> None:
         current = when or datetime.now(timezone.utc)
         escrow.status = "consumed" if success else "deleted"
         escrow.deleted_at = current

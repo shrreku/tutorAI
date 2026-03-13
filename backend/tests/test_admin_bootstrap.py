@@ -45,12 +45,22 @@ def test_ensure_bootstrap_admin_creates_account_when_missing(monkeypatch):
             return None
 
     monkeypatch.setattr(settings, "AUTH_ENABLED", True, raising=False)
-    monkeypatch.setattr(settings, "ADMIN_EXTERNAL_ID", "admin@example.com", raising=False)
-    monkeypatch.setattr(settings, "ADMIN_BOOTSTRAP_EMAIL", "admin@example.com", raising=False)
-    monkeypatch.setattr(settings, "ADMIN_BOOTSTRAP_PASSWORD", "Password123!", raising=False)
-    monkeypatch.setattr(settings, "ADMIN_BOOTSTRAP_DISPLAY_NAME", "Prod Admin", raising=False)
+    monkeypatch.setattr(
+        settings, "ADMIN_EXTERNAL_ID", "admin@example.com", raising=False
+    )
+    monkeypatch.setattr(
+        settings, "ADMIN_BOOTSTRAP_EMAIL", "admin@example.com", raising=False
+    )
+    monkeypatch.setattr(
+        settings, "ADMIN_BOOTSTRAP_PASSWORD", "Password123!", raising=False
+    )
+    monkeypatch.setattr(
+        settings, "ADMIN_BOOTSTRAP_DISPLAY_NAME", "Prod Admin", raising=False
+    )
     monkeypatch.setattr(bootstrap_module, "UserProfileRepository", _Repo)
-    monkeypatch.setattr(bootstrap_module, "async_session_factory", _FakeSessionFactory(fake_session))
+    monkeypatch.setattr(
+        bootstrap_module, "async_session_factory", _FakeSessionFactory(fake_session)
+    )
 
     asyncio.run(bootstrap_module.ensure_bootstrap_admin())
 
@@ -80,12 +90,22 @@ def test_ensure_bootstrap_admin_updates_existing_account(monkeypatch):
             return existing
 
     monkeypatch.setattr(settings, "AUTH_ENABLED", True, raising=False)
-    monkeypatch.setattr(settings, "ADMIN_EXTERNAL_ID", "admin@example.com", raising=False)
-    monkeypatch.setattr(settings, "ADMIN_BOOTSTRAP_EMAIL", "admin@example.com", raising=False)
-    monkeypatch.setattr(settings, "ADMIN_BOOTSTRAP_PASSWORD", "Password123!", raising=False)
-    monkeypatch.setattr(settings, "ADMIN_BOOTSTRAP_DISPLAY_NAME", "Prod Admin", raising=False)
+    monkeypatch.setattr(
+        settings, "ADMIN_EXTERNAL_ID", "admin@example.com", raising=False
+    )
+    monkeypatch.setattr(
+        settings, "ADMIN_BOOTSTRAP_EMAIL", "admin@example.com", raising=False
+    )
+    monkeypatch.setattr(
+        settings, "ADMIN_BOOTSTRAP_PASSWORD", "Password123!", raising=False
+    )
+    monkeypatch.setattr(
+        settings, "ADMIN_BOOTSTRAP_DISPLAY_NAME", "Prod Admin", raising=False
+    )
     monkeypatch.setattr(bootstrap_module, "UserProfileRepository", _Repo)
-    monkeypatch.setattr(bootstrap_module, "async_session_factory", _FakeSessionFactory(fake_session))
+    monkeypatch.setattr(
+        bootstrap_module, "async_session_factory", _FakeSessionFactory(fake_session)
+    )
 
     asyncio.run(bootstrap_module.ensure_bootstrap_admin())
 

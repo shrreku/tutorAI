@@ -2,7 +2,15 @@ import uuid
 from datetime import datetime
 from typing import Optional, List, TYPE_CHECKING
 
-from sqlalchemy import String, Text, Boolean, ForeignKey, UniqueConstraint, DateTime, func
+from sqlalchemy import (
+    String,
+    Text,
+    Boolean,
+    ForeignKey,
+    UniqueConstraint,
+    DateTime,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,7 +34,9 @@ class Notebook(Base, UUIDMixin, TimestampMixin):
     )
     title: Mapped[str] = mapped_column(String(256), nullable=False)
     goal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    target_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    target_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     settings_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
@@ -70,7 +80,9 @@ class NotebookResource(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
-    role: Mapped[str] = mapped_column(String(32), nullable=False, default="supplemental")
+    role: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="supplemental"
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     added_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -82,7 +94,9 @@ class NotebookResource(Base, UUIDMixin, TimestampMixin):
     resource: Mapped["Resource"] = relationship("Resource")
 
     __table_args__ = (
-        UniqueConstraint("notebook_id", "resource_id", name="uq_notebook_resource_pair"),
+        UniqueConstraint(
+            "notebook_id", "resource_id", name="uq_notebook_resource_pair"
+        ),
     )
 
 
@@ -109,7 +123,9 @@ class NotebookSession(Base, UUIDMixin, TimestampMixin):
         server_default=func.now(),
         nullable=False,
     )
-    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     notebook: Mapped["Notebook"] = relationship("Notebook", back_populates="sessions")
     session: Mapped["UserSession"] = relationship("UserSession")
@@ -132,7 +148,9 @@ class NotebookProgress(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
     mastery_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    objective_progress_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    objective_progress_snapshot: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True
+    )
     weak_concepts_snapshot: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
 
     notebook: Mapped["Notebook"] = relationship("Notebook", back_populates="progress")

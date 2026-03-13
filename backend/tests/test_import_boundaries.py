@@ -115,9 +115,9 @@ def test_runtime_ingestion_boundaries_are_clean():
     for module, imports in runtime_imports.items():
         bad = sorted(i for i in imports if i.startswith("app.services.ingestion"))
         assert not bad, f"{module} must not import ingestion modules: {bad}"
-        assert (
-            "app.services.tutor.turn_pipeline" not in imports
-        ), f"{module} must not import legacy turn_pipeline shim"
+        assert "app.services.tutor.turn_pipeline" not in imports, (
+            f"{module} must not import legacy turn_pipeline shim"
+        )
 
     for module, imports in ingestion_imports.items():
         bad = sorted(i for i in imports if i.startswith("app.services.tutor_runtime"))

@@ -106,8 +106,8 @@ def cosine_similarity(vec1: dict[str, float], vec2: dict[str, float]) -> float:
         return 0.0
 
     dot_product = sum(vec1[key] * vec2[key] for key in common_keys)
-    mag1 = math.sqrt(sum(value ** 2 for value in vec1.values()))
-    mag2 = math.sqrt(sum(value ** 2 for value in vec2.values()))
+    mag1 = math.sqrt(sum(value**2 for value in vec1.values()))
+    mag2 = math.sqrt(sum(value**2 for value in vec2.values()))
 
     if mag1 == 0 or mag2 == 0:
         return 0.0

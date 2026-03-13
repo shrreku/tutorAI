@@ -22,7 +22,9 @@ class LearningObjective(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     objective: str = Field(..., description="What the learner should be able to do")
-    bloom_level: Literal["remember", "understand", "apply", "analyze", "evaluate", "create"] = Field(
+    bloom_level: Literal[
+        "remember", "understand", "apply", "analyze", "evaluate", "create"
+    ] = Field(
         default="understand",
         description="Bloom's taxonomy level",
     )
@@ -80,7 +82,9 @@ class TermDefinition(BaseModel):
 
     term: str = Field(..., description="The term")
     definition: str = Field(..., description="Brief definition")
-    context: Optional[str] = Field(default=None, description="Context where this term applies")
+    context: Optional[str] = Field(
+        default=None, description="Context where this term applies"
+    )
 
 
 class OntologySemanticRelation(BaseModel):

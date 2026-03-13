@@ -4,8 +4,10 @@ from typing import Optional
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/studyagent"
-    
+    DATABASE_URL: str = (
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/studyagent"
+    )
+
     # LLM Configuration
     LLM_API_KEY: str = ""
     LLM_API_BASE_URL: str = "https://api.openai.com/v1"
@@ -15,21 +17,27 @@ class Settings(BaseSettings):
     LLM_MAX_TOKENS_PER_SESSION: int = 100000
     LLM_RATE_LIMIT_RPM: int = 60
     LLM_COST_TRACKING_ENABLED: bool = True
-    
+
     # Per-task LLM model overrides (empty string = fall back to LLM_MODEL)
-    LLM_MODEL_ONTOLOGY: str = "google/gemini-3-flash-preview"          # Full-content ontology extraction
-    LLM_MODEL_ENRICHMENT: str = "google/gemini-2.5-flash-lite"        # Per-chunk/batch enrichment
-    LLM_MODEL_TUTORING: str = "google/gemini-3-flash-preview"          # Interactive tutoring
-    LLM_MODEL_EVALUATION: str = "google/gemini-3-flash-preview"        # Evaluator + safety critic
-    LLM_MODEL_CURRICULUM: str = "google/gemini-3-flash-preview"        # Curriculum planning
-    
+    LLM_MODEL_ONTOLOGY: str = (
+        "google/gemini-3-flash-preview"  # Full-content ontology extraction
+    )
+    LLM_MODEL_ENRICHMENT: str = (
+        "google/gemini-2.5-flash-lite"  # Per-chunk/batch enrichment
+    )
+    LLM_MODEL_TUTORING: str = "google/gemini-3-flash-preview"  # Interactive tutoring
+    LLM_MODEL_EVALUATION: str = (
+        "google/gemini-3-flash-preview"  # Evaluator + safety critic
+    )
+    LLM_MODEL_CURRICULUM: str = "google/gemini-3-flash-preview"  # Curriculum planning
+
     # Per-task token limits
     ONTOLOGY_MAX_INPUT_TOKENS: int = 100_000
     ONTOLOGY_MAX_OUTPUT_TOKENS: int = 16_384
     ENRICHMENT_MAX_INPUT_TOKENS: int = 30_000
     ENRICHMENT_MAX_OUTPUT_TOKENS: int = 4_096
     ENRICHMENT_MAX_CHUNKS_PER_BATCH: int = 8
-    
+
     # Embedding Configuration
     EMBEDDING_MODEL_ID: str = "BAAI/bge-small-en-v1.5"
     EMBEDDING_DIMENSION: int = 384
@@ -44,7 +52,9 @@ class Settings(BaseSettings):
     INGESTION_DOCLING_NUM_THREADS: int = 4
     # 0 disables the Docling document timeout for very large textbooks.
     INGESTION_DOCLING_TIMEOUT_S: Optional[int] = 0
-    INGESTION_DOCLING_OCR_ENGINE: str = "auto"  # auto | easyocr | tesseract | tesseract_cli | rapidocr | ocrmac
+    INGESTION_DOCLING_OCR_ENGINE: str = (
+        "auto"  # auto | easyocr | tesseract | tesseract_cli | rapidocr | ocrmac
+    )
     INGESTION_DOCLING_OCR_LANGS: str = "eng"
     INGESTION_DOCLING_TABLE_MODE: str = "accurate"  # accurate | fast
     INGESTION_DOCLING_TABLE_CELL_MATCHING: bool = True
@@ -54,7 +64,7 @@ class Settings(BaseSettings):
     INGESTION_DOCLING_PICTURE_CLASSIFICATION: Optional[bool] = None
     INGESTION_DOCLING_PICTURE_DESCRIPTION: Optional[bool] = None
     INGESTION_DOCLING_CHART_EXTRACTION: Optional[bool] = None
-    
+
     # Authentication
     AUTH_ENABLED: bool = True
     AUTH_SECRET_KEY: str = "your-secret-key-change-in-production"
@@ -69,11 +79,11 @@ class Settings(BaseSettings):
     ADMIN_BOOTSTRAP_DISPLAY_NAME: str = "StudyAgent Admin"
     CORS_ALLOWED_ORIGIN: str = ""
     CORS_ALLOWED_ORIGINS: str = ""
-    
+
     # Rate Limiting
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_REQUESTS_PER_MINUTE: int = 60
-    
+
     # Storage Configuration
     STORAGE_BACKEND: str = "local"
     STORAGE_LOCAL_DIR: str = "./storage"
@@ -82,20 +92,20 @@ class Settings(BaseSettings):
     MINIO_ENDPOINT: Optional[str] = None
     MINIO_ACCESS_KEY: Optional[str] = None
     MINIO_SECRET_KEY: Optional[str] = None
-    
+
     # Optional Services
     REDIS_URL: Optional[str] = None
     NEO4J_ENABLED: bool = True
     NEO4J_URI: Optional[str] = "bolt://localhost:7687"
     NEO4J_USER: Optional[str] = "neo4j"
     NEO4J_PASSWORD: Optional[str] = "password"
-    
+
     # Observability (Langfuse v3 SDK)
     LANGFUSE_PUBLIC_KEY: Optional[str] = None
     LANGFUSE_SECRET_KEY: Optional[str] = None
     LANGFUSE_BASE_URL: Optional[str] = None
     LANGFUSE_TRACE_MODE: str = "simple"  # simple | detailed
-    
+
     # Feature Flags
     POLICY_MODE: str = "llm_only"
     LLM_RERANKER_ENABLED: bool = False
@@ -148,8 +158,12 @@ class Settings(BaseSettings):
     FEATURE_NOTEBOOKS_ENABLED: bool = True
 
     # Alpha access gate
-    ALPHA_ACCESS_ENABLED: bool = False   # when True, registration requires invite_token or promo code
-    ALPHA_PROMO_CODES: str = ""          # comma-separated valid promo codes (bypass invite flow)
+    ALPHA_ACCESS_ENABLED: bool = (
+        False  # when True, registration requires invite_token or promo code
+    )
+    ALPHA_PROMO_CODES: str = (
+        ""  # comma-separated valid promo codes (bypass invite flow)
+    )
 
     # Email (Resend.com) — used for alpha invite emails
     RESEND_API_KEY: str = ""
@@ -158,7 +172,7 @@ class Settings(BaseSettings):
 
     # Credits system (student research defaults)
     CREDITS_ENABLED: bool = True
-    CREDITS_SIGNUP_GRANT: int = 0              # credits issued at account creation
+    CREDITS_SIGNUP_GRANT: int = 0  # credits issued at account creation
     CREDITS_DEFAULT_MONTHLY_GRANT: int = 0  # monthly top-up grant
     CREDITS_INPUT_TOKEN_MULTIPLIER: float = 1.0
     CREDITS_OUTPUT_TOKEN_MULTIPLIER: float = 1.5
@@ -166,10 +180,10 @@ class Settings(BaseSettings):
     CREDITS_WEB_SEARCH_SURCHARGE: int = 100
 
     # Quota / abuse controls
-    CREDITS_DAILY_LIMIT: int = 200000          # hard daily cap per user
-    CREDITS_MONTHLY_LIMIT: int = 100000       # hard monthly cap per user
-    CREDITS_SOFT_LIMIT_PCT: float = 0.8       # warn at 80% of monthly limit
-    CREDITS_TURN_MAX_COST: int = 50000         # reject turns estimated above this
+    CREDITS_DAILY_LIMIT: int = 200000  # hard daily cap per user
+    CREDITS_MONTHLY_LIMIT: int = 100000  # hard monthly cap per user
+    CREDITS_SOFT_LIMIT_PCT: float = 0.8  # warn at 80% of monthly limit
+    CREDITS_TURN_MAX_COST: int = 50000  # reject turns estimated above this
     ADMIN_CREDIT_GRANT_MAX: int = 250000
     CREDITS_INGESTION_BASE_ESTIMATE: int = 500
     CREDITS_INGESTION_PER_MB: int = 250
@@ -190,7 +204,7 @@ class Settings(BaseSettings):
     HEALTH_CONSECUTIVE_ERROR_THRESHOLD: int = 3
     HEALTH_COOLDOWN_SECONDS: int = 300
     HEALTH_RECOVERY_SUCCESSES: int = 5
-    
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

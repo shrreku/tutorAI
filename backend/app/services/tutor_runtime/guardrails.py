@@ -41,22 +41,25 @@ def enforce_step_turn_limit(
     """Force ADVANCE_STEP when a step reaches max_turns."""
     if (
         allow_force
-        and
-        decision in (ProgressionDecision.CONTINUE_STEP, ProgressionDecision.INSERT_AD_HOC)
+        and decision
+        in (ProgressionDecision.CONTINUE_STEP, ProgressionDecision.INSERT_AD_HOC)
         and (turns_at_step + 1) >= max_turns_at_step
     ):
         return ProgressionDecision.ADVANCE_STEP, True
     return decision, False
 
 
-def is_valid_skip_target(target: int | None, *, step_idx: int, roadmap: list[dict]) -> bool:
+def is_valid_skip_target(
+    target: int | None, *, step_idx: int, roadmap: list[dict]
+) -> bool:
     """Validate a skip target against current roadmap bounds."""
-    if not (isinstance(target, int) and 0 <= target < len(roadmap) and target > step_idx):
+    if not (
+        isinstance(target, int) and 0 <= target < len(roadmap) and target > step_idx
+    ):
         return False
 
     return all(
-        bool((roadmap[i] or {}).get("can_skip", False))
-        for i in range(step_idx, target)
+        bool((roadmap[i] or {}).get("can_skip", False)) for i in range(step_idx, target)
     )
 
 
@@ -87,7 +90,9 @@ def build_guard_override_metadata(
     return payload
 
 
-def is_low_evidence(evidence_chunk_ids: list[str], *, minimum_count: int = 1) -> tuple[bool, str | None]:
+def is_low_evidence(
+    evidence_chunk_ids: list[str], *, minimum_count: int = 1
+) -> tuple[bool, str | None]:
     """Return whether retrieval evidence is below threshold for grounded responses."""
     evidence_count = len(evidence_chunk_ids)
     if evidence_count < minimum_count:

@@ -3,6 +3,7 @@ Retrieval Service - TICKET-020
 
 Concept-aware retrieval for tutoring context.
 """
+
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -14,9 +15,7 @@ from sqlalchemy import select, text
 from app.models.chunk import Chunk
 from app.models.knowledge_base import (
     ResourceBundle,
-    ResourceConceptStats,
     ResourceConceptEvidence,
-    ResourceConceptGraph,
 )
 from app.services.embedding.base import BaseEmbeddingProvider
 
@@ -26,6 +25,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class RetrievedChunk:
     """A retrieved chunk with metadata."""
+
     chunk_id: uuid.UUID
     text: str
     section_heading: Optional[str]
@@ -57,11 +57,12 @@ class RetrievedChunk:
 @dataclass
 class RetrievalResult:
     """Result of a retrieval query."""
+
     chunks: list[RetrievedChunk]
     concepts_used: list[str]
     query_embedding_used: bool
     total_candidates: int
-    
+
     def to_dict(self) -> dict:
         return {
             "chunks": [c.to_dict() for c in self.chunks],
@@ -73,7 +74,7 @@ class RetrievalResult:
 
 class RetrievalService:
     """Concept-aware retrieval service."""
-    
+
     def __init__(
         self,
         db_session: AsyncSession,
@@ -81,7 +82,7 @@ class RetrievalService:
     ):
         self.db = db_session
         self.embedding = embedding_provider
-    
+
     async def retrieve(
         self,
         resource_id: uuid.UUID,
@@ -94,13 +95,13 @@ class RetrievalService:
     ) -> RetrievalResult:
         """
         Retrieve relevant chunks for a tutoring context.
-        
+
         Strategy:
         1. If target_concepts provided, use bundle-based retrieval
         2. If query provided, use vector similarity search
         3. Combine and re-rank results
         4. Optionally expand with neighboring chunks
-        
+
         Args:
             resource_id: UUID of the resource
             query: Optional text query for semantic search
@@ -108,14 +109,14 @@ class RetrievalService:
             pedagogy_roles: Optional filter for pedagogy roles
             top_k: Maximum number of chunks to return
             include_neighbors: Whether to include neighboring chunks
-            
+
         Returns:
             RetrievalResult with ranked chunks
         """
         candidates: dict[uuid.UUID, RetrievedChunk] = {}
         concepts_used = []
         query_embedding_used = False
-        
+
         # Strategy 1: Bundle-based retrieval for target concepts
         if target_concepts:
             concepts_used = target_concepts.copy()
@@ -125,7 +126,7 @@ class RetrievalService:
             for chunk in bundle_chunks:
                 if chunk.chunk_id not in candidates:
                     candidates[chunk.chunk_id] = chunk
-        
+
         # Strategy 2: Vector similarity search
         if query:
             query_embedding_used = True
@@ -137,12 +138,13 @@ class RetrievalService:
                     # Boost score if found by both methods
                     candidates[chunk.chunk_id].relevance_score = min(
                         1.0,
-                        candidates[chunk.chunk_id].relevance_score + chunk.relevance_score * 0.5
+                        candidates[chunk.chunk_id].relevance_score
+                        + chunk.relevance_score * 0.5,
                     )
                     candidates[chunk.chunk_id].retrieval_reason += " + vector"
                 else:
                     candidates[chunk.chunk_id] = chunk
-        
+
         # Apply pedagogy role as soft preference (boost matching, keep all)
         if pedagogy_roles:
             for cid, c in candidates.items():
@@ -152,8 +154,7 @@ class RetrievalService:
 
         # Sort by relevance and softly prefer novelty against recently used chunks.
         sorted_candidates = sorted(
-            candidates.values(),
-            key=lambda x: -x.relevance_score
+            candidates.values(), key=lambda x: -x.relevance_score
         )
         excluded = {str(cid) for cid in (exclude_chunk_ids or []) if cid}
         if excluded:
@@ -162,20 +163,20 @@ class RetrievalService:
             sorted_chunks = (novel + repeated)[:top_k]
         else:
             sorted_chunks = sorted_candidates[:top_k]
-        
+
         # Optionally include neighbors
         if include_neighbors and sorted_chunks:
             sorted_chunks = await self._expand_with_neighbors(
                 resource_id, sorted_chunks, max_neighbors=1
             )
-        
+
         return RetrievalResult(
             chunks=sorted_chunks,
             concepts_used=concepts_used,
             query_embedding_used=query_embedding_used,
             total_candidates=len(candidates),
         )
-    
+
     async def retrieve_for_concept_teaching(
         self,
         resource_id: uuid.UUID,
@@ -185,39 +186,39 @@ class RetrievalService:
     ) -> RetrievalResult:
         """
         Specialized retrieval for teaching a specific concept.
-        
+
         Prioritizes:
         1. Chunks that "teach" the concept
         2. Example/exercise chunks for the concept
         3. Prereq concept chunks if needed
-        
+
         Args:
             resource_id: UUID of the resource
             concept_id: Target concept ID
             include_prereqs: Whether to include prereq concept chunks
             top_k: Maximum chunks to return
-            
+
         Returns:
             RetrievalResult with teaching-focused chunks
         """
         concepts_to_retrieve = [concept_id]
-        
+
         # Get prereq concepts if requested
         if include_prereqs:
             prereqs = await self._get_prereq_concepts(resource_id, concept_id)
             concepts_to_retrieve.extend(prereqs[:2])  # Limit prereqs
-        
+
         # Get bundle for primary concept
         bundle = await self._get_bundle(resource_id, concept_id)
-        
+
         candidates: dict[uuid.UUID, RetrievedChunk] = {}
-        
+
         if bundle:
             # Get prototype chunks from bundle
             prototypes = bundle.evidence_prototypes or {}
             prototype_scores: dict[uuid.UUID, tuple[float, str]] = {}
             candidate_chunk_ids: list[uuid.UUID] = []
-            
+
             # Priority 1: Teaching chunks
             teach_ids = prototypes.get("teaches", [])
             for chunk_id_str in teach_ids[:3]:
@@ -227,7 +228,7 @@ class RetrievalService:
                     continue
                 candidate_chunk_ids.append(chunk_id)
                 prototype_scores[chunk_id] = (1.0, "teaches primary")
-            
+
             # Priority 2: Example chunks
             example_ids = prototypes.get("exemplifies", [])
             for chunk_id_str in example_ids[:2]:
@@ -244,7 +245,7 @@ class RetrievalService:
                 chunk.relevance_score = score
                 chunk.retrieval_reason = reason
                 candidates[chunk.chunk_id] = chunk
-        
+
         # Add prereq chunks if needed
         if include_prereqs and len(candidates) < top_k:
             for prereq in concepts_to_retrieve[1:]:
@@ -256,19 +257,18 @@ class RetrievalService:
                         chunk.relevance_score *= 0.6
                         chunk.retrieval_reason = f"prereq: {prereq}"
                         candidates[chunk.chunk_id] = chunk
-        
-        sorted_chunks = sorted(
-            candidates.values(),
-            key=lambda x: -x.relevance_score
-        )[:top_k]
-        
+
+        sorted_chunks = sorted(candidates.values(), key=lambda x: -x.relevance_score)[
+            :top_k
+        ]
+
         return RetrievalResult(
             chunks=sorted_chunks,
             concepts_used=concepts_to_retrieve,
             query_embedding_used=False,
             total_candidates=len(candidates),
         )
-    
+
     async def _retrieve_by_concepts(
         self,
         resource_id: uuid.UUID,
@@ -289,9 +289,9 @@ class RetrievalService:
             .order_by(ResourceConceptEvidence.weight.desc())
             .limit(limit * 2)
         )
-        
+
         evidence_rows = result.all()
-        
+
         # Group by chunk and compute aggregate score
         chunk_scores: dict[uuid.UUID, dict] = {}
         for row in evidence_rows:
@@ -305,7 +305,7 @@ class RetrievalService:
             chunk_scores[chunk_id]["score"] += row.weight * (row.quality_score or 0.5)
             if row.concept_id not in chunk_scores[chunk_id]["concepts"]:
                 chunk_scores[chunk_id]["concepts"].append(row.concept_id)
-        
+
         ranked_chunk_ids = [
             chunk_id
             for chunk_id, _ in sorted(
@@ -330,7 +330,7 @@ class RetrievalService:
             chunk.retrieval_reason = f"concept match ({data['role']})"
             chunks.append(chunk)
         return chunks
-    
+
     async def _retrieve_by_vector(
         self,
         resource_id: uuid.UUID,
@@ -341,7 +341,7 @@ class RetrievalService:
         # Get query embedding
         embeddings = await self.embedding.embed([query])
         query_embedding = embeddings[0]
-        
+
         # Vector similarity search using pgvector
         result = await self.db.execute(
             text("""
@@ -365,43 +365,47 @@ class RetrievalService:
                 "resource_id": str(resource_id),
                 "query_embedding": str(query_embedding),
                 "limit": limit,
-            }
+            },
         )
-        
+
         chunks = []
         for row in result.all():
-            chunks.append(RetrievedChunk(
-                chunk_id=row.id,
-                text=row.text,
-                section_heading=row.section_heading,
-                chunk_index=row.chunk_index,
-                page_start=row.page_start,
-                page_end=row.page_end,
-                pedagogy_role=row.pedagogy_role,
-                difficulty=row.difficulty,
-                relevance_score=float(row.similarity) if row.similarity else 0.0,
-                retrieval_reason="vector similarity",
-            ))
-        
+            chunks.append(
+                RetrievedChunk(
+                    chunk_id=row.id,
+                    text=row.text,
+                    section_heading=row.section_heading,
+                    chunk_index=row.chunk_index,
+                    page_start=row.page_start,
+                    page_end=row.page_end,
+                    pedagogy_role=row.pedagogy_role,
+                    difficulty=row.difficulty,
+                    relevance_score=float(row.similarity) if row.similarity else 0.0,
+                    retrieval_reason="vector similarity",
+                )
+            )
+
         return chunks
-    
+
     async def _get_chunk_by_id(self, chunk_id: uuid.UUID) -> Optional[RetrievedChunk]:
         """Get a chunk by ID."""
-        result = await self.db.execute(
-            select(Chunk).where(Chunk.id == chunk_id)
-        )
+        result = await self.db.execute(select(Chunk).where(Chunk.id == chunk_id))
         chunk = result.scalar_one_or_none()
         if not chunk:
             return None
         return self._chunk_to_retrieved_chunk(chunk)
 
-    async def _get_chunks_by_ids(self, chunk_ids: list[uuid.UUID]) -> list[RetrievedChunk]:
+    async def _get_chunks_by_ids(
+        self, chunk_ids: list[uuid.UUID]
+    ) -> list[RetrievedChunk]:
         """Bulk-load chunks by IDs preserving caller-provided order."""
         if not chunk_ids:
             return []
 
         unique_chunk_ids = list(dict.fromkeys(chunk_ids))
-        result = await self.db.execute(select(Chunk).where(Chunk.id.in_(unique_chunk_ids)))
+        result = await self.db.execute(
+            select(Chunk).where(Chunk.id.in_(unique_chunk_ids))
+        )
         chunks_by_id = {chunk.id: chunk for chunk in result.scalars().all()}
 
         ordered_chunks: list[RetrievedChunk] = []
@@ -432,7 +436,7 @@ class RetrievalService:
             retrieval_reason="",
             concepts=concepts,
         )
-    
+
     async def _get_bundle(
         self,
         resource_id: uuid.UUID,
@@ -445,7 +449,7 @@ class RetrievalService:
             .where(ResourceBundle.primary_concept_id == concept_id)
         )
         return result.scalar_one_or_none()
-    
+
     async def _get_prereq_concepts(
         self,
         resource_id: uuid.UUID,
@@ -456,7 +460,7 @@ class RetrievalService:
         if bundle and bundle.prereq_hints:
             return bundle.prereq_hints
         return []
-    
+
     async def _expand_with_neighbors(
         self,
         resource_id: uuid.UUID,
@@ -466,25 +470,25 @@ class RetrievalService:
         """Expand retrieved chunks with neighboring chunks."""
         chunk_indices = {c.chunk_index for c in chunks}
         neighbor_indices = set()
-        
+
         for idx in chunk_indices:
             for offset in range(-max_neighbors, max_neighbors + 1):
                 if offset != 0:
                     neighbor_indices.add(idx + offset)
-        
+
         # Remove already-retrieved indices
         neighbor_indices -= chunk_indices
-        
+
         if not neighbor_indices:
             return chunks
-        
+
         # Get neighbor chunks
         result = await self.db.execute(
             select(Chunk)
             .where(Chunk.resource_id == resource_id)
             .where(Chunk.chunk_index.in_(list(neighbor_indices)))
         )
-        
+
         neighbor_by_index = {
             chunk.chunk_index: RetrievedChunk(
                 chunk_id=chunk.id,

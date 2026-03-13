@@ -41,7 +41,9 @@ def _to_progression_name(value: Any) -> str:
     return str(value)
 
 
-def _preferred_decision(plan: dict[str, Any], eval_payload: dict[str, Any]) -> ProgressionDecision:
+def _preferred_decision(
+    plan: dict[str, Any], eval_payload: dict[str, Any]
+) -> ProgressionDecision:
     score = float(eval_payload.get("overall_score", 0.5) or 0.5)
     label = str(eval_payload.get("correctness_label", "partial") or "partial").lower()
     uncertainty = float(eval_payload.get("uncertainty", 0.5) or 0.5)
@@ -82,7 +84,9 @@ def rerank_policy_output(
             requested_decision=requested_decision,
             applied_decision=requested_decision,
             reason="reranker_disabled",
-            candidate_scores={requested_decision: round(float(policy_output.confidence), 6)},
+            candidate_scores={
+                requested_decision: round(float(policy_output.confidence), 6)
+            },
         )
 
     eval_payload = _as_eval_dict(evaluation_result)
@@ -99,7 +103,9 @@ def rerank_policy_output(
         decision.name: _score_candidate(decision, preferred, base_confidence)
         for decision in sorted(candidates, key=lambda d: d.value)
     }
-    best_decision_name, _best_score = max(candidate_scores.items(), key=lambda item: item[1])
+    best_decision_name, _best_score = max(
+        candidate_scores.items(), key=lambda item: item[1]
+    )
     best_decision = ProgressionDecision[best_decision_name]
 
     changed = best_decision != policy_output.progression_decision
@@ -115,7 +121,7 @@ def rerank_policy_output(
         )
 
     guidance_bits = [
-        f"reranked_by=offline_linear_v2",
+        "reranked_by=offline_linear_v2",
         f"requested={requested_decision}",
         f"applied={best_decision.name}",
         f"preferred={preferred.name}",

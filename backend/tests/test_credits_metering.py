@@ -1,7 +1,7 @@
 """Tests for credit metering and model-task health services (CM-019)."""
+
 import uuid
 
-import pytest
 
 from app.config import settings
 
@@ -17,6 +17,7 @@ class TestUsdToCredits:
     def _make_meter(self):
         """Create a CreditMeter with a None db (won't hit DB in these tests)."""
         from app.services.credits.meter import CreditMeter
+
         return CreditMeter(db=None)  # type: ignore[arg-type]
 
     def test_zero_usd_returns_floor(self):
@@ -58,6 +59,7 @@ class TestGetModelClassFloor:
 
     def _make_meter(self):
         from app.services.credits.meter import CreditMeter
+
         return CreditMeter(db=None)  # type: ignore[arg-type]
 
     def test_empty_lines_returns_economy(self):
@@ -76,6 +78,7 @@ class TestEstimateIngestionV2:
 
     def _make_meter(self):
         from app.services.credits.meter import CreditMeter
+
         return CreditMeter(db=None)  # type: ignore[arg-type]
 
     def test_basic_estimate(self):
@@ -125,7 +128,6 @@ class TestBillingTelemetry:
     """Test that billing telemetry events are well-formed."""
 
     def test_emit_billing_event(self, capsys):
-        import json
         import logging
         from app.services.telemetry.billing_events import emit_billing_event
 
@@ -176,35 +178,39 @@ class TestModelImports:
 
     def test_import_model_pricing(self):
         from app.models.credits import ModelPricing
+
         assert ModelPricing.__tablename__ == "model_pricing"
 
     def test_import_task_model_assignment(self):
         from app.models.credits import TaskModelAssignment
+
         assert TaskModelAssignment.__tablename__ == "task_model_assignment"
 
     def test_import_billing_operation(self):
         from app.models.credits import BillingOperation
+
         assert BillingOperation.__tablename__ == "billing_operation"
 
     def test_import_billing_usage_line(self):
         from app.models.credits import BillingUsageLine
+
         assert BillingUsageLine.__tablename__ == "billing_usage_line"
 
     def test_import_model_task_health(self):
         from app.models.credits import ModelTaskHealth
+
         assert ModelTaskHealth.__tablename__ == "model_task_health"
 
     def test_models_init_exports(self):
         from app.models import (
-            BillingOperation,
-            BillingUsageLine,
             ModelPricing,
-            TaskModelAssignment,
         )
+
         assert ModelPricing is not None
 
     def test_user_profile_model_preferences(self):
         from app.models.session import UserProfile
+
         # Check column exists on the mapper
         assert "model_preferences" in UserProfile.__table__.columns.keys()
 
@@ -318,6 +324,7 @@ class TestTutorTurnResponseSchema:
 
     def test_model_routing_fields_in_response(self):
         from app.schemas.api import TutorTurnResponse
+
         resp = TutorTurnResponse(
             turn_id=uuid.uuid4(),
             response="Hello",
@@ -331,6 +338,7 @@ class TestTutorTurnResponseSchema:
 
     def test_model_routing_fields_optional(self):
         from app.schemas.api import TutorTurnResponse
+
         resp = TutorTurnResponse(
             turn_id=uuid.uuid4(),
             response="Hello",
@@ -341,6 +349,7 @@ class TestTutorTurnResponseSchema:
 
     def test_model_routing_serialization(self):
         from app.schemas.api import TutorTurnResponse
+
         resp = TutorTurnResponse(
             turn_id=uuid.uuid4(),
             response="Hello",
@@ -362,6 +371,7 @@ class TestTurnResultTokenFields:
 
     def test_token_fields_default(self):
         from app.services.tutor_runtime.types import TurnResult
+
         result = TurnResult(
             turn_id="t1",
             tutor_response="Hello",
@@ -384,6 +394,7 @@ class TestTurnResultTokenFields:
 
     def test_token_fields_set(self):
         from app.services.tutor_runtime.types import TurnResult
+
         result = TurnResult(
             turn_id="t1",
             tutor_response="Hello",
@@ -418,6 +429,7 @@ class TestBaseLLMProviderTokens:
 
     def test_total_tokens_used_default(self):
         from app.services.llm.base import BaseLLMProvider
+
         # BaseLLMProvider has abstract methods so we can't instantiate it directly,
         # but we can test the property is defined
         assert hasattr(BaseLLMProvider, "total_tokens_used")
@@ -429,10 +441,13 @@ class TestBaseLLMProviderTokens:
         class DummyProvider(BaseLLMProvider):
             async def generate(self, *args, **kwargs):
                 return ""
+
             async def generate_json(self, *args, **kwargs):
                 return {}
+
             async def count_tokens(self, text: str) -> int:
                 return 0
+
             @property
             def model_id(self) -> str:
                 return "dummy"

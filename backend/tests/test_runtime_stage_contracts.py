@@ -61,7 +61,10 @@ def test_policy_stage_handoff_returns_typed_payload_without_plan_mutation(monkey
 
     assert result.effective_step_type == "probe"
     assert result.target_concepts == ["conduction", "temperature", "heat_flux"]
-    assert result.policy_metadata["decision_requested"] == ProgressionDecision.INSERT_AD_HOC.name
+    assert (
+        result.policy_metadata["decision_requested"]
+        == ProgressionDecision.INSERT_AD_HOC.name
+    )
     assert "effective_step_type" not in plan
 
 
@@ -185,7 +188,9 @@ def test_evaluation_runner_updates_student_concept_state_without_untouched_drift
     )
 
     conduction_state = plan["student_concept_state"]["conduction"]
-    assert {"mastery_mean", "mastery_uncertainty", "last_practiced_at"}.issubset(conduction_state.keys())
+    assert {"mastery_mean", "mastery_uncertainty", "last_practiced_at"}.issubset(
+        conduction_state.keys()
+    )
     assert session.mastery["conduction"] == conduction_state["mastery_mean"]
     assert session.mastery["convection"] == 0.6
     assert set(mastery_delta.keys()) == {"conduction"}
@@ -225,7 +230,10 @@ def test_retrieval_stage_handoff_passes_step_type_and_goal(monkeypatch):
         plan={"effective_step_type": "practice"},
         current_objective={
             "step_roadmap": [
-                {"type": "practice", "goal": "Have the student apply conditional probability."}
+                {
+                    "type": "practice",
+                    "goal": "Have the student apply conditional probability.",
+                }
             ]
         },
         objective_index=0,

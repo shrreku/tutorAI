@@ -172,7 +172,9 @@ class NotebookArtifactService:
                     source_resource_names=source_resource_names,
                 )
         else:
-            fallback_reason = "insufficient_session_context" if self.llm else "llm_unavailable"
+            fallback_reason = (
+                "insufficient_session_context" if self.llm else "llm_unavailable"
+            )
             payload = self._generate_fallback(
                 artifact_type=artifact_type,
                 sessions=sessions,
@@ -230,9 +232,15 @@ class NotebookArtifactService:
         for session in sessions[:10]:
             plan_state = session.plan_state or {}
             objective_queue = plan_state.get("objective_queue", [])
-            focus_concepts = _clean_concepts(plan_state.get("focus_concepts", []), limit=6)
+            focus_concepts = _clean_concepts(
+                plan_state.get("focus_concepts", []), limit=6
+            )
             mastery_items = sorted(
-                ((concept, float(score)) for concept, score in (session.mastery or {}).items() if score is not None),
+                (
+                    (concept, float(score))
+                    for concept, score in (session.mastery or {}).items()
+                    if score is not None
+                ),
                 key=lambda item: item[1],
             )
             weak_concepts = [concept for concept, _ in mastery_items[:4]]
@@ -257,7 +265,9 @@ class NotebookArtifactService:
                         {
                             "objective_id": obj.get("objective_id"),
                             "title": obj.get("title"),
-                            "primary_concepts": obj.get("concept_scope", {}).get("primary", [])[:3],
+                            "primary_concepts": obj.get("concept_scope", {}).get(
+                                "primary", []
+                            )[:3],
                         }
                         for obj in objective_queue[:5]
                     ],
@@ -343,7 +353,9 @@ class NotebookArtifactService:
             f"You are generating a {artifact_type} artifact."
         )
 
-    def _user_prompt(self, *, artifact_type: str, context: dict[str, Any], options: dict[str, Any]) -> str:
+    def _user_prompt(
+        self, *, artifact_type: str, context: dict[str, Any], options: dict[str, Any]
+    ) -> str:
         option_summary = options or {}
         guidance = {
             "notes": "Produce concise notes by objective or theme, not a transcript dump. Emphasize what matters most and what to revisit.",
@@ -457,7 +469,9 @@ class NotebookArtifactService:
             days = [
                 {
                     "day_label": f"Day {index + 1}",
-                    "scheduled_for": (now + timedelta(days=index + 1)).date().isoformat(),
+                    "scheduled_for": (now + timedelta(days=index + 1))
+                    .date()
+                    .isoformat(),
                     "focus_concepts": weak_concepts[:2],
                     "activities": [
                         "Complete a notebook tutoring session.",
@@ -497,17 +511,30 @@ class NotebookArtifactService:
             if plan_state.get("session_overview"):
                 bullets.append(_truncate(plan_state.get("session_overview"), 180))
             if latest_turn is not None:
-                bullets.append(_truncate(getattr(latest_turn, "tutor_response", None), 180))
+                bullets.append(
+                    _truncate(getattr(latest_turn, "tutor_response", None), 180)
+                )
             if concepts:
                 bullets.append("Focus concepts: " + ", ".join(concepts))
-            weak = [concept for concept in concepts if concept in progress.weak_concepts_snapshot]
+            weak = [
+                concept
+                for concept in concepts
+                if concept in progress.weak_concepts_snapshot
+            ]
             if weak:
-                next_actions.append(f"Revisit {', '.join(weak[:2])} with one self-test question.")
+                next_actions.append(
+                    f"Revisit {', '.join(weak[:2])} with one self-test question."
+                )
             sections.append(
                 {
                     "heading": heading,
-                    "bullets": bullets or ["Review the core explanation and summarize it in your own words."],
-                    "key_takeaway": bullets[0] if bullets else "Capture the main idea and one supporting example.",
+                    "bullets": bullets
+                    or [
+                        "Review the core explanation and summarize it in your own words."
+                    ],
+                    "key_takeaway": bullets[0]
+                    if bullets
+                    else "Capture the main idea and one supporting example.",
                     "source_session_ids": [str(session.id)],
                     "concepts": concepts,
                 }
@@ -530,13 +557,17 @@ class NotebookArtifactService:
                     continue
 
         cards: list[dict[str, Any]] = []
-        for concept, scores in sorted(concept_scores.items(), key=lambda item: min(item[1]))[:10]:
+        for concept, scores in sorted(
+            concept_scores.items(), key=lambda item: min(item[1])
+        )[:10]:
             avg_score = sum(scores) / len(scores)
-            difficulty = "hard" if avg_score < 0.25 else "medium" if avg_score < 0.55 else "easy"
+            difficulty = (
+                "hard" if avg_score < 0.25 else "medium" if avg_score < 0.55 else "easy"
+            )
             cards.append(
                 {
                     "front": f"What is the core idea behind {concept.replace('_', ' ')}?",
-                    "back": f"Define it clearly, connect it to one example, and explain why it matters in the wider topic.",
+                    "back": "Define it clearly, connect it to one example, and explain why it matters in the wider topic.",
                     "concept": concept,
                     "difficulty": difficulty,
                     "source_session_ids": [str(session.id) for session in sessions[:2]],
@@ -550,7 +581,9 @@ class NotebookArtifactService:
             "coverage_concepts": [card["concept"] for card in cards],
         }
 
-    def _fallback_quiz(self, sessions: list[UserSession], options: dict[str, Any]) -> dict[str, Any]:
+    def _fallback_quiz(
+        self, sessions: list[UserSession], options: dict[str, Any]
+    ) -> dict[str, Any]:
         concept_scores: dict[str, float] = {}
         for session in sessions:
             for concept, score in (session.mastery or {}).items():
@@ -561,7 +594,10 @@ class NotebookArtifactService:
                 concept_scores[concept] = min(concept_scores.get(concept, value), value)
 
         question_count = max(3, min(int(options.get("question_count", 5) or 5), 10))
-        prioritized = [concept for concept, _ in sorted(concept_scores.items(), key=lambda item: item[1])][:question_count]
+        prioritized = [
+            concept
+            for concept, _ in sorted(concept_scores.items(), key=lambda item: item[1])
+        ][:question_count]
         questions = []
         for index, concept in enumerate(prioritized, start=1):
             questions.append(
@@ -573,7 +609,9 @@ class NotebookArtifactService:
                     "correct_answer": f"A correct answer should define {concept.replace('_', ' ')} accurately and include a relevant example.",
                     "explanation": "Use the definition, why it matters, and one worked or real example.",
                     "concept": concept,
-                    "difficulty": "hard" if concept_scores.get(concept, 0.0) < 0.3 else "medium",
+                    "difficulty": "hard"
+                    if concept_scores.get(concept, 0.0) < 0.3
+                    else "medium",
                     "source_session_ids": [str(session.id) for session in sessions[:2]],
                 }
             )
@@ -601,7 +639,9 @@ class NotebookArtifactService:
             days.append(
                 {
                     "day_label": f"Day {index + 1}",
-                    "scheduled_for": (now + timedelta(days=index + 1)).date().isoformat(),
+                    "scheduled_for": (now + timedelta(days=index + 1))
+                    .date()
+                    .isoformat(),
                     "focus_concepts": focus,
                     "activities": [
                         "Read your notes aloud and explain the idea without looking.",

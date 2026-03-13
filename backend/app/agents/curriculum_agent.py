@@ -3,6 +3,7 @@ Curriculum Agent - TICKET-024
 
 Generates learning objectives and curriculum plans from resource content.
 """
+
 import logging
 from typing import Optional
 from uuid import UUID
@@ -19,7 +20,6 @@ from app.models.knowledge_base import (
     ResourceConceptGraph,
     ResourceLearningObjective,
     ResourcePrereqHint,
-    ResourceBundle,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,20 +82,20 @@ Output valid JSON with:
 
 
 MODE_CURRICULUM_GUIDANCE = {
-        "learn": "Design a full teaching flow: concept introduction, explanation, worked examples, supported practice, then assessment.",
-        "doubt": "Design a short clarification flow centered on resolving one confusion quickly. Prefer 1-2 tightly scoped objectives and explanation/probe/summary steps over long teaching arcs.",
-        "practice": "Design a doing-first flow. Minimize exposition, prefer probe/practice/assess steps, and make the student produce answers early.",
-        "revision": "Design a compact review flow. Prioritize recall, comparison, summary, misconception repair, and short assessment over first-teach exposition.",
+    "learn": "Design a full teaching flow: concept introduction, explanation, worked examples, supported practice, then assessment.",
+    "doubt": "Design a short clarification flow centered on resolving one confusion quickly. Prefer 1-2 tightly scoped objectives and explanation/probe/summary steps over long teaching arcs.",
+    "practice": "Design a doing-first flow. Minimize exposition, prefer probe/practice/assess steps, and make the student produce answers early.",
+    "revision": "Design a compact review flow. Prioritize recall, comparison, summary, misconception repair, and short assessment over first-teach exposition.",
 }
 
 
 class CurriculumAgent:
     """Generates curriculum plans from resource content."""
-    
+
     def __init__(self, llm_provider: BaseLLMProvider, db_session: AsyncSession):
         self.llm = llm_provider
         self.db = db_session
-    
+
     @observe(name="curriculum-planner", capture_input=False)
     async def generate_plan(
         self,
@@ -106,11 +106,11 @@ class CurriculumAgent:
     ) -> dict:
         """
         Generate a curriculum plan for a resource.
-        
+
         Args:
             resource_id: UUID of the ingested resource
             topic: Optional topic focus
-        
+
         Returns:
             Dict with active_topic and objective_queue
         """
@@ -120,13 +120,18 @@ class CurriculumAgent:
         learning_objectives = await self._get_learning_objectives(resource_id)
         concept_graph_edges = await self._get_concept_graph_edges(resource_id)
         prereq_hints = await self._get_prereq_hints(resource_id)
-        
+
         if not concepts:
             raise ValueError(f"No concepts found for resource {resource_id}")
-        
+
         # Filter by selected topics if provided
         if selected_topics:
-            filtered_bundles = [b for b in topic_bundles if b["topic_id"] in selected_topics or b["topic_name"] in selected_topics]
+            filtered_bundles = [
+                b
+                for b in topic_bundles
+                if b["topic_id"] in selected_topics
+                or b["topic_name"] in selected_topics
+            ]
             if filtered_bundles:
                 topic_bundles = filtered_bundles
                 # Restrict concepts to those in selected topic bundles
@@ -139,14 +144,16 @@ class CurriculumAgent:
                     concept_graph_edges = [
                         edge
                         for edge in concept_graph_edges
-                        if edge.get("source") in selected_concepts and edge.get("target") in selected_concepts
+                        if edge.get("source") in selected_concepts
+                        and edge.get("target") in selected_concepts
                     ]
                     prereq_hints = [
                         hint
                         for hint in prereq_hints
-                        if hint.get("source") in selected_concepts and hint.get("target") in selected_concepts
+                        if hint.get("source") in selected_concepts
+                        and hint.get("target") in selected_concepts
                     ]
-        
+
         # Build prompt
         messages = self._build_messages(
             topic_bundles,
@@ -157,39 +164,41 @@ class CurriculumAgent:
             topic,
             mode,
         )
-        
+
         try:
             output = await self._generate_curriculum_output(
                 messages,
                 trace_name="curriculum_generate_plan",
             )
-            
+
             # Validate concepts in output
             valid_concepts = set(concepts)
             validated_objectives = []
-            
+
             for obj in output.objective_queue:
                 validated_obj = self._validate_objective(obj, valid_concepts)
                 if validated_obj:
                     validated_objectives.append(validated_obj)
-            
+
             if not validated_objectives:
                 # Fallback: create basic objective from concepts
                 validated_objectives = self._create_fallback_objectives(concepts)
-            
+
             return {
                 "active_topic": output.active_topic or topic or "General",
                 "objective_queue": validated_objectives,
             }
-            
+
         except Exception as e:
             logger.error(f"Curriculum generation failed: {e}")
             # Return fallback plan
             return {
                 "active_topic": topic or "General",
-                "objective_queue": self._create_fallback_objectives(concepts, mode=mode),
+                "objective_queue": self._create_fallback_objectives(
+                    concepts, mode=mode
+                ),
             }
-    
+
     @observe(name="curriculum-extend", capture_input=False)
     async def extend_plan(
         self,
@@ -199,28 +208,28 @@ class CurriculumAgent:
     ) -> list[dict]:
         """
         Generate additional objectives when horizon reached.
-        
+
         Args:
             resource_id: UUID of the resource
             current_objectives: Existing objectives
             completed_concepts: Concepts already covered
-        
+
         Returns:
             List of new objectives
         """
         concepts = await self._get_concepts(resource_id)
-        
+
         # Find uncovered concepts
         covered = set(completed_concepts)
         for obj in current_objectives:
             scope = obj.get("concept_scope", {})
             covered.update(scope.get("primary", []))
-        
+
         remaining = [c for c in concepts if c not in covered]
-        
+
         if not remaining:
             return []
-        
+
         # Generate objectives for remaining concepts
         topic_bundles = await self._get_topic_bundles(resource_id)
         learning_objectives = await self._get_learning_objectives(resource_id)
@@ -234,13 +243,13 @@ class CurriculumAgent:
             prereq_hints,
             None,
         )
-        
+
         try:
             output = await self._generate_curriculum_output(
                 messages,
                 trace_name="curriculum_extend_plan",
             )
-            
+
             valid_concepts = set(remaining)
             return [
                 self._validate_objective(obj, valid_concepts)
@@ -279,15 +288,16 @@ class CurriculumAgent:
                 max_tokens=4096,
                 trace_name=f"{trace_name}_retry",
             )
-    
+
     async def _get_topic_bundles(self, resource_id: UUID) -> list[dict]:
         """Get topic bundles for resource."""
         result = await self.db.execute(
-            select(ResourceTopicBundle)
-            .where(ResourceTopicBundle.resource_id == resource_id)
+            select(ResourceTopicBundle).where(
+                ResourceTopicBundle.resource_id == resource_id
+            )
         )
         bundles = result.scalars().all()
-        
+
         return [
             {
                 "topic_id": b.topic_id,
@@ -297,7 +307,7 @@ class CurriculumAgent:
             }
             for b in bundles
         ]
-    
+
     async def _get_concepts(self, resource_id: UUID) -> list[str]:
         """Get admitted concepts for resource."""
         result = await self.db.execute(
@@ -310,8 +320,9 @@ class CurriculumAgent:
     async def _get_learning_objectives(self, resource_id: UUID) -> list[dict]:
         """Get ingestion-derived learning objective hints for the resource."""
         result = await self.db.execute(
-            select(ResourceLearningObjective)
-            .where(ResourceLearningObjective.resource_id == resource_id)
+            select(ResourceLearningObjective).where(
+                ResourceLearningObjective.resource_id == resource_id
+            )
         )
         items = result.scalars().all()
         return [
@@ -356,7 +367,7 @@ class CurriculumAgent:
             }
             for hint in hints[:80]
         ]
-    
+
     def _build_messages(
         self,
         topic_bundles: list[dict],
@@ -368,26 +379,43 @@ class CurriculumAgent:
         mode: str,
     ) -> list[dict]:
         """Build messages for LLM."""
-        bundles_text = "\n".join([
-            f"- {b['topic_name']}: {', '.join(b['primary_concepts'][:5])}"
-            for b in topic_bundles[:5]
-        ]) or "No topic bundles available"
-        
+        bundles_text = (
+            "\n".join(
+                [
+                    f"- {b['topic_name']}: {', '.join(b['primary_concepts'][:5])}"
+                    for b in topic_bundles[:5]
+                ]
+            )
+            or "No topic bundles available"
+        )
+
         concepts_text = ", ".join(concepts[:30])
-        learning_objectives_text = "\n".join(
-            f"- {item.get('objective_text', '')}" for item in learning_objectives[:12]
-        ) or "No extracted learning objectives available"
-        graph_edges_text = "\n".join(
-            f"- {edge['source']} -[{edge['relation_type']}]-> {edge['target']} (conf={edge['confidence']:.2f})"
-            for edge in concept_graph_edges[:30]
-        ) or "No concept graph edges available"
-        prereq_hints_text = "\n".join(
-            f"- {hint['source']} -> {hint['target']} (support={hint['support_count']})"
-            for hint in prereq_hints[:20]
-        ) or "No prerequisite hints available"
-        
+        learning_objectives_text = (
+            "\n".join(
+                f"- {item.get('objective_text', '')}"
+                for item in learning_objectives[:12]
+            )
+            or "No extracted learning objectives available"
+        )
+        graph_edges_text = (
+            "\n".join(
+                f"- {edge['source']} -[{edge['relation_type']}]-> {edge['target']} (conf={edge['confidence']:.2f})"
+                for edge in concept_graph_edges[:30]
+            )
+            or "No concept graph edges available"
+        )
+        prereq_hints_text = (
+            "\n".join(
+                f"- {hint['source']} -> {hint['target']} (support={hint['support_count']})"
+                for hint in prereq_hints[:20]
+            )
+            or "No prerequisite hints available"
+        )
+
         normalized_mode = (mode or "learn").strip().lower()
-        mode_guidance = MODE_CURRICULUM_GUIDANCE.get(normalized_mode, MODE_CURRICULUM_GUIDANCE["learn"])
+        mode_guidance = MODE_CURRICULUM_GUIDANCE.get(
+            normalized_mode, MODE_CURRICULUM_GUIDANCE["learn"]
+        )
 
         user_content = f"""Create a curriculum plan for the following resource:
 
@@ -413,12 +441,12 @@ Prerequisite Hints:
 
 Generate 2-4 learning objectives that cover the key concepts, ordered by prerequisite dependencies.
 """
-        
+
         return [
             {"role": "system", "content": CURRICULUM_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ]
-    
+
     def _validate_objective(
         self,
         obj: dict,
@@ -430,7 +458,7 @@ Generate 2-4 learning objectives that cover the key concepts, ordered by prerequ
 
         if not obj.get("objective_id") or not obj.get("title"):
             return None
-        
+
         # Filter concepts to only valid ones
         scope = obj.get("concept_scope", {})
         if not isinstance(scope, dict):
@@ -438,18 +466,18 @@ Generate 2-4 learning objectives that cover the key concepts, ordered by prerequ
         primary = [c for c in scope.get("primary", []) if c in valid_concepts]
         support = [c for c in scope.get("support", []) if c in valid_concepts]
         prereq = [c for c in scope.get("prereq", []) if c in valid_concepts]
-        
+
         if not primary:
             # Try to salvage by using any mentioned concepts
             all_mentioned = (
-                scope.get("primary", []) +
-                scope.get("support", []) +
-                scope.get("prereq", [])
+                scope.get("primary", [])
+                + scope.get("support", [])
+                + scope.get("prereq", [])
             )
             primary = [c for c in all_mentioned if c in valid_concepts][:2]
             if not primary:
                 return None
-        
+
         # Validate roadmap
         roadmap = obj.get("step_roadmap") or []
         if not isinstance(roadmap, list):
@@ -480,8 +508,7 @@ Generate 2-4 learning objectives that cover the key concepts, ordered by prerequ
                 step_type = "explain"
 
             target_concepts = [
-                c for c in step.get("target_concepts", [])
-                if c in valid_concepts
+                c for c in step.get("target_concepts", []) if c in valid_concepts
             ] or primary[:1]
 
             max_turns = step.get("max_turns", 3)
@@ -489,13 +516,15 @@ Generate 2-4 learning objectives that cover the key concepts, ordered by prerequ
                 max_turns = 3
             max_turns = max(1, min(4, max_turns))
 
-            validated_roadmap.append({
-                "type": step_type,
-                "target_concepts": target_concepts,
-                "can_skip": bool(step.get("can_skip", False)),
-                "max_turns": max_turns,
-                "goal": step.get("goal") or "Drive understanding for this step.",
-            })
+            validated_roadmap.append(
+                {
+                    "type": step_type,
+                    "target_concepts": target_concepts,
+                    "can_skip": bool(step.get("can_skip", False)),
+                    "max_turns": max_turns,
+                    "goal": step.get("goal") or "Drive understanding for this step.",
+                }
+            )
 
         if not validated_roadmap:
             validated_roadmap = self._create_default_roadmap(primary)
@@ -521,7 +550,9 @@ Generate 2-4 learning objectives that cover the key concepts, ordered by prerequ
             "step_roadmap": validated_roadmap,
         }
 
-    def _create_default_roadmap(self, concepts: list[str], mode: str = "learn") -> list[dict]:
+    def _create_default_roadmap(
+        self, concepts: list[str], mode: str = "learn"
+    ) -> list[dict]:
         """Create default step roadmap."""
         normalized_mode = (mode or "learn").strip().lower()
         if normalized_mode == "doubt":
@@ -634,11 +665,17 @@ Generate 2-4 learning objectives that cover the key concepts, ordered by prerequ
                 "goal": "Student demonstrates independent mastery.",
             },
         ]
-    
-    def _create_fallback_objectives(self, concepts: list[str], mode: str = "learn") -> list[dict]:
+
+    def _create_fallback_objectives(
+        self, concepts: list[str], mode: str = "learn"
+    ) -> list[dict]:
         """Create multiple fallback objectives by chunking available concepts."""
         if not concepts:
-            return [self._create_single_fallback("obj_01_fallback", ["general"], [], mode=mode)]
+            return [
+                self._create_single_fallback(
+                    "obj_01_fallback", ["general"], [], mode=mode
+                )
+            ]
 
         # Chunk concepts into groups of 2 primary + up to 2 support
         objectives = []
@@ -647,13 +684,16 @@ Generate 2-4 learning objectives that cover the key concepts, ordered by prerequ
         prev_primary = []
 
         while idx < len(concepts):
-            primary = concepts[idx:idx + 2]
-            support = concepts[idx + 2:idx + 4] if idx + 2 < len(concepts) else []
+            primary = concepts[idx : idx + 2]
+            support = concepts[idx + 2 : idx + 4] if idx + 2 < len(concepts) else []
             prereq = prev_primary[:2]  # previous objective's primary are prereqs
 
             obj = self._create_single_fallback(
                 f"obj_{obj_num:02d}_fallback",
-                primary, support, prereq, mode=mode,
+                primary,
+                support,
+                prereq,
+                mode=mode,
             )
             objectives.append(obj)
             prev_primary = primary
@@ -663,19 +703,38 @@ Generate 2-4 learning objectives that cover the key concepts, ordered by prerequ
             if obj_num > 4:  # cap at 4 objectives
                 break
 
-        return objectives if objectives else [self._create_single_fallback("obj_01_fallback", concepts[:2], [], mode=mode)]
+        return (
+            objectives
+            if objectives
+            else [
+                self._create_single_fallback(
+                    "obj_01_fallback", concepts[:2], [], mode=mode
+                )
+            ]
+        )
 
-    def _create_fallback_objective(self, concepts: list[str], mode: str = "learn") -> dict:
+    def _create_fallback_objective(
+        self, concepts: list[str], mode: str = "learn"
+    ) -> dict:
         """Create a single fallback objective for legacy call sites."""
         primary = concepts[:2] if concepts else ["general"]
         support = concepts[2:4] if len(concepts) > 2 else []
-        return self._create_single_fallback("obj_01_fallback", primary, support, mode=mode)
+        return self._create_single_fallback(
+            "obj_01_fallback", primary, support, mode=mode
+        )
 
     def _create_single_fallback(
-        self, obj_id: str, primary: list[str], support: list[str], prereq: list[str] = None, mode: str = "learn",
+        self,
+        obj_id: str,
+        primary: list[str],
+        support: list[str],
+        prereq: list[str] = None,
+        mode: str = "learn",
     ) -> dict:
         """Create a single fallback objective."""
-        title_concept = primary[0].replace("_", " ").title() if primary else "Core Concepts"
+        title_concept = (
+            primary[0].replace("_", " ").title() if primary else "Core Concepts"
+        )
         return {
             "objective_id": obj_id,
             "title": f"Understanding {title_concept}",

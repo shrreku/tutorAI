@@ -31,7 +31,11 @@ def test_policy_reranker_respects_feature_flag(monkeypatch):
     result = rerank_policy_output(
         _policy_output(ProgressionDecision.CONTINUE_STEP),
         plan={"turns_at_step": 0},
-        evaluation_result={"overall_score": 0.95, "correctness_label": "correct", "uncertainty": 0.1},
+        evaluation_result={
+            "overall_score": 0.95,
+            "correctness_label": "correct",
+            "uncertainty": 0.1,
+        },
     )
 
     assert result.enabled is False
@@ -46,7 +50,11 @@ def test_policy_reranker_can_change_decision_when_enabled(monkeypatch):
     result = rerank_policy_output(
         _policy_output(ProgressionDecision.CONTINUE_STEP),
         plan={"turns_at_step": 0},
-        evaluation_result={"overall_score": 0.2, "correctness_label": "incorrect", "uncertainty": 0.85},
+        evaluation_result={
+            "overall_score": 0.2,
+            "correctness_label": "incorrect",
+            "uncertainty": 0.85,
+        },
     )
 
     assert result.enabled is True
@@ -62,7 +70,11 @@ def test_adaptive_delegation_triggers_on_repeated_confusion_and_is_bounded(monke
     plan = {
         "delegation_cooldown_turns": 0,
         "student_concept_state": {
-            "conduction": {"mastery_mean": 0.2, "mastery_uncertainty": 0.8, "last_practiced_at": None}
+            "conduction": {
+                "mastery_mean": 0.2,
+                "mastery_uncertainty": 0.8,
+                "last_practiced_at": None,
+            }
         },
     }
     recent_turns = [

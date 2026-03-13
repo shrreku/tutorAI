@@ -36,12 +36,18 @@ def _default_state(mean: float = 0.0) -> dict[str, Any]:
 
 def concept_mastery_mean(value: Any) -> float:
     if isinstance(value, dict):
-        return _clamp(_as_float(value.get("mastery_mean"), 0.0), MIN_MASTERY, MAX_MASTERY)
+        return _clamp(
+            _as_float(value.get("mastery_mean"), 0.0), MIN_MASTERY, MAX_MASTERY
+        )
     return _clamp(_as_float(value, 0.0), MIN_MASTERY, MAX_MASTERY)
 
 
-def build_student_concept_state(initial_mastery: dict[str, float]) -> dict[str, dict[str, Any]]:
-    return ensure_student_concept_state(existing_state=None, mastery_snapshot=initial_mastery)
+def build_student_concept_state(
+    initial_mastery: dict[str, float],
+) -> dict[str, dict[str, Any]]:
+    return ensure_student_concept_state(
+        existing_state=None, mastery_snapshot=initial_mastery
+    )
 
 
 def ensure_student_concept_state(
@@ -84,10 +90,14 @@ def ensure_student_concept_state(
     return normalized
 
 
-def mastery_snapshot_from_student_state(concept_state: dict[str, Any]) -> dict[str, float]:
+def mastery_snapshot_from_student_state(
+    concept_state: dict[str, Any],
+) -> dict[str, float]:
     normalized = ensure_student_concept_state(concept_state)
     return {
-        concept: _clamp(_as_float(state.get("mastery_mean"), 0.0), MIN_MASTERY, MAX_MASTERY)
+        concept: _clamp(
+            _as_float(state.get("mastery_mean"), 0.0), MIN_MASTERY, MAX_MASTERY
+        )
         for concept, state in normalized.items()
     }
 
@@ -120,7 +130,9 @@ def apply_uncertainty_aware_updates(
             MAX_MASTERY,
         )
 
-        signal_strength = _clamp(abs(delta) * max(0.25, weight) * max(0.25, role_weight), 0.0, 1.0)
+        signal_strength = _clamp(
+            abs(delta) * max(0.25, weight) * max(0.25, role_weight), 0.0, 1.0
+        )
         old_uncertainty = _clamp(
             _as_float(current.get("mastery_uncertainty"), DEFAULT_UNCERTAINTY),
             MIN_UNCERTAINTY,

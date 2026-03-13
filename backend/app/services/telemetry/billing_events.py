@@ -38,6 +38,7 @@ def emit_billing_event(
 # CM-018: Typed observability helpers for dashboards & alerts
 # ---------------------------------------------------------------------------
 
+
 def emit_cost_drift(
     *,
     user_id: str,

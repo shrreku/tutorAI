@@ -11,4 +11,3 @@ def approximate_token_count(text: str) -> int:
         return 0
 
     return max(1, int(len(pieces) * 1.25))
-

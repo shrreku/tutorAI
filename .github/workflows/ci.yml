@@ -37,6 +37,8 @@ jobs:
     defaults:
       run:
         working-directory: frontend
+    env:
+      VITE_API_BASE_URL: http://localhost:8000/api/v1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -78,5 +78,8 @@ def test_build_markdown_report_contains_summary_table():
     report = build_markdown_report(summary)
 
     assert "# Tutoring Harness v2 Report" in report
-    assert "| Scenario | Pass | Progression | Intent | Evidence | Guard | Safety | Notes |" in report
+    assert (
+        "| Scenario | Pass | Progression | Intent | Evidence | Guard | Safety | Notes |"
+        in report
+    )
     assert "normal_learning" in report

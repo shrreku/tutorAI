@@ -83,15 +83,15 @@ def apply_progression(
             if evaluation_result is not None
             else None
         )
-        student_intent = (
-            progression_context.get("student_intent")
-            or getattr(policy_output, "student_intent", None)
+        student_intent = progression_context.get("student_intent") or getattr(
+            policy_output, "student_intent", None
         )
         safety_blocked = bool(progression_context.get("safety_blocked", False))
         redirect_active = safety_blocked or student_intent == "off_topic"
-        allow_fluid_objective_progression = bool(
-            progression_context.get("allow_fluid_objective_progression", False)
-        ) or student_intent == "move_on"
+        allow_fluid_objective_progression = (
+            bool(progression_context.get("allow_fluid_objective_progression", False))
+            or student_intent == "move_on"
+        )
 
         pre_guard_decision_name = decision.name
         decision, forced_by_ad_hoc_budget = enforce_ad_hoc_budget(
@@ -155,12 +155,9 @@ def apply_progression(
                 ),
             )
 
-        if (
-            redirect_active
-            and decision in (
-                ProgressionDecision.ADVANCE_STEP,
-                ProgressionDecision.ADVANCE_OBJECTIVE,
-            )
+        if redirect_active and decision in (
+            ProgressionDecision.ADVANCE_STEP,
+            ProgressionDecision.ADVANCE_OBJECTIVE,
         ):
             fallback_decision = (
                 ProgressionDecision.INSERT_AD_HOC
@@ -184,12 +181,9 @@ def apply_progression(
             )
             decision = fallback_decision
 
-        if (
-            evaluator_ready is False
-            and decision in (
-                ProgressionDecision.ADVANCE_STEP,
-                ProgressionDecision.ADVANCE_OBJECTIVE,
-            )
+        if evaluator_ready is False and decision in (
+            ProgressionDecision.ADVANCE_STEP,
+            ProgressionDecision.ADVANCE_OBJECTIVE,
         ):
             fallback_decision = (
                 ProgressionDecision.INSERT_AD_HOC
@@ -281,7 +275,9 @@ def apply_progression(
                     plan["current_objective_index"] = old_obj_idx + 1
                     plan["current_step_index"] = 0
                     plan["step_status"] = {}
-                    transition = f"objective:{old_obj_idx}→{old_obj_idx + 1} (completed)"
+                    transition = (
+                        f"objective:{old_obj_idx}→{old_obj_idx + 1} (completed)"
+                    )
                     if plan["current_objective_index"] >= len(objective_queue):
                         session_complete = True
                         transition += " [session_complete]"
@@ -299,9 +295,16 @@ def apply_progression(
                     progress_map = plan.setdefault("objective_progress", {})
                     progress = progress_map.setdefault(
                         obj_id,
-                        {"attempts": 0, "correct": 0, "steps_completed": 0, "steps_skipped": 0},
+                        {
+                            "attempts": 0,
+                            "correct": 0,
+                            "steps_completed": 0,
+                            "steps_skipped": 0,
+                        },
                     )
-                    progress["steps_skipped"] = int(progress.get("steps_skipped", 0)) + skipped
+                    progress["steps_skipped"] = (
+                        int(progress.get("steps_skipped", 0)) + skipped
+                    )
                 plan["ad_hoc_count"] = 0
                 plan["turns_at_step"] = 0
                 if roadmap:
@@ -377,10 +380,15 @@ def apply_progression(
                     session_complete = True
                     transition += " [session_complete]"
 
-        elif decision in (ProgressionDecision.CONTINUE_STEP, ProgressionDecision.INSERT_AD_HOC):
+        elif decision in (
+            ProgressionDecision.CONTINUE_STEP,
+            ProgressionDecision.INSERT_AD_HOC,
+        ):
             if decision == ProgressionDecision.INSERT_AD_HOC:
                 plan["ad_hoc_count"] = ad_hoc_count + 1
-                plan["last_ad_hoc_type"] = getattr(policy_output, "ad_hoc_step_type", None)
+                plan["last_ad_hoc_type"] = getattr(
+                    policy_output, "ad_hoc_step_type", None
+                )
                 append_trace_event(
                     plan,
                     "ad_hoc_inserted",

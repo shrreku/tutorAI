@@ -62,19 +62,43 @@ def _patch_turn_dependencies(monkeypatch, *, result=None, pipeline_error=None):
     class _Pipeline:
         def __init__(self):
             # CM-005: Mock tutor/evaluator LLM providers for token tracking
-            self.tutor = SimpleNamespace(llm=SimpleNamespace(total_tokens_used={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}))
-            self.evaluator = SimpleNamespace(llm=SimpleNamespace(total_tokens_used={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}))
+            self.tutor = SimpleNamespace(
+                llm=SimpleNamespace(
+                    total_tokens_used={
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                    }
+                )
+            )
+            self.evaluator = SimpleNamespace(
+                llm=SimpleNamespace(
+                    total_tokens_used={
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                    }
+                )
+            )
 
         async def execute_turn(self, **_kwargs):
             if pipeline_error is not None:
                 raise pipeline_error
             return result or _build_result()
 
-    monkeypatch.setattr(tutor_module, "verify_session_owner", _fake_verify_session_owner)
-    monkeypatch.setattr(tutor_module, "verify_notebook_session_link", _fake_verify_notebook_session_link)
+    monkeypatch.setattr(
+        tutor_module, "verify_session_owner", _fake_verify_session_owner
+    )
+    monkeypatch.setattr(
+        tutor_module, "verify_notebook_session_link", _fake_verify_notebook_session_link
+    )
     monkeypatch.setattr(tutor_module, "SessionRepository", _SessionRepo)
-    monkeypatch.setattr(tutor_module, "NotebookResourceRepository", _NotebookResourceRepo)
-    monkeypatch.setattr(tutor_module, "get_turn_pipeline", lambda *_args, **_kwargs: _Pipeline())
+    monkeypatch.setattr(
+        tutor_module, "NotebookResourceRepository", _NotebookResourceRepo
+    )
+    monkeypatch.setattr(
+        tutor_module, "get_turn_pipeline", lambda *_args, **_kwargs: _Pipeline()
+    )
 
     return notebook_id, session_id, SimpleNamespace(id=user_id)
 
@@ -96,8 +120,25 @@ def test_notebook_turn_platform_key_reserves_and_finalizes(monkeypatch):
             calls["reserve"].append((user_id, turn_id, estimated_credits))
             return estimated_credits
 
-        async def finalize_turn(self, user_id, turn_id, model_id, prompt_tokens, completion_tokens, reserved_credits):
-            calls["finalize"].append((user_id, turn_id, model_id, prompt_tokens, completion_tokens, reserved_credits))
+        async def finalize_turn(
+            self,
+            user_id,
+            turn_id,
+            model_id,
+            prompt_tokens,
+            completion_tokens,
+            reserved_credits,
+        ):
+            calls["finalize"].append(
+                (
+                    user_id,
+                    turn_id,
+                    model_id,
+                    prompt_tokens,
+                    completion_tokens,
+                    reserved_credits,
+                )
+            )
             return 248
 
         async def release_turn(self, user_id, turn_id, reserved_credits):
@@ -157,7 +198,10 @@ def test_notebook_turn_byok_bypasses_platform_credit_meter(monkeypatch):
             request=TutorTurnRequest(session_id=session_id, message="teach me"),
             db=_DummyDb(),
             user=user,
-            byok={"api_key": "sk-user-key", "api_base_url": "https://api.example.com/v1"},
+            byok={
+                "api_key": "sk-user-key",
+                "api_base_url": "https://api.example.com/v1",
+            },
             x_llm_model_tutoring=None,
             x_llm_model_evaluation=None,
         )

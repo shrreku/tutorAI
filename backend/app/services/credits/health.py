@@ -12,7 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.repositories.metering_repo import MeteringRepository
-from app.services.telemetry.billing_events import emit_billing_event, emit_cooldown_event
+from app.services.telemetry.billing_events import (
+    emit_billing_event,
+    emit_cooldown_event,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,30 +62,51 @@ class ModelHealthService:
         threshold = settings.HEALTH_CONSECUTIVE_ERROR_THRESHOLD
         if health.consecutive_errors >= threshold and health.status == "healthy":
             health.status = "degraded"
-            health.cooldown_until = now + timedelta(seconds=settings.HEALTH_COOLDOWN_SECONDS)
+            health.cooldown_until = now + timedelta(
+                seconds=settings.HEALTH_COOLDOWN_SECONDS
+            )
             logger.warning(
                 "Model-task %s/%s entered cooldown until %s after %d consecutive errors",
-                model_id, task_type, health.cooldown_until, health.consecutive_errors,
+                model_id,
+                task_type,
+                health.cooldown_until,
+                health.consecutive_errors,
             )
             emit_billing_event(
-                "billing.health.degraded", user_id="system",
-                metadata={"model_id": model_id, "task_type": task_type, "errors": health.consecutive_errors},
+                "billing.health.degraded",
+                user_id="system",
+                metadata={
+                    "model_id": model_id,
+                    "task_type": task_type,
+                    "errors": health.consecutive_errors,
+                },
             )
             emit_cooldown_event(
-                model_id=model_id, task=task_type, action="entered",
+                model_id=model_id,
+                task=task_type,
+                action="entered",
                 error_rate=float(health.consecutive_errors),
-                cooldown_until=health.cooldown_until.isoformat() if health.cooldown_until else None,
+                cooldown_until=health.cooldown_until.isoformat()
+                if health.cooldown_until
+                else None,
             )
         elif health.consecutive_errors >= threshold * 2:
             health.status = "disabled"
             health.cooldown_until = None
             logger.error(
                 "Model-task %s/%s disabled after %d consecutive errors",
-                model_id, task_type, health.consecutive_errors,
+                model_id,
+                task_type,
+                health.consecutive_errors,
             )
             emit_billing_event(
-                "billing.health.disabled", user_id="system",
-                metadata={"model_id": model_id, "task_type": task_type, "errors": health.consecutive_errors},
+                "billing.health.disabled",
+                user_id="system",
+                metadata={
+                    "model_id": model_id,
+                    "task_type": task_type,
+                    "errors": health.consecutive_errors,
+                },
             )
 
         self.db.add(health)
@@ -124,7 +148,7 @@ class ModelHealthService:
             if user_preferred_model in allowed:
                 candidates.append(user_preferred_model)
         candidates.append(assignment.default_model_id)
-        for fb in (assignment.fallback_model_ids or []):
+        for fb in assignment.fallback_model_ids or []:
             if fb not in candidates:
                 candidates.append(fb)
 
@@ -136,10 +160,17 @@ class ModelHealthService:
                 return (model_id, reason)
 
         # All candidates unhealthy — use default anyway with warning
-        logger.error("All models unhealthy for task %s, falling back to default", task_type)
-        return (assignment.default_model_id, "All fallbacks exhausted; using default despite health state")
+        logger.error(
+            "All models unhealthy for task %s, falling back to default", task_type
+        )
+        return (
+            assignment.default_model_id,
+            "All fallbacks exhausted; using default despite health state",
+        )
 
-    async def clear_cooldown(self, model_id: str, task_type: str, reason: str = "") -> None:
+    async def clear_cooldown(
+        self, model_id: str, task_type: str, reason: str = ""
+    ) -> None:
         """Admin: clear cooldown for a model-task pair."""
         health = await self.repo.get_or_create_health(model_id, task_type)
         health.status = "healthy"
@@ -149,7 +180,9 @@ class ModelHealthService:
         self.db.add(health)
         await self.db.flush()
 
-    async def disable_model_task(self, model_id: str, task_type: str, reason: str = "") -> None:
+    async def disable_model_task(
+        self, model_id: str, task_type: str, reason: str = ""
+    ) -> None:
         """Admin: disable a specific model for a specific task."""
         health = await self.repo.get_or_create_health(model_id, task_type)
         health.status = "disabled"
@@ -157,7 +190,9 @@ class ModelHealthService:
         self.db.add(health)
         await self.db.flush()
 
-    async def enable_model_task(self, model_id: str, task_type: str, reason: str = "") -> None:
+    async def enable_model_task(
+        self, model_id: str, task_type: str, reason: str = ""
+    ) -> None:
         """Admin: re-enable a model-task pair."""
         health = await self.repo.get_or_create_health(model_id, task_type)
         health.status = "healthy"

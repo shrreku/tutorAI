@@ -15,7 +15,11 @@ from app.db.repositories.resource_artifact_repo import ResourceArtifactRepositor
 from app.db.repositories.chunk_repo import ChunkRepository
 from app.db.repositories.ingestion_repo import IngestionJobRepository
 from app.models.session import UserProfile
-from app.models.knowledge_base import ResourceTopicBundle, ResourceConceptStats, ResourceConceptGraph
+from app.models.knowledge_base import (
+    ResourceTopicBundle,
+    ResourceConceptStats,
+    ResourceConceptGraph,
+)
 from app.api.deps import require_auth
 from app.services.resource_readiness import normalized_resource_capabilities
 from app.services.storage.factory import create_storage_provider
@@ -37,7 +41,14 @@ router = APIRouter(prefix="/resources", tags=["resources"])
 logger = logging.getLogger(__name__)
 
 _DAG_RELATION_TYPES = {"PREREQUISITE", "REQUIRES", "BUILDS_ON", "PART_OF"}
-_DISPLAY_RELATION_TYPES = {"REQUIRES", "ENABLES", "DERIVES_FROM", "PART_OF", "IS_A", "APPLIES_TO"}
+_DISPLAY_RELATION_TYPES = {
+    "REQUIRES",
+    "ENABLES",
+    "DERIVES_FROM",
+    "PART_OF",
+    "IS_A",
+    "APPLIES_TO",
+}
 _DISPLAY_MIN_CONFIDENCE = 0.55
 _DISPLAY_MAX_EDGES_PER_CONCEPT = 4
 
@@ -50,20 +61,28 @@ def _resource_response_payload(resource, latest_job=None) -> dict:
         "status": resource.status,
         "lifecycle_status": resource.status,
         "processing_profile": getattr(resource, "processing_profile", None),
-        "capabilities": normalized_resource_capabilities(resource, latest_job=latest_job),
+        "capabilities": normalized_resource_capabilities(
+            resource, latest_job=latest_job
+        ),
         "uploaded_at": resource.uploaded_at,
         "processed_at": resource.processed_at,
-        "latest_job": _job_status_payload(latest_job) if latest_job is not None else None,
+        "latest_job": _job_status_payload(latest_job)
+        if latest_job is not None
+        else None,
     }
 
 
 def _job_status_payload(job) -> IngestionStatusResponse:
-    metrics = (getattr(job, "metrics", None) or {})
+    metrics = getattr(job, "metrics", None) or {}
     billing = metrics.get("billing") if isinstance(metrics, dict) else None
-    curriculum_billing = metrics.get("curriculum_billing") if isinstance(metrics, dict) else None
+    curriculum_billing = (
+        metrics.get("curriculum_billing") if isinstance(metrics, dict) else None
+    )
     async_byok = metrics.get("async_byok") if isinstance(metrics, dict) else None
     document = metrics.get("document") if isinstance(metrics, dict) else None
-    capability_progress = metrics.get("capability_progress") if isinstance(metrics, dict) else None
+    capability_progress = (
+        metrics.get("capability_progress") if isinstance(metrics, dict) else None
+    )
     return IngestionStatusResponse(
         job_id=job.id,
         resource_id=job.resource_id,
@@ -78,33 +97,66 @@ def _job_status_payload(job) -> IngestionStatusResponse:
         started_at=job.started_at,
         completed_at=job.completed_at,
         document_metrics=document if isinstance(document, dict) else None,
-        capability_progress=capability_progress if isinstance(capability_progress, dict) else None,
+        capability_progress=capability_progress
+        if isinstance(capability_progress, dict)
+        else None,
         billing={
             "uses_platform_credits": bool(billing.get("uses_platform_credits", False)),
             "estimated_credits": int(billing.get("estimated_credits") or 0),
             "reserved_credits": int(billing.get("reserved_credits") or 0),
-            "actual_credits": int(billing.get("actual_credits")) if billing and billing.get("actual_credits") is not None else None,
-            "status": str(billing.get("status") or "not_applicable") if billing else "not_applicable",
+            "actual_credits": int(billing.get("actual_credits"))
+            if billing and billing.get("actual_credits") is not None
+            else None,
+            "status": str(billing.get("status") or "not_applicable")
+            if billing
+            else "not_applicable",
             "release_reason": billing.get("release_reason") if billing else None,
-            "file_size_bytes": int(billing.get("file_size_bytes") or 0) if billing else 0,
-        } if isinstance(billing, dict) else None,
+            "file_size_bytes": int(billing.get("file_size_bytes") or 0)
+            if billing
+            else 0,
+        }
+        if isinstance(billing, dict)
+        else None,
         curriculum_billing={
-            "estimated_credits_low": int(curriculum_billing.get("estimated_credits_low") or 0),
-            "estimated_credits_high": int(curriculum_billing.get("estimated_credits_high") or 0),
+            "estimated_credits_low": int(
+                curriculum_billing.get("estimated_credits_low") or 0
+            ),
+            "estimated_credits_high": int(
+                curriculum_billing.get("estimated_credits_high") or 0
+            ),
             "reserved_credits": int(curriculum_billing.get("reserved_credits") or 0),
-            "actual_credits": int(curriculum_billing.get("actual_credits")) if curriculum_billing and curriculum_billing.get("actual_credits") is not None else None,
-            "status": str(curriculum_billing.get("status") or "pending") if curriculum_billing else "pending",
-            "operation_id": str(curriculum_billing.get("operation_id")) if curriculum_billing and curriculum_billing.get("operation_id") else None,
-            "release_reason": curriculum_billing.get("release_reason") if curriculum_billing else None,
-        } if isinstance(curriculum_billing, dict) else None,
+            "actual_credits": int(curriculum_billing.get("actual_credits"))
+            if curriculum_billing
+            and curriculum_billing.get("actual_credits") is not None
+            else None,
+            "status": str(curriculum_billing.get("status") or "pending")
+            if curriculum_billing
+            else "pending",
+            "operation_id": str(curriculum_billing.get("operation_id"))
+            if curriculum_billing and curriculum_billing.get("operation_id")
+            else None,
+            "release_reason": curriculum_billing.get("release_reason")
+            if curriculum_billing
+            else None,
+        }
+        if isinstance(curriculum_billing, dict)
+        else None,
         async_byok=IngestionAsyncByokStatusResponse(
             enabled=bool(async_byok.get("enabled", False)),
-            escrow_id=UUID(async_byok["escrow_id"]) if async_byok.get("escrow_id") else None,
+            escrow_id=UUID(async_byok["escrow_id"])
+            if async_byok.get("escrow_id")
+            else None,
             provider_name=async_byok.get("provider_name"),
             status=str(async_byok.get("status") or "disabled"),
-            expires_at=datetime.fromisoformat(async_byok["expires_at"]) if async_byok.get("expires_at") else None,
-            revoked_at=datetime.fromisoformat(async_byok["revoked_at"]) if async_byok.get("revoked_at") else None,
-        ) if isinstance(async_byok, dict) else None,
+            expires_at=datetime.fromisoformat(async_byok["expires_at"])
+            if async_byok.get("expires_at")
+            else None,
+            revoked_at=datetime.fromisoformat(async_byok["revoked_at"])
+            if async_byok.get("revoked_at")
+            else None,
+        )
+        if isinstance(async_byok, dict)
+        else None,
     )
 
 
@@ -178,18 +230,22 @@ def _edge_display_priority(edge: ResourceConceptGraph) -> float:
     confidence = float(edge.confidence or 0.0)
     assoc_weight = float(edge.assoc_weight or 0.0)
     relation_type = (edge.relation_type or "").upper()
-    source_bonus = 0.08 if (edge.source or "") in {"ontology_relation", "prereq_hint", "manual"} else 0.0
-    relation_bonus = 0.1 if relation_type in {"REQUIRES", "DERIVES_FROM", "IS_A"} else 0.0
+    source_bonus = (
+        0.08
+        if (edge.source or "") in {"ontology_relation", "prereq_hint", "manual"}
+        else 0.0
+    )
+    relation_bonus = (
+        0.1 if relation_type in {"REQUIRES", "DERIVES_FROM", "IS_A"} else 0.0
+    )
     return confidence + (assoc_weight * 0.08) + source_bonus + relation_bonus
 
 
-def _curate_display_edges(edges: list[ResourceConceptGraph]) -> list[ResourceConceptGraph]:
-    concept_ids = {
-        edge.source_concept_id
-        for edge in edges
-    } | {
-        edge.target_concept_id
-        for edge in edges
+def _curate_display_edges(
+    edges: list[ResourceConceptGraph],
+) -> list[ResourceConceptGraph]:
+    concept_ids = {edge.source_concept_id for edge in edges} | {
+        edge.target_concept_id for edge in edges
     }
 
     filtered = [
@@ -207,7 +263,10 @@ def _curate_display_edges(edges: list[ResourceConceptGraph]) -> list[ResourceCon
     for edge in filtered:
         source = edge.source_concept_id
         target = edge.target_concept_id
-        if degree[source] >= _DISPLAY_MAX_EDGES_PER_CONCEPT or degree[target] >= _DISPLAY_MAX_EDGES_PER_CONCEPT:
+        if (
+            degree[source] >= _DISPLAY_MAX_EDGES_PER_CONCEPT
+            or degree[target] >= _DISPLAY_MAX_EDGES_PER_CONCEPT
+        ):
             continue
         curated.append(edge)
         curated_keys.add((source, target, (edge.relation_type or "").upper()))
@@ -223,16 +282,26 @@ def _curate_display_edges(edges: list[ResourceConceptGraph]) -> list[ResourceCon
             continue
 
         for edge in candidate_edges:
-            if edge.source_concept_id != concept_id and edge.target_concept_id != concept_id:
+            if (
+                edge.source_concept_id != concept_id
+                and edge.target_concept_id != concept_id
+            ):
                 continue
 
-            key = (edge.source_concept_id, edge.target_concept_id, (edge.relation_type or "").upper())
+            key = (
+                edge.source_concept_id,
+                edge.target_concept_id,
+                (edge.relation_type or "").upper(),
+            )
             if key in curated_keys:
                 continue
 
             source = edge.source_concept_id
             target = edge.target_concept_id
-            if degree[source] >= _DISPLAY_MAX_EDGES_PER_CONCEPT + 1 or degree[target] >= _DISPLAY_MAX_EDGES_PER_CONCEPT + 1:
+            if (
+                degree[source] >= _DISPLAY_MAX_EDGES_PER_CONCEPT + 1
+                or degree[target] >= _DISPLAY_MAX_EDGES_PER_CONCEPT + 1
+            ):
                 continue
 
             curated.append(edge)
@@ -261,11 +330,13 @@ async def list_resources(
         offset=offset,
     )
     job_repo = IngestionJobRepository(db)
-    latest_jobs = await job_repo.get_latest_by_resource_ids([resource.id for resource in resources])
-    
+    latest_jobs = await job_repo.get_latest_by_resource_ids(
+        [resource.id for resource in resources]
+    )
+
     # Get total count
     total = len(resources)  # Simplified; should use count query for large datasets
-    
+
     return PaginatedResponse(
         items=[
             ResourceResponse(**_resource_response_payload(r, latest_jobs.get(r.id)))
@@ -286,20 +357,20 @@ async def get_resource(
     """Get a resource by ID with details."""
     repo = ResourceRepository(db)
     resource = await repo.get_resource_detail(resource_id, owner_user_id=user.id)
-    
+
     if not resource:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Resource {resource_id} not found",
         )
-    
+
     # Count chunks
     chunk_repo = ChunkRepository(db)
     chunk_count = await chunk_repo.count_by_resource(resource_id)
     artifact_repo = ResourceArtifactRepository(db)
     artifacts = await artifact_repo.list_by_resource(resource_id, limit=10, offset=0)
     latest_job = await IngestionJobRepository(db).get_by_resource(resource_id)
-    
+
     return ResourceDetailResponse(
         **_resource_response_payload(resource, latest_job),
         chunk_count=chunk_count,
@@ -316,7 +387,10 @@ async def get_resource(
     )
 
 
-@router.get("/{resource_id}/artifacts", response_model=PaginatedResponse[ResourceArtifactResponse])
+@router.get(
+    "/{resource_id}/artifacts",
+    response_model=PaginatedResponse[ResourceArtifactResponse],
+)
 async def list_resource_artifacts(
     resource_id: UUID,
     artifact_kind: Optional[str] = None,
@@ -345,7 +419,9 @@ async def list_resource_artifacts(
         limit=limit,
         offset=offset,
     )
-    total = await artifact_repo.count_by_resource(resource_id, artifact_kind=artifact_kind)
+    total = await artifact_repo.count_by_resource(
+        resource_id, artifact_kind=artifact_kind
+    )
     return PaginatedResponse(
         items=[_resource_artifact_payload(artifact) for artifact in artifacts],
         total=total,
@@ -378,17 +454,27 @@ async def get_resource_topics(
 
     # Get topic bundles
     result = await db.execute(
-        select(ResourceTopicBundle)
-        .where(ResourceTopicBundle.resource_id == resource_id)
+        select(ResourceTopicBundle).where(
+            ResourceTopicBundle.resource_id == resource_id
+        )
     )
     bundles = result.scalars().all()
 
     # Get concept stats for concept count + importance
     result2 = await db.execute(
-        select(ResourceConceptStats.concept_id, ResourceConceptStats.teach_count, ResourceConceptStats.importance_score)
-        .where(ResourceConceptStats.resource_id == resource_id)
+        select(
+            ResourceConceptStats.concept_id,
+            ResourceConceptStats.teach_count,
+            ResourceConceptStats.importance_score,
+        ).where(ResourceConceptStats.resource_id == resource_id)
     )
-    concept_map = {row.concept_id: {"teach_count": row.teach_count, "importance": row.importance_score} for row in result2.all()}
+    concept_map = {
+        row.concept_id: {
+            "teach_count": row.teach_count,
+            "importance": row.importance_score,
+        }
+        for row in result2.all()
+    }
 
     topics = []
     for b in bundles:
@@ -404,15 +490,17 @@ async def get_resource_topics(
             }
             for c in all_concepts
         ]
-        topics.append({
-            "topic_id": b.topic_id,
-            "topic_name": b.topic_name,
-            "primary_concepts": primary,
-            "support_concepts": support,
-            "concept_count": len(all_concepts),
-            "concept_details": concept_details,
-            "prereq_topic_ids": b.prereq_topic_ids or [],
-        })
+        topics.append(
+            {
+                "topic_id": b.topic_id,
+                "topic_name": b.topic_name,
+                "primary_concepts": primary,
+                "support_concepts": support,
+                "concept_count": len(all_concepts),
+                "concept_details": concept_details,
+                "prereq_topic_ids": b.prereq_topic_ids or [],
+            }
+        )
 
     return {
         "resource_id": str(resource_id),
@@ -433,7 +521,7 @@ async def delete_resource(
     """Delete a resource and all associated data."""
     repo = ResourceRepository(db)
     resource = await repo.get_by_id(resource_id)
-    
+
     if not resource:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -453,7 +541,7 @@ async def delete_resource(
         )
 
     file_uri = resource.file_path_or_uri
-    
+
     await repo.delete(resource_id)
 
     if file_uri:
@@ -464,7 +552,9 @@ async def delete_resource(
             logger.warning("Failed to delete resource file '%s': %s", file_uri, exc)
 
 
-@router.get("/{resource_id}/knowledge-base", response_model=ResourceKnowledgeBaseResponse)
+@router.get(
+    "/{resource_id}/knowledge-base", response_model=ResourceKnowledgeBaseResponse
+)
 async def get_resource_knowledge_base(
     resource_id: UUID,
     db: AsyncSession = Depends(get_db),
@@ -492,7 +582,10 @@ async def get_resource_knowledge_base(
     concepts_result = await db.execute(
         select(ResourceConceptStats)
         .where(ResourceConceptStats.resource_id == resource_id)
-        .order_by(ResourceConceptStats.teach_count.desc(), ResourceConceptStats.concept_id.asc())
+        .order_by(
+            ResourceConceptStats.teach_count.desc(),
+            ResourceConceptStats.concept_id.asc(),
+        )
     )
     concepts = list(concepts_result.scalars().all())
 
@@ -565,7 +658,9 @@ async def get_resource_knowledge_base(
     )
 
 
-@router.patch("/{resource_id}/knowledge-base", response_model=ResourceKnowledgeBaseResponse)
+@router.patch(
+    "/{resource_id}/knowledge-base", response_model=ResourceKnowledgeBaseResponse
+)
 async def update_resource_knowledge_base(
     resource_id: UUID,
     payload: KnowledgeBaseUpdateRequest,
@@ -602,13 +697,15 @@ async def update_resource_knowledge_base(
             )
             concept = concept_result.scalar_one_or_none()
             if concept is None:
-                db.add(ResourceConceptStats(
-                    resource_id=resource_id,
-                    concept_id=concept_id,
-                    teach_count=0,
-                    mention_count=0,
-                    chunk_count=0,
-                ))
+                db.add(
+                    ResourceConceptStats(
+                        resource_id=resource_id,
+                        concept_id=concept_id,
+                        teach_count=0,
+                        mention_count=0,
+                        chunk_count=0,
+                    )
+                )
 
         for rename in payload.graph_ops.rename_concepts:
             old_id = _normalize_concept_id(rename.from_concept_id)
@@ -658,12 +755,19 @@ async def update_resource_knowledge_base(
                 edge.target_concept_id = new_id
 
             bundle_rows_result = await db.execute(
-                select(ResourceTopicBundle)
-                .where(ResourceTopicBundle.resource_id == resource_id)
+                select(ResourceTopicBundle).where(
+                    ResourceTopicBundle.resource_id == resource_id
+                )
             )
             for bundle_row in bundle_rows_result.scalars().all():
-                primary = [new_id if item == old_id else item for item in (bundle_row.primary_concepts or [])]
-                support = [new_id if item == old_id else item for item in (bundle_row.support_concepts or [])]
+                primary = [
+                    new_id if item == old_id else item
+                    for item in (bundle_row.primary_concepts or [])
+                ]
+                support = [
+                    new_id if item == old_id else item
+                    for item in (bundle_row.support_concepts or [])
+                ]
                 bundle_row.primary_concepts = primary
                 bundle_row.support_concepts = support
 
@@ -685,15 +789,20 @@ async def update_resource_knowledge_base(
             )
 
             bundle_rows_result = await db.execute(
-                select(ResourceTopicBundle)
-                .where(ResourceTopicBundle.resource_id == resource_id)
+                select(ResourceTopicBundle).where(
+                    ResourceTopicBundle.resource_id == resource_id
+                )
             )
             for bundle_row in bundle_rows_result.scalars().all():
                 bundle_row.primary_concepts = [
-                    item for item in (bundle_row.primary_concepts or []) if item != concept_id
+                    item
+                    for item in (bundle_row.primary_concepts or [])
+                    if item != concept_id
                 ]
                 bundle_row.support_concepts = [
-                    item for item in (bundle_row.support_concepts or []) if item != concept_id
+                    item
+                    for item in (bundle_row.support_concepts or [])
+                    if item != concept_id
                 ]
 
         for edge_payload in payload.graph_ops.remove_edges:
@@ -727,13 +836,15 @@ async def update_resource_knowledge_base(
                     .limit(1)
                 )
                 if concept_result.scalar_one_or_none() is None:
-                    db.add(ResourceConceptStats(
-                        resource_id=resource_id,
-                        concept_id=concept_id,
-                        teach_count=0,
-                        mention_count=0,
-                        chunk_count=0,
-                    ))
+                    db.add(
+                        ResourceConceptStats(
+                            resource_id=resource_id,
+                            concept_id=concept_id,
+                            teach_count=0,
+                            mention_count=0,
+                            chunk_count=0,
+                        )
+                    )
 
             edge_result = await db.execute(
                 select(ResourceConceptGraph)
@@ -745,15 +856,21 @@ async def update_resource_knowledge_base(
             )
             edge = edge_result.scalar_one_or_none()
             if edge is None:
-                db.add(ResourceConceptGraph(
-                    resource_id=resource_id,
-                    source_concept_id=source_id,
-                    target_concept_id=target_id,
-                    relation_type=relation_type,
-                    assoc_weight=edge_payload.assoc_weight if edge_payload.assoc_weight is not None else 0.0,
-                    confidence=edge_payload.confidence if edge_payload.confidence is not None else 0.5,
-                    source="manual",
-                ))
+                db.add(
+                    ResourceConceptGraph(
+                        resource_id=resource_id,
+                        source_concept_id=source_id,
+                        target_concept_id=target_id,
+                        relation_type=relation_type,
+                        assoc_weight=edge_payload.assoc_weight
+                        if edge_payload.assoc_weight is not None
+                        else 0.0,
+                        confidence=edge_payload.confidence
+                        if edge_payload.confidence is not None
+                        else 0.5,
+                        source="manual",
+                    )
+                )
 
     for override in payload.concept_overrides:
         concept_id = _normalize_concept_id(override.concept_id)
@@ -785,22 +902,31 @@ async def update_resource_knowledge_base(
 
     if payload.topic_bundles is not None:
         await db.execute(
-            delete(ResourceTopicBundle).where(ResourceTopicBundle.resource_id == resource_id)
+            delete(ResourceTopicBundle).where(
+                ResourceTopicBundle.resource_id == resource_id
+            )
         )
 
         for bundle in payload.topic_bundles:
-            db.add(ResourceTopicBundle(
-                resource_id=resource_id,
-                topic_id=bundle.topic_id,
-                topic_name=bundle.topic_name,
-                primary_concepts=[_normalize_concept_id(item) for item in bundle.primary_concepts],
-                support_concepts=[_normalize_concept_id(item) for item in bundle.support_concepts],
-                prereq_topic_ids=bundle.prereq_topic_ids,
-            ))
+            db.add(
+                ResourceTopicBundle(
+                    resource_id=resource_id,
+                    topic_id=bundle.topic_id,
+                    topic_name=bundle.topic_name,
+                    primary_concepts=[
+                        _normalize_concept_id(item) for item in bundle.primary_concepts
+                    ],
+                    support_concepts=[
+                        _normalize_concept_id(item) for item in bundle.support_concepts
+                    ],
+                    prereq_topic_ids=bundle.prereq_topic_ids,
+                )
+            )
 
     all_edges_result = await db.execute(
-        select(ResourceConceptGraph)
-        .where(ResourceConceptGraph.resource_id == resource_id)
+        select(ResourceConceptGraph).where(
+            ResourceConceptGraph.resource_id == resource_id
+        )
     )
     all_edges = list(all_edges_result.scalars().all())
     if not _validate_prerequisite_dag(all_edges):

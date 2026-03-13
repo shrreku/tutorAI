@@ -37,24 +37,30 @@ class InteractionType(str, Enum):
 
 class TurnPlan(BaseModel):
     """Plan for the current turn."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     goal: str = Field(..., min_length=1)
     interaction_type: InteractionType
-    expected_student_action: Optional[Literal["reflect", "solve", "answer", "explain", "ask"]] = None
+    expected_student_action: Optional[
+        Literal["reflect", "solve", "answer", "explain", "ask"]
+    ] = None
     tutor_question: Optional[str] = None
     constraints: Optional[List[str]] = None
 
 
 class PolicyOrchestratorOutput(BaseModel):
     """Output from the Policy Agent."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     pedagogical_action: PedagogicalAction
     progression_decision: ProgressionDecision
     confidence: float = Field(..., ge=0, le=1)
     reasoning: str = Field(..., min_length=1)
-    intent: Optional[Literal["question", "answer", "statement", "confusion", "request_hint"]] = None
+    intent: Optional[
+        Literal["question", "answer", "statement", "confusion", "request_hint"]
+    ] = None
     student_intent: Optional[
         Literal[
             "engaged",
@@ -67,7 +73,9 @@ class PolicyOrchestratorOutput(BaseModel):
             "frustrated",
         ]
     ] = None
-    recommended_strategy: Optional[Literal["direct", "socratic", "scaffolded", "assessment", "review"]] = None
+    recommended_strategy: Optional[
+        Literal["direct", "socratic", "scaffolded", "assessment", "review"]
+    ] = None
     ad_hoc_step_type: Optional[str] = None
     skip_target_index: Optional[int] = Field(default=None, ge=0)
     next_objective_index: Optional[int] = Field(default=None, ge=0)
@@ -79,8 +87,9 @@ class PolicyOrchestratorOutput(BaseModel):
 
 class TutorOutput(BaseModel):
     """Output from the Tutor Agent."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     response_text: str = Field(..., min_length=1)
     tutor_question: Optional[str] = None
     evidence_chunk_ids: Optional[List[str]] = Field(
@@ -91,8 +100,9 @@ class TutorOutput(BaseModel):
 
 class ConceptDelta(BaseModel):
     """Delta for a single concept."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     score: float = Field(..., ge=0, le=1)
     delta: float
     weight: float = Field(..., ge=0, le=1)
@@ -102,8 +112,9 @@ class ConceptDelta(BaseModel):
 
 class EvaluatorOutput(BaseModel):
     """Output from the Evaluator Agent."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     overall_score: float = Field(..., ge=0, le=1)
     correctness_label: Literal["correct", "partial", "incorrect", "unclear"]
     multi_concept: bool = False
@@ -127,8 +138,9 @@ class EvaluatorOutput(BaseModel):
 
 class CurriculumPlanOutput(BaseModel):
     """Output from the Curriculum Agent."""
+
     model_config = ConfigDict(extra="forbid")
-    
+
     objective_queue: List[Dict[str, Any]] = Field(..., min_length=1)
     active_topic: Optional[str] = None
     plan_horizon: Optional[Dict[str, Any]] = None

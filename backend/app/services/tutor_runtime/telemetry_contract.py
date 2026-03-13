@@ -41,8 +41,7 @@ def build_turn_telemetry_contract(
 
     touched_concepts = sorted(mastery_delta.keys())
     delta_values = [
-        _safe_float(mastery_delta.get(concept), 0.0)
-        for concept in touched_concepts
+        _safe_float(mastery_delta.get(concept), 0.0) for concept in touched_concepts
     ]
     positive = sum(1 for value in delta_values if value > 0)
     negative = sum(1 for value in delta_values if value < 0)

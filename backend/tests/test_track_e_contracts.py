@@ -49,7 +49,10 @@ def test_scoring_emits_track_e_telemetry_scores(monkeypatch):
         categorical_calls[name] = value
 
     monkeypatch.setattr("app.services.tutor_runtime.scoring.score_trace", _score_trace)
-    monkeypatch.setattr("app.services.tutor_runtime.scoring.score_trace_categorical", _score_trace_categorical)
+    monkeypatch.setattr(
+        "app.services.tutor_runtime.scoring.score_trace_categorical",
+        _score_trace_categorical,
+    )
 
     result = TurnResult(
         turn_id="turn-1",
@@ -67,7 +70,9 @@ def test_scoring_emits_track_e_telemetry_scores(monkeypatch):
         awaiting_evaluation=False,
         step_transition="step:0→1",
         evidence_chunk_ids=["c1", "c2"],
-        guard_events=[{"name": "guard_override", "guard_name": "forced_advance_max_turns"}],
+        guard_events=[
+            {"name": "guard_override", "guard_name": "forced_advance_max_turns"}
+        ],
         decision_requested="CONTINUE_STEP",
         decision_applied="ADVANCE_STEP",
         delegated=True,

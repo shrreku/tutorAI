@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
 from langfuse import observe
 
@@ -57,7 +57,9 @@ class EvaluatorAgent(BaseAgent[EvaluatorState, EvaluatorOutput]):
 
     @observe(name="agent.evaluator", capture_input=False)
     async def run(self, state: EvaluatorState) -> EvaluatorOutput:
-        logger.info(f"EvaluatorAgent: concepts={state.focus_concepts[:3]}, msg={state.student_message[:50]}...")
+        logger.info(
+            f"EvaluatorAgent: concepts={state.focus_concepts[:3]}, msg={state.student_message[:50]}..."
+        )
 
         if self.llm:
             try:
@@ -72,7 +74,8 @@ class EvaluatorAgent(BaseAgent[EvaluatorState, EvaluatorOutput]):
                     trace_metadata={
                         "focus_concepts": state.focus_concepts[:5],
                         "has_tutor_question": state.tutor_question is not None,
-                        "effective_step_type": state.effective_step_type or state.current_step,
+                        "effective_step_type": state.effective_step_type
+                        or state.current_step,
                     },
                 )
             except Exception as e:
@@ -99,12 +102,18 @@ class EvaluatorAgent(BaseAgent[EvaluatorState, EvaluatorOutput]):
 
         question_line = ""
         if state.tutor_question:
-            question_line = f'\nQUESTION THE STUDENT IS ANSWERING: "{state.tutor_question}"'
+            question_line = (
+                f'\nQUESTION THE STUDENT IS ANSWERING: "{state.tutor_question}"'
+            )
         else:
             question_line = "\nNO EXPLICIT QUESTION — evaluate what the student's message reveals about their understanding."
 
         mastery_lines = [f"  {c}: {v:.2f}" for c, v in state.mastery_snapshot.items()]
-        mastery_block = "CURRENT MASTERY:\n" + "\n".join(mastery_lines) if mastery_lines else "CURRENT MASTERY: (new student)"
+        mastery_block = (
+            "CURRENT MASTERY:\n" + "\n".join(mastery_lines)
+            if mastery_lines
+            else "CURRENT MASTERY: (new student)"
+        )
 
         return f"""{obj_block}
 {tutor_ctx}{question_line}
@@ -186,7 +195,9 @@ Evaluate the student's response. Return JSON with overall_score, correctness_lab
             recommended_intervention = "advance"
         elif overall_score >= 0.4:
             label = "partial"
-            feedback = "Good progress. Tighten your explanation around the main concept link."
+            feedback = (
+                "Good progress. Tighten your explanation around the main concept link."
+            )
             ready_to_advance = False
             recommended_intervention = "guided_practice"
         elif overall_score >= 0.2:
@@ -214,7 +225,9 @@ Evaluate the student's response. Return JSON with overall_score, correctness_lab
         misconceptions = []
         missing_primary = [c for c in primary if not _concept_mentioned(c)]
         if missing_primary:
-            misconceptions.append(f"missing_primary_concepts:{','.join(sorted(missing_primary))}")
+            misconceptions.append(
+                f"missing_primary_concepts:{','.join(sorted(missing_primary))}"
+            )
         if has_confusion_signal:
             misconceptions.append("self_reported_confusion")
 

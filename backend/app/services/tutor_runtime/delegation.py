@@ -79,7 +79,9 @@ def _compute_avg_uncertainty(plan: dict[str, Any], focus_concepts: list[str]) ->
     return sum(values) / len(values)
 
 
-def _compute_evidence_confidence(retrieved_chunks: Sequence[Any], evidence_chunk_ids: list[str]) -> float:
+def _compute_evidence_confidence(
+    retrieved_chunks: Sequence[Any], evidence_chunk_ids: list[str]
+) -> float:
     total = len(retrieved_chunks)
     if total <= 0:
         return 0.0
@@ -130,7 +132,9 @@ def decide_adaptive_delegation(
     repeated_confusion = _detect_repeated_confusion(recent_turns, evaluation_result)
     avg_uncertainty = _compute_avg_uncertainty(plan, focus_concepts)
     high_uncertainty = avg_uncertainty >= HIGH_UNCERTAINTY_THRESHOLD
-    evidence_confidence = _compute_evidence_confidence(retrieved_chunks, evidence_chunk_ids)
+    evidence_confidence = _compute_evidence_confidence(
+        retrieved_chunks, evidence_chunk_ids
+    )
     low_evidence_confidence = evidence_confidence < LOW_EVIDENCE_CONFIDENCE_THRESHOLD
 
     signals = {
@@ -202,7 +206,9 @@ def apply_delegation_override(
             "pedagogical_action": chosen_action,
             "progression_decision": ProgressionDecision.CONTINUE_STEP,
             "planner_guidance": guidance,
-            "ad_hoc_step_type": "probe" if decision.reason != "low_evidence_confidence" else None,
+            "ad_hoc_step_type": "probe"
+            if decision.reason != "low_evidence_confidence"
+            else None,
         }
     )
 

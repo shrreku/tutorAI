@@ -25,7 +25,9 @@ class IngestionJobRepository(BaseRepository[IngestionJob]):
         )
         return result.scalar_one_or_none()
 
-    async def get_latest_by_resource_ids(self, resource_ids: List[UUID]) -> dict[UUID, IngestionJob]:
+    async def get_latest_by_resource_ids(
+        self, resource_ids: List[UUID]
+    ) -> dict[UUID, IngestionJob]:
         """Return the newest ingestion job for each resource id in one query."""
         if not resource_ids:
             return {}

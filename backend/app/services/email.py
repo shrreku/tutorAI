@@ -4,6 +4,7 @@ Resend (https://resend.com) has a dead-simple REST API and a generous free tier
 (3,000 emails/month).  If RESEND_API_KEY is not configured, email is silently
 skipped and a warning is logged — useful during local development.
 """
+
 import logging
 from typing import Optional
 
@@ -30,7 +31,8 @@ async def send_email(
     if not settings.RESEND_API_KEY:
         logger.warning(
             "RESEND_API_KEY not configured — skipping email to %s (subject: %s)",
-            to, subject,
+            to,
+            subject,
         )
         return False
 

@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.chunk import Chunk, ChunkConcept
 from app.models.knowledge_base import (
     ResourceBundle,
-    ResourceConceptGraph,
     ResourceTopicBundle,
 )
 from app.models.resource import Resource
@@ -55,12 +54,16 @@ class CurriculumPreparationService:
             raise ValueError(f"Resource {resource_id} not found")
 
         capabilities = dict(resource.capabilities_json or {})
-        if capabilities.get("curriculum_ready") and capabilities.get("has_topic_bundles"):
+        if capabilities.get("curriculum_ready") and capabilities.get(
+            "has_topic_bundles"
+        ):
             return {"prepared": False, "reason": "already_ready"}
 
         chunks = await self._get_chunks(resource_id)
         if not chunks:
-            raise ValueError(f"Resource {resource_id} has no chunks available for curriculum preparation")
+            raise ValueError(
+                f"Resource {resource_id} has no chunks available for curriculum preparation"
+            )
 
         if progress_callback is not None:
             await progress_callback("curriculum_ontology", 78)
@@ -68,13 +71,19 @@ class CurriculumPreparationService:
         sections = self._build_sections(chunks)
         chunk_data = self._build_chunk_data(chunks)
 
-        ontology = await self.ontology_extractor.extract(sections=sections, resource_title=resource.filename)
-        ontology_context = ontology.get_enrichment_context(max_tokens=800) if ontology else None
+        ontology = await self.ontology_extractor.extract(
+            sections=sections, resource_title=resource.filename
+        )
+        ontology_context = (
+            ontology.get_enrichment_context(max_tokens=800) if ontology else None
+        )
 
         if progress_callback is not None:
             await progress_callback("curriculum_enrichment", 86)
 
-        enrichments = await self.enricher.enrich_batch(chunk_data, ontology_context=ontology_context)
+        enrichments = await self.enricher.enrich_batch(
+            chunk_data, ontology_context=ontology_context
+        )
         enrichments_dict = [item.to_dict() for item in enrichments]
 
         await self._persist_enrichments(chunks, enrichments_dict)
@@ -100,7 +109,9 @@ class CurriculumPreparationService:
             await progress_callback("curriculum_bundles", 96)
 
         bundle_result = await self._build_bundles(resource_id)
-        await self._mark_resource_ready(resource, kb_result, graph_result, bundle_result)
+        await self._mark_resource_ready(
+            resource, kb_result, graph_result, bundle_result
+        )
         artifact = await self._upsert_curriculum_artifact(
             resource,
             kb_result,
@@ -123,7 +134,9 @@ class CurriculumPreparationService:
 
     async def _get_chunks(self, resource_id: uuid.UUID) -> list[Chunk]:
         result = await self.db.execute(
-            select(Chunk).where(Chunk.resource_id == resource_id).order_by(Chunk.chunk_index)
+            select(Chunk)
+            .where(Chunk.resource_id == resource_id)
+            .order_by(Chunk.chunk_index)
         )
         return list(result.scalars().all())
 
@@ -186,9 +199,13 @@ class CurriculumPreparationService:
             for chunk in chunks
         ]
 
-    async def _persist_enrichments(self, chunks: list[Chunk], enrichments: list[dict]) -> None:
+    async def _persist_enrichments(
+        self, chunks: list[Chunk], enrichments: list[dict]
+    ) -> None:
         await self.db.execute(
-            delete(ChunkConcept).where(ChunkConcept.chunk_id.in_([chunk.id for chunk in chunks]))
+            delete(ChunkConcept).where(
+                ChunkConcept.chunk_id.in_([chunk.id for chunk in chunks])
+            )
         )
         for chunk, enrichment in zip(chunks, enrichments):
             existing = dict(chunk.enrichment_metadata or {})
@@ -220,14 +237,30 @@ class CurriculumPreparationService:
         await self.db.flush()
 
     async def _build_bundles(self, resource_id: uuid.UUID) -> dict:
-        await self.db.execute(delete(ResourceBundle).where(ResourceBundle.resource_id == resource_id))
-        await self.db.execute(delete(ResourceTopicBundle).where(ResourceTopicBundle.resource_id == resource_id))
+        await self.db.execute(
+            delete(ResourceBundle).where(ResourceBundle.resource_id == resource_id)
+        )
+        await self.db.execute(
+            delete(ResourceTopicBundle).where(
+                ResourceTopicBundle.resource_id == resource_id
+            )
+        )
         await self.db.flush()
-        concept_result = await self.bundle_builder.build_concept_bundles(resource_id, force_rebuild=False)
-        topic_result = await self.bundle_builder.build_topic_bundles(resource_id, force_rebuild=False)
+        concept_result = await self.bundle_builder.build_concept_bundles(
+            resource_id, force_rebuild=False
+        )
+        topic_result = await self.bundle_builder.build_topic_bundles(
+            resource_id, force_rebuild=False
+        )
         return {**concept_result, **topic_result}
 
-    async def _mark_resource_ready(self, resource: Resource, kb_result: dict, graph_result: dict, bundle_result: dict) -> None:
+    async def _mark_resource_ready(
+        self,
+        resource: Resource,
+        kb_result: dict,
+        graph_result: dict,
+        bundle_result: dict,
+    ) -> None:
         capabilities = dict(resource.capabilities_json or {})
         has_concepts = kb_result.get("concepts_admitted", 0) > 0
         has_graph = graph_result.get("edges_created", 0) > 0
@@ -248,7 +281,9 @@ class CurriculumPreparationService:
             }
         )
         resource.capabilities_json = capabilities
-        resource.curriculum_ready_at = now if has_topic_bundles else resource.curriculum_ready_at
+        resource.curriculum_ready_at = (
+            now if has_topic_bundles else resource.curriculum_ready_at
+        )
         resource.tutoring_ready_at = now if has_concepts else resource.tutoring_ready_at
         resource.graph_ready_at = now if has_graph else resource.graph_ready_at
         resource.processing_profile = "prepared_for_curriculum"
@@ -280,13 +315,17 @@ class CurriculumPreparationService:
             "topic_bundles": bundle_result.get("topic_bundles_created", 0),
             "source_chunk_ids": [str(chunk_id) for chunk_id in source_chunk_ids],
         }
-        payload_hash = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+        payload_hash = hashlib.sha256(
+            json.dumps(payload, sort_keys=True).encode("utf-8")
+        ).hexdigest()
         if existing:
             existing.status = "ready"
             existing.version = "1.0"
             existing.payload_json = payload
             existing.content_hash = payload_hash
-            existing.source_chunk_ids = [str(chunk_id) for chunk_id in payload.get("source_chunk_ids", [])]
+            existing.source_chunk_ids = [
+                str(chunk_id) for chunk_id in payload.get("source_chunk_ids", [])
+            ]
             existing.error_message = None
             await self.db.flush()
             return existing
@@ -298,7 +337,9 @@ class CurriculumPreparationService:
             status="ready",
             version="1.0",
             payload_json=payload,
-            source_chunk_ids=[str(chunk_id) for chunk_id in payload.get("source_chunk_ids", [])],
+            source_chunk_ids=[
+                str(chunk_id) for chunk_id in payload.get("source_chunk_ids", [])
+            ],
             content_hash=payload_hash,
         )
         self.db.add(artifact)

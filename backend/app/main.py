@@ -1,7 +1,8 @@
-import uuid
-import logging
-from contextlib import asynccontextmanager
 import asyncio
+import logging
+import time
+import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,7 +37,9 @@ def _parse_cors_origins() -> list[str]:
         "http://127.0.0.1:3000",
     ]
 
-    prod_origins = (settings.CORS_ALLOWED_ORIGINS or settings.CORS_ALLOWED_ORIGIN or "").split(",")
+    prod_origins = (
+        settings.CORS_ALLOWED_ORIGINS or settings.CORS_ALLOWED_ORIGIN or ""
+    ).split(",")
     origins.extend(origin.strip() for origin in prod_origins if origin.strip())
     return origins
 
@@ -55,7 +58,9 @@ def _validate_auth_config() -> None:
         "replace-me",
     )
 
-    if len(secret) < settings.AUTH_SECRET_MIN_LENGTH or any(marker in lowered for marker in weak_markers):
+    if len(secret) < settings.AUTH_SECRET_MIN_LENGTH or any(
+        marker in lowered for marker in weak_markers
+    ):
         raise RuntimeError(
             "AUTH_SECRET_KEY is weak or placeholder while AUTH_ENABLED=true. "
             "Set a high-entropy secret (>=32 chars)."
@@ -107,9 +112,6 @@ app.add_middleware(
 )
 
 
-import time
-
-
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
     """Attach X-Request-Id and measure latency for observability."""
@@ -140,7 +142,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler returning canonical ErrorResponse."""
     request_id = getattr(request.state, "request_id", None)
     logger.exception(f"Unhandled exception [request_id={request_id}]: {exc}")
-    
+
     error_response = ErrorResponse(
         error="Internal server error",
         detail=str(exc) if settings.AUTH_ENABLED is False else None,
@@ -157,7 +159,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 async def value_error_handler(request: Request, exc: ValueError):
     """Handle ValueError as 400 Bad Request."""
     request_id = getattr(request.state, "request_id", None)
-    
+
     error_response = ErrorResponse(
         error="Bad request",
         detail=str(exc),

@@ -21,8 +21,14 @@ class _FakeDb:
 
 
 def test_required_capabilities_for_learn_mode_include_resource_profile():
-    assert required_capabilities_for_mode("learn") == ["can_answer_doubts", "has_resource_profile"]
-    assert required_capabilities_for_mode("practice") == ["can_answer_doubts", "has_resource_profile"]
+    assert required_capabilities_for_mode("learn") == [
+        "can_answer_doubts",
+        "has_resource_profile",
+    ]
+    assert required_capabilities_for_mode("practice") == [
+        "can_answer_doubts",
+        "has_resource_profile",
+    ]
     assert required_capabilities_for_mode("doubt") == ["can_answer_doubts"]
 
 
@@ -32,7 +38,9 @@ def test_resolve_session_scope_supports_selected_resources_and_notebook_wide():
     third = uuid4()
     active = [anchor, second, third]
 
-    scope_type, resource_ids = resolve_session_scope(anchor, active_resource_ids=active, notebook_wide=True)
+    scope_type, resource_ids = resolve_session_scope(
+        anchor, active_resource_ids=active, notebook_wide=True
+    )
     assert scope_type == "notebook"
     assert resource_ids == active
 
@@ -65,12 +73,22 @@ def test_prepare_session_context_backfills_missing_profiles_and_returns_summary(
         topic="physics",
         status="ready",
         processing_profile="core_only",
-        capabilities_json={"study_ready": True, "can_answer_doubts": True, "has_resource_profile": False},
+        capabilities_json={
+            "study_ready": True,
+            "can_answer_doubts": True,
+            "has_resource_profile": False,
+        },
     )
 
     service = NotebookPreparationService(_FakeDb())
-    service.notebook_resource_repo = SimpleNamespace(list_active_resource_ids=lambda _notebook_id: asyncio.sleep(0, result=[resource_id]))
-    service.resource_repo = SimpleNamespace(get_by_id=lambda _resource_id: asyncio.sleep(0, result=resource))
+    service.notebook_resource_repo = SimpleNamespace(
+        list_active_resource_ids=lambda _notebook_id: asyncio.sleep(
+            0, result=[resource_id]
+        )
+    )
+    service.resource_repo = SimpleNamespace(
+        get_by_id=lambda _resource_id: asyncio.sleep(0, result=resource)
+    )
 
     async def _ensure_resource_profile(_resource):
         _resource.capabilities_json["has_resource_profile"] = True
@@ -126,8 +144,14 @@ def test_prepare_session_context_rejects_ready_resource_without_study_ready_capa
     )
 
     service = NotebookPreparationService(_FakeDb())
-    service.notebook_resource_repo = SimpleNamespace(list_active_resource_ids=lambda _notebook_id: asyncio.sleep(0, result=[resource_id]))
-    service.resource_repo = SimpleNamespace(get_by_id=lambda _resource_id: asyncio.sleep(0, result=resource))
+    service.notebook_resource_repo = SimpleNamespace(
+        list_active_resource_ids=lambda _notebook_id: asyncio.sleep(
+            0, result=[resource_id]
+        )
+    )
+    service.resource_repo = SimpleNamespace(
+        get_by_id=lambda _resource_id: asyncio.sleep(0, result=resource)
+    )
 
     try:
         asyncio.run(
@@ -140,7 +164,9 @@ def test_prepare_session_context_rejects_ready_resource_without_study_ready_capa
     except ValueError as exc:
         assert str(exc) == "Some selected resources are not study-ready yet"
     else:
-        raise AssertionError("Expected prepare_session_context to reject non-study-ready resource")
+        raise AssertionError(
+            "Expected prepare_session_context to reject non-study-ready resource"
+        )
 
 
 def test_prepare_session_context_allows_doubt_mode_for_core_ready_resource():
@@ -172,9 +198,17 @@ def test_prepare_session_context_allows_doubt_mode_for_core_ready_resource():
     )
 
     service = NotebookPreparationService(_FakeDb())
-    service.notebook_resource_repo = SimpleNamespace(list_active_resource_ids=lambda _notebook_id: asyncio.sleep(0, result=[resource_id]))
-    service.resource_repo = SimpleNamespace(get_by_id=lambda _resource_id: asyncio.sleep(0, result=resource))
-    service._upsert_session_brief = lambda **_kwargs: asyncio.sleep(0, result=SimpleNamespace(id=uuid4()))
+    service.notebook_resource_repo = SimpleNamespace(
+        list_active_resource_ids=lambda _notebook_id: asyncio.sleep(
+            0, result=[resource_id]
+        )
+    )
+    service.resource_repo = SimpleNamespace(
+        get_by_id=lambda _resource_id: asyncio.sleep(0, result=resource)
+    )
+    service._upsert_session_brief = lambda **_kwargs: asyncio.sleep(
+        0, result=SimpleNamespace(id=uuid4())
+    )
 
     summary = asyncio.run(
         service.prepare_session_context(
@@ -210,15 +244,29 @@ def test_prepare_session_context_allows_study_mode_for_resource_with_ready_times
         tutoring_ready_at=object(),
         study_ready_at=object(),
         curriculum_ready_at=object(),
-        capabilities_json={"study_ready": False, "has_concepts": False, "curriculum_ready": False},
+        capabilities_json={
+            "study_ready": False,
+            "has_concepts": False,
+            "curriculum_ready": False,
+        },
     )
 
     service = NotebookPreparationService(_FakeDb())
-    service.notebook_resource_repo = SimpleNamespace(list_active_resource_ids=lambda _notebook_id: asyncio.sleep(0, result=[resource_id]))
-    service.resource_repo = SimpleNamespace(get_by_id=lambda _resource_id: asyncio.sleep(0, result=resource))
+    service.notebook_resource_repo = SimpleNamespace(
+        list_active_resource_ids=lambda _notebook_id: asyncio.sleep(
+            0, result=[resource_id]
+        )
+    )
+    service.resource_repo = SimpleNamespace(
+        get_by_id=lambda _resource_id: asyncio.sleep(0, result=resource)
+    )
     service._ensure_resource_profile = lambda _resource: asyncio.sleep(0, result=0)
-    service._ensure_topic_prepare = lambda _resource, _request: asyncio.sleep(0, result=(0, "revision:general"))
-    service._upsert_session_brief = lambda **_kwargs: asyncio.sleep(0, result=SimpleNamespace(id=uuid4()))
+    service._ensure_topic_prepare = lambda _resource, _request: asyncio.sleep(
+        0, result=(0, "revision:general")
+    )
+    service._upsert_session_brief = lambda **_kwargs: asyncio.sleep(
+        0, result=SimpleNamespace(id=uuid4())
+    )
 
     summary = asyncio.run(
         service.prepare_session_context(

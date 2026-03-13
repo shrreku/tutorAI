@@ -32,7 +32,10 @@ def test_build_topic_preparation_artifact_selects_relevant_chunks_for_mode():
         mode="practice",
         topic="conduction",
         selected_topics=["heat transfer"],
-        resource_profile={"document_type": "study_notes", "topic_seeds": ["conduction", "heat"]},
+        resource_profile={
+            "document_type": "study_notes",
+            "topic_seeds": ["conduction", "heat"],
+        },
         chunks=chunks,
     )
 

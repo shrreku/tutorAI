@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.resource import Resource
-from app.models.knowledge_base import ResourceTopicBundle, ResourceConceptStats
 from app.db.repositories.base import BaseRepository
 
 
@@ -23,6 +22,7 @@ class ResourceRepository(BaseRepository[Resource]):
             select(Resource).where(Resource.filename == filename)
         )
         return result.scalar_one_or_none()
+
     async def get_by_ids(
         self,
         resource_ids: List[UUID],
@@ -71,9 +71,7 @@ class ResourceRepository(BaseRepository[Resource]):
         )
         if owner_user_id is not None:
             query = query.where(Resource.owner_user_id == owner_user_id)
-        result = await self.db.execute(
-            query
-        )
+        result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
     async def count_by_status(self, status: str) -> int:
@@ -92,9 +90,7 @@ class ResourceRepository(BaseRepository[Resource]):
             kwargs["error_message"] = error_message
         return await self.update(resource_id, **kwargs)
 
-    async def count_uploads_since(
-        self, user_id: UUID, delta: timedelta
-    ) -> int:
+    async def count_uploads_since(self, user_id: UUID, delta: timedelta) -> int:
         """Count resources uploaded by *user_id* in the last *delta* period.
 
         This is used for per-user daily upload quota enforcement.

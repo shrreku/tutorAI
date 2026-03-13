@@ -7,8 +7,8 @@ CM-012: User model catalog and preference endpoints
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_auth, require_admin
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---- Schemas ----
+
 
 class ModelPricingResponse(BaseModel):
     model_id: str
@@ -125,6 +126,7 @@ class OperationHistoryResponse(BaseModel):
 
 # ---- User endpoints (CM-012) ----
 
+
 @router.get("/catalog", response_model=list[ModelPricingResponse])
 async def get_model_catalog(
     db: AsyncSession = Depends(get_db),
@@ -170,21 +172,23 @@ async def get_task_models(
     for mid in allowed_ids:
         pricing = await repo.get_model_pricing(mid)
         if pricing and pricing.is_active:
-            models.append(ModelPricingResponse(
-                model_id=pricing.model_id,
-                provider_name=pricing.provider_name,
-                display_name=pricing.display_name,
-                model_class=pricing.model_class,
-                input_usd_per_million=pricing.input_usd_per_million,
-                output_usd_per_million=pricing.output_usd_per_million,
-                cache_write_usd_per_million=pricing.cache_write_usd_per_million,
-                cache_read_usd_per_million=pricing.cache_read_usd_per_million,
-                is_active=pricing.is_active,
-                is_user_selectable=pricing.is_user_selectable,
-                supports_structured_output=pricing.supports_structured_output,
-                supports_long_context=pricing.supports_long_context,
-                notes=pricing.notes,
-            ))
+            models.append(
+                ModelPricingResponse(
+                    model_id=pricing.model_id,
+                    provider_name=pricing.provider_name,
+                    display_name=pricing.display_name,
+                    model_class=pricing.model_class,
+                    input_usd_per_million=pricing.input_usd_per_million,
+                    output_usd_per_million=pricing.output_usd_per_million,
+                    cache_write_usd_per_million=pricing.cache_write_usd_per_million,
+                    cache_read_usd_per_million=pricing.cache_read_usd_per_million,
+                    is_active=pricing.is_active,
+                    is_user_selectable=pricing.is_user_selectable,
+                    supports_structured_output=pricing.supports_structured_output,
+                    supports_long_context=pricing.supports_long_context,
+                    notes=pricing.notes,
+                )
+            )
 
     return TaskModelsResponse(
         task_type=task_type,
@@ -252,7 +256,9 @@ async def get_operation_history(
 ):
     """Get user's billing operation history."""
     repo = MeteringRepository(db)
-    ops = await repo.list_user_operations(user.id, limit=limit, operation_type=operation_type)
+    ops = await repo.list_user_operations(
+        user.id, limit=limit, operation_type=operation_type
+    )
     return OperationHistoryResponse(
         operations=[
             OperationResponse(
@@ -275,6 +281,7 @@ async def get_operation_history(
 
 
 # ---- Admin endpoints (CM-011) ----
+
 
 @router.get("/admin/pricing", response_model=list[ModelPricingResponse])
 async def admin_list_pricing(
@@ -319,7 +326,9 @@ async def admin_update_pricing(
         raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
 
     await db.commit()
-    logger.warning("Admin %s updated pricing for %s: %s", user.external_id, model_id, updates)
+    logger.warning(
+        "Admin %s updated pricing for %s: %s", user.external_id, model_id, updates
+    )
 
     return ModelPricingResponse(
         model_id=pricing.model_id,
@@ -375,7 +384,9 @@ async def admin_update_assignment(
         raise HTTPException(status_code=404, detail=f"Task {task_type} not found")
 
     await db.commit()
-    logger.warning("Admin %s updated assignment for %s: %s", user.external_id, task_type, updates)
+    logger.warning(
+        "Admin %s updated assignment for %s: %s", user.external_id, task_type, updates
+    )
 
     return TaskAssignmentResponse(
         task_type=assignment.task_type,
@@ -405,7 +416,9 @@ async def admin_list_health(
             consecutive_errors=h.consecutive_errors,
             rolling_error_rate=h.rolling_error_rate,
             cooldown_until=h.cooldown_until.isoformat() if h.cooldown_until else None,
-            last_success_at=h.last_success_at.isoformat() if h.last_success_at else None,
+            last_success_at=h.last_success_at.isoformat()
+            if h.last_success_at
+            else None,
             last_error_at=h.last_error_at.isoformat() if h.last_error_at else None,
             last_error_code=h.last_error_code,
             last_error_summary=h.last_error_summary,
@@ -427,7 +440,10 @@ async def admin_disable_model_task(
     await db.commit()
     logger.warning(
         "Admin %s disabled %s for %s: %s",
-        user.external_id, request.model_id, request.task_type, request.reason,
+        user.external_id,
+        request.model_id,
+        request.task_type,
+        request.reason,
     )
     return {"status": "ok", "action": "disabled"}
 
@@ -444,7 +460,10 @@ async def admin_enable_model_task(
     await db.commit()
     logger.warning(
         "Admin %s enabled %s for %s: %s",
-        user.external_id, request.model_id, request.task_type, request.reason,
+        user.external_id,
+        request.model_id,
+        request.task_type,
+        request.reason,
     )
     return {"status": "ok", "action": "enabled"}
 
@@ -461,6 +480,9 @@ async def admin_clear_cooldown(
     await db.commit()
     logger.warning(
         "Admin %s cleared cooldown for %s/%s: %s",
-        user.external_id, request.model_id, request.task_type, request.reason,
+        user.external_id,
+        request.model_id,
+        request.task_type,
+        request.reason,
     )
     return {"status": "ok", "action": "cooldown_cleared"}

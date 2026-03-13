@@ -6,7 +6,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_auth, require_admin, get_configured_admin_external_id, is_admin_user
+from app.api.deps import (
+    require_auth,
+    require_admin,
+    get_configured_admin_external_id,
+    is_admin_user,
+)
 from app.config import settings
 from app.db.database import get_db
 from app.db.repositories.credits_repo import CreditAccountRepository
@@ -22,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---- Additional schemas for billing endpoints ----
+
 
 class BalanceResponse(BaseModel):
     credits_enabled: bool
@@ -85,9 +91,15 @@ class AdminOverviewResponse(BaseModel):
 
 
 class AdminMonthlyGrantRequest(BaseModel):
-    amount: int = Field(default=settings.CREDITS_DEFAULT_MONTHLY_GRANT, gt=0, le=settings.ADMIN_CREDIT_GRANT_MAX)
+    amount: int = Field(
+        default=settings.CREDITS_DEFAULT_MONTHLY_GRANT,
+        gt=0,
+        le=settings.ADMIN_CREDIT_GRANT_MAX,
+    )
     period_key: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}$")
-    memo_prefix: str = Field(default="Monthly research grant", min_length=3, max_length=120)
+    memo_prefix: str = Field(
+        default="Monthly research grant", min_length=3, max_length=120
+    )
 
 
 class AdminMonthlyGrantResponse(BaseModel):
@@ -124,6 +136,7 @@ class AdminRejectAccessRequest(BaseModel):
 
 # ---- Endpoints ----
 
+
 @router.post("/estimate", response_model=CreditEstimateResponse)
 async def estimate_credits(
     request: CreditEstimateRequest,
@@ -132,12 +145,20 @@ async def estimate_credits(
     """Estimate token-to-credit charge using configured multipliers."""
     del user
 
-    input_component = int(round(request.prompt_tokens * settings.CREDITS_INPUT_TOKEN_MULTIPLIER))
-    output_component = int(round(request.completion_tokens * settings.CREDITS_OUTPUT_TOKEN_MULTIPLIER))
+    input_component = int(
+        round(request.prompt_tokens * settings.CREDITS_INPUT_TOKEN_MULTIPLIER)
+    )
+    output_component = int(
+        round(request.completion_tokens * settings.CREDITS_OUTPUT_TOKEN_MULTIPLIER)
+    )
     ocr_surcharge = settings.CREDITS_OCR_SURCHARGE if request.uses_ocr else 0
-    web_search_surcharge = settings.CREDITS_WEB_SEARCH_SURCHARGE if request.uses_web_search else 0
+    web_search_surcharge = (
+        settings.CREDITS_WEB_SEARCH_SURCHARGE if request.uses_web_search else 0
+    )
 
-    estimated_credits = input_component + output_component + ocr_surcharge + web_search_surcharge
+    estimated_credits = (
+        input_component + output_component + ocr_surcharge + web_search_surcharge
+    )
 
     return CreditEstimateResponse(
         credits_enabled=settings.CREDITS_ENABLED,
@@ -319,7 +340,9 @@ async def admin_issue_monthly_grant(
     period_key = request.period_key or CreditMeter.current_grant_period_key()
     memo = f"{request.memo_prefix} ({period_key})"
 
-    user_rows = await db.execute(select(UserProfile.id).order_by(UserProfile.created_at.asc()))
+    user_rows = await db.execute(
+        select(UserProfile.id).order_by(UserProfile.created_at.asc())
+    )
     user_ids = list(user_rows.scalars().all())
 
     granted_user_ids: list[str] = []
@@ -363,16 +386,23 @@ async def admin_issue_monthly_grant(
 # Alpha access request admin endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.get("/admin/access-requests", response_model=AdminAccessRequestsResponse)
 async def admin_list_access_requests(
-    status_filter: Optional[str] = Query(default=None, alias="status", pattern=r"^(pending|approved|rejected)$"),
+    status_filter: Optional[str] = Query(
+        default=None, alias="status", pattern=r"^(pending|approved|rejected)$"
+    ),
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     user: UserProfile = Depends(require_admin),
 ):
     """List alpha access requests (filterable by status)."""
     del user
-    query = select(AlphaAccessRequest).order_by(AlphaAccessRequest.created_at.desc()).limit(limit)
+    query = (
+        select(AlphaAccessRequest)
+        .order_by(AlphaAccessRequest.created_at.desc())
+        .limit(limit)
+    )
     if status_filter:
         query = query.where(AlphaAccessRequest.status == status_filter)
     rows = (await db.execute(query)).scalars().all()
@@ -394,7 +424,9 @@ async def admin_list_access_requests(
     )
 
 
-@router.post("/admin/access-requests/{request_id}/approve", response_model=AccessRequestSummary)
+@router.post(
+    "/admin/access-requests/{request_id}/approve", response_model=AccessRequestSummary
+)
 async def admin_approve_access_request(
     request_id: str,
     body: AdminApproveAccessRequest,
@@ -405,11 +437,15 @@ async def admin_approve_access_request(
     import uuid as _uuid
 
     result = await db.execute(
-        select(AlphaAccessRequest).where(AlphaAccessRequest.id == _uuid.UUID(request_id))
+        select(AlphaAccessRequest).where(
+            AlphaAccessRequest.id == _uuid.UUID(request_id)
+        )
     )
     req = result.scalar_one_or_none()
     if req is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access request not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Access request not found"
+        )
     if req.status != "pending":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -423,12 +459,16 @@ async def admin_approve_access_request(
     await db.commit()
     await db.refresh(req)
 
-    email_subject, email_html = build_alpha_invite_email(req.display_name, req.invite_token)
+    email_subject, email_html = build_alpha_invite_email(
+        req.display_name, req.invite_token
+    )
     await send_email(req.email, email_subject, email_html)
 
     logger.warning(
         "Admin %s approved alpha access for %s (request %s)",
-        user.external_id, req.email, request_id,
+        user.external_id,
+        req.email,
+        request_id,
     )
     return AccessRequestSummary(
         id=str(req.id),
@@ -442,7 +482,9 @@ async def admin_approve_access_request(
     )
 
 
-@router.post("/admin/access-requests/{request_id}/reject", response_model=AccessRequestSummary)
+@router.post(
+    "/admin/access-requests/{request_id}/reject", response_model=AccessRequestSummary
+)
 async def admin_reject_access_request(
     request_id: str,
     body: AdminRejectAccessRequest,
@@ -453,11 +495,15 @@ async def admin_reject_access_request(
     import uuid as _uuid
 
     result = await db.execute(
-        select(AlphaAccessRequest).where(AlphaAccessRequest.id == _uuid.UUID(request_id))
+        select(AlphaAccessRequest).where(
+            AlphaAccessRequest.id == _uuid.UUID(request_id)
+        )
     )
     req = result.scalar_one_or_none()
     if req is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access request not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Access request not found"
+        )
     if req.status != "pending":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -472,7 +518,9 @@ async def admin_reject_access_request(
 
     logger.warning(
         "Admin %s rejected alpha access for %s (request %s)",
-        user.external_id, req.email, request_id,
+        user.external_id,
+        req.email,
+        request_id,
     )
     return AccessRequestSummary(
         id=str(req.id),
@@ -484,4 +532,3 @@ async def admin_reject_access_request(
         notes=req.notes,
         created_at=req.created_at.isoformat() if req.created_at else "",
     )
-

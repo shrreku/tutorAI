@@ -45,13 +45,18 @@ class DoclingChunker:
                         strategy="docling_hybrid",
                         metadata={
                             "embedding_strategy": (
-                                "contextualized" if self.use_contextualized_text else "raw"
+                                "contextualized"
+                                if self.use_contextualized_text
+                                else "raw"
                             ),
                             "embedding_model_id": self.embedding_model_id,
                         },
                     )
             except Exception as exc:
-                logger.warning("Docling HybridChunker failed; falling back to section chunking: %s", exc)
+                logger.warning(
+                    "Docling HybridChunker failed; falling back to section chunking: %s",
+                    exc,
+                )
 
         fallback_chunks = self._chunk_sections_fallback(sections)
         return DoclingChunkingResult(
@@ -87,7 +92,11 @@ class DoclingChunker:
 
             # Skip trivially small chunks (chapter header artifacts, etc.)
             if len(text.strip()) < self.MIN_CHUNK_CHARS:
-                logger.debug("Skipping trivially small chunk (%d chars): %s", len(text.strip()), text[:60])
+                logger.debug(
+                    "Skipping trivially small chunk (%d chars): %s",
+                    len(text.strip()),
+                    text[:60],
+                )
                 continue
 
             heading = self._extract_heading(raw_chunk)
@@ -127,18 +136,24 @@ class DoclingChunker:
         try:
             if model_id.startswith("text-") or model_id.startswith("gpt-"):
                 import tiktoken
-                from docling_core.transforms.chunker.tokenizer.openai import OpenAITokenizer
+                from docling_core.transforms.chunker.tokenizer.openai import (
+                    OpenAITokenizer,
+                )
 
                 encoding = tiktoken.encoding_for_model("gpt-4o")
                 return OpenAITokenizer(tokenizer=encoding, max_tokens=8192)
 
             from transformers import AutoTokenizer
-            from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
+            from docling_core.transforms.chunker.tokenizer.huggingface import (
+                HuggingFaceTokenizer,
+            )
 
             hf_tokenizer = AutoTokenizer.from_pretrained(model_id)
             return HuggingFaceTokenizer(tokenizer=hf_tokenizer)
         except Exception as exc:
-            logger.warning("Docling tokenizer alignment unavailable for %s: %s", model_id, exc)
+            logger.warning(
+                "Docling tokenizer alignment unavailable for %s: %s", model_id, exc
+            )
             return None
 
     def _chunk_sections_fallback(self, sections: list[SectionData]) -> list[ChunkData]:
@@ -155,7 +170,9 @@ class DoclingChunker:
 
             for paragraph in paragraphs:
                 para_tokens = token_len(paragraph)
-                exceeds = current_parts and (current_tokens + para_tokens > self.max_tokens)
+                exceeds = current_parts and (
+                    current_tokens + para_tokens > self.max_tokens
+                )
                 if exceeds:
                     text = "\n\n".join(current_parts).strip()
                     if text:
@@ -233,7 +250,9 @@ class DoclingChunker:
 
         return None
 
-    def _extract_page_range(self, raw_chunk: Any) -> tuple[Optional[int], Optional[int]]:
+    def _extract_page_range(
+        self, raw_chunk: Any
+    ) -> tuple[Optional[int], Optional[int]]:
         """Extract page range from a Docling chunk.
 
         Docling's DocMeta stores page provenance in
@@ -263,7 +282,9 @@ class DoclingChunker:
             ps = meta.get("page_start")
             pe = meta.get("page_end")
             if isinstance(ps, int) or isinstance(pe, int):
-                return (ps if isinstance(ps, int) else None), (pe if isinstance(pe, int) else None)
+                return (ps if isinstance(ps, int) else None), (
+                    pe if isinstance(pe, int) else None
+                )
 
         page = getattr(raw_chunk, "page", None)
         if isinstance(page, int):

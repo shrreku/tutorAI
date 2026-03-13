@@ -5,6 +5,7 @@ Instead of a hardcoded "Congratulations!" message, this agent receives the full
 session context (objectives, mastery, conversation highlights) and produces a
 warm, honest, pedagogically-sound closing response.
 """
+
 import logging
 from typing import Optional, Dict, Any, List
 
@@ -19,8 +20,10 @@ logger = logging.getLogger(__name__)
 
 # ── State & Output schemas ────────────────────────────────────────────
 
+
 class SummaryState(BaseModel):
     """Input to the Summary Agent."""
+
     model_config = ConfigDict(extra="ignore")
 
     objectives: List[Dict[str, Any]] = Field(
@@ -49,10 +52,12 @@ class SummaryState(BaseModel):
 
 class SummaryOutput(BaseModel):
     """Output from the Summary Agent."""
+
     model_config = ConfigDict(extra="forbid")
 
     summary_text: str = Field(
-        ..., min_length=1,
+        ...,
+        min_length=1,
         description="The personalized session wrap-up message",
     )
     concepts_strong: List[str] = Field(
@@ -122,12 +127,23 @@ class SummaryAgent(BaseAgent[SummaryState, SummaryOutput]):
                 text = await self.llm.generate(
                     messages=[
                         {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": self._build_prompt(state, concepts_strong, concepts_developing, concepts_to_revisit)},
+                        {
+                            "role": "user",
+                            "content": self._build_prompt(
+                                state,
+                                concepts_strong,
+                                concepts_developing,
+                                concepts_to_revisit,
+                            ),
+                        },
                     ],
                     temperature=0.7,
                     max_tokens=1024,
                     trace_name="agent.summary.generate",
-                    trace_metadata={"turn_count": state.turn_count, "topic": state.topic},
+                    trace_metadata={
+                        "turn_count": state.turn_count,
+                        "topic": state.topic,
+                    },
                 )
 
                 if text and text.strip():
@@ -140,7 +156,9 @@ class SummaryAgent(BaseAgent[SummaryState, SummaryOutput]):
             except Exception as e:
                 logger.warning(f"LLM summary generation failed: {e}, using fallback")
 
-        return self._fallback(state, concepts_strong, concepts_developing, concepts_to_revisit)
+        return self._fallback(
+            state, concepts_strong, concepts_developing, concepts_to_revisit
+        )
 
     def _build_prompt(
         self,
@@ -169,27 +187,33 @@ class SummaryAgent(BaseAgent[SummaryState, SummaryOutput]):
             if value > 0:
                 initial = state.initial_mastery.get(concept, 0.0)
                 delta = value - initial
-                label = "Strong" if value >= 0.5 else "Developing" if value >= 0.15 else "Introduced"
+                label = (
+                    "Strong"
+                    if value >= 0.5
+                    else "Developing"
+                    if value >= 0.15
+                    else "Introduced"
+                )
                 mastery_lines.append(
                     f"  - {concept}: {value:.0%} ({label}, +{delta:.0%} this session)"
                 )
 
         return f"""SESSION SUMMARY DATA:
 
-Topic: {state.topic or 'N/A'}
+Topic: {state.topic or "N/A"}
 Total turns: {state.turn_count}
 
 OBJECTIVES COVERED:
-{chr(10).join(obj_lines) if obj_lines else '  (none)'}
+{chr(10).join(obj_lines) if obj_lines else "  (none)"}
 
 CONCEPT MASTERY (end of session):
-{chr(10).join(mastery_lines) if mastery_lines else '  (no mastery data)'}
+{chr(10).join(mastery_lines) if mastery_lines else "  (no mastery data)"}
 
-STRONG CONCEPTS (≥50%): {', '.join(c.replace('_', ' ') for c in concepts_strong) or 'none yet'}
-DEVELOPING CONCEPTS (15-50%): {', '.join(c.replace('_', ' ') for c in concepts_developing) or 'none'}
-NEEDS REVISIT (<15%): {', '.join(c.replace('_', ' ') for c in concepts_to_revisit) or 'none'}
+STRONG CONCEPTS (≥50%): {", ".join(c.replace("_", " ") for c in concepts_strong) or "none yet"}
+DEVELOPING CONCEPTS (15-50%): {", ".join(c.replace("_", " ") for c in concepts_developing) or "none"}
+NEEDS REVISIT (<15%): {", ".join(c.replace("_", " ") for c in concepts_to_revisit) or "none"}
 
-{('KEY MOMENTS:' + chr(10) + chr(10).join('  - ' + m for m in state.key_moments)) if state.key_moments else ''}
+{("KEY MOMENTS:" + chr(10) + chr(10).join("  - " + m for m in state.key_moments)) if state.key_moments else ""}
 
 Write the session summary now."""
 

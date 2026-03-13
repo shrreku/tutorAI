@@ -44,7 +44,12 @@ def _supports_operation_metering(db: AsyncSession, meter: object) -> bool:
         return False
     return all(
         hasattr(meter, method_name)
-        for method_name in ("create_operation", "append_usage_line", "finalize_operation", "release_operation")
+        for method_name in (
+            "create_operation",
+            "append_usage_line",
+            "finalize_operation",
+            "release_operation",
+        )
     )
 
 
@@ -119,7 +124,7 @@ def get_turn_pipeline(
     if _DEFAULT_EMBEDDING_PROVIDER is None:
         _DEFAULT_EMBEDDING_PROVIDER = create_embedding_provider(settings)
     embedding = _DEFAULT_EMBEDDING_PROVIDER
-    
+
     return TurnPipeline(
         db_session=db,
         policy_agent=PolicyAgent(tutoring_llm),
@@ -136,8 +141,12 @@ async def execute_turn(
     db: AsyncSession = Depends(get_db),
     user: UserProfile = Depends(check_rate_limit),
     byok: dict = Depends(get_byok_api_key),
-    x_llm_model_tutoring: str | None = Header(default=None, alias="X-LLM-Model-Tutoring"),
-    x_llm_model_evaluation: str | None = Header(default=None, alias="X-LLM-Model-Evaluation"),
+    x_llm_model_tutoring: str | None = Header(
+        default=None, alias="X-LLM-Model-Tutoring"
+    ),
+    x_llm_model_evaluation: str | None = Header(
+        default=None, alias="X-LLM-Model-Evaluation"
+    ),
 ):
     """Legacy non-notebook tutor turn endpoint (decommissioned)."""
     raise HTTPException(
@@ -160,8 +169,12 @@ async def execute_notebook_turn(
     db: AsyncSession = Depends(get_db),
     user: UserProfile = Depends(check_rate_limit),
     byok: dict = Depends(get_byok_api_key),
-    x_llm_model_tutoring: str | None = Header(default=None, alias="X-LLM-Model-Tutoring"),
-    x_llm_model_evaluation: str | None = Header(default=None, alias="X-LLM-Model-Evaluation"),
+    x_llm_model_tutoring: str | None = Header(
+        default=None, alias="X-LLM-Model-Tutoring"
+    ),
+    x_llm_model_evaluation: str | None = Header(
+        default=None, alias="X-LLM-Model-Evaluation"
+    ),
 ):
     """Execute one tutoring turn under notebook context."""
     # Ownership check
@@ -184,7 +197,9 @@ async def execute_notebook_turn(
         )
 
     await verify_notebook_session_link(notebook_id, request.session_id, user, db)
-    notebook_resource_ids = await notebook_resource_repo.list_active_resource_ids(notebook_id)
+    notebook_resource_ids = await notebook_resource_repo.list_active_resource_ids(
+        notebook_id
+    )
 
     turn_id = str(uuid4())
     reserved_credits = 0
@@ -199,7 +214,8 @@ async def execute_notebook_turn(
         )
         if supports_operation_metering:
             op = await meter.create_operation(
-                user.id, "tutor_turn",
+                user.id,
+                "tutor_turn",
                 session_id=str(request.session_id),
                 selected_model_id=settings.LLM_MODEL_TUTORING or settings.LLM_MODEL,
             )
@@ -213,7 +229,9 @@ async def execute_notebook_turn(
         reserved_credits = reserved
         if operation_id and hasattr(meter, "metering_repo"):
             await meter.metering_repo.update_operation_status(
-                operation_id, "reserved", reserved_credits=reserved_credits,
+                operation_id,
+                "reserved",
+                reserved_credits=reserved_credits,
             )
 
     try:
@@ -234,15 +252,23 @@ async def execute_notebook_turn(
         # CM-005: Snapshot LLM token counters before turn execution
         tutoring_llm = pipeline.tutor.llm
         eval_llm = pipeline.evaluator.llm
-        tutor_tokens_before = dict(getattr(tutoring_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
-        eval_tokens_before = dict(getattr(eval_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
+        tutor_tokens_before = dict(
+            getattr(tutoring_llm, "total_tokens_used", None)
+            or {"prompt_tokens": 0, "completion_tokens": 0}
+        )
+        eval_tokens_before = dict(
+            getattr(eval_llm, "total_tokens_used", None)
+            or {"prompt_tokens": 0, "completion_tokens": 0}
+        )
 
         result = await pipeline.execute_turn(
             session_id=request.session_id,
             student_message=request.message,
             notebook_context={
                 "notebook_id": str(notebook_id),
-                "resource_ids": [str(resource_id) for resource_id in notebook_resource_ids],
+                "resource_ids": [
+                    str(resource_id) for resource_id in notebook_resource_ids
+                ],
             },
         )
 
@@ -250,12 +276,26 @@ async def execute_notebook_turn(
             model_id = settings.LLM_MODEL_TUTORING or settings.LLM_MODEL
 
             # CM-005: Compute actual token deltas from LLM providers
-            tutor_tokens_after = dict(getattr(tutoring_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
-            eval_tokens_after = dict(getattr(eval_llm, "total_tokens_used", None) or {"prompt_tokens": 0, "completion_tokens": 0})
-            tutor_prompt_delta = tutor_tokens_after.get("prompt_tokens", 0) - tutor_tokens_before.get("prompt_tokens", 0)
-            tutor_completion_delta = tutor_tokens_after.get("completion_tokens", 0) - tutor_tokens_before.get("completion_tokens", 0)
-            eval_prompt_delta = eval_tokens_after.get("prompt_tokens", 0) - eval_tokens_before.get("prompt_tokens", 0)
-            eval_completion_delta = eval_tokens_after.get("completion_tokens", 0) - eval_tokens_before.get("completion_tokens", 0)
+            tutor_tokens_after = dict(
+                getattr(tutoring_llm, "total_tokens_used", None)
+                or {"prompt_tokens": 0, "completion_tokens": 0}
+            )
+            eval_tokens_after = dict(
+                getattr(eval_llm, "total_tokens_used", None)
+                or {"prompt_tokens": 0, "completion_tokens": 0}
+            )
+            tutor_prompt_delta = tutor_tokens_after.get(
+                "prompt_tokens", 0
+            ) - tutor_tokens_before.get("prompt_tokens", 0)
+            tutor_completion_delta = tutor_tokens_after.get(
+                "completion_tokens", 0
+            ) - tutor_tokens_before.get("completion_tokens", 0)
+            eval_prompt_delta = eval_tokens_after.get(
+                "prompt_tokens", 0
+            ) - eval_tokens_before.get("prompt_tokens", 0)
+            eval_completion_delta = eval_tokens_after.get(
+                "completion_tokens", 0
+            ) - eval_tokens_before.get("completion_tokens", 0)
 
             prompt_tokens = tutor_prompt_delta + eval_prompt_delta
             completion_tokens = tutor_completion_delta + eval_completion_delta
@@ -270,42 +310,58 @@ async def execute_notebook_turn(
                 eval_model = settings.LLM_MODEL_EVALUATION or model_id
                 # Policy + tutor response usage (tutoring LLM)
                 await meter.append_usage_line(
-                    operation_id, "tutor_response", model_id,
+                    operation_id,
+                    "tutor_response",
+                    model_id,
                     input_tokens=max(0, int(tutor_prompt_delta * 0.85)),
                     output_tokens=max(0, int(tutor_completion_delta * 0.85)),
                 )
                 # Policy usage line (tutoring LLM)
                 await meter.append_usage_line(
-                    operation_id, "tutor_policy", model_id,
+                    operation_id,
+                    "tutor_policy",
+                    model_id,
                     input_tokens=max(0, int(tutor_prompt_delta * 0.15)),
                     output_tokens=max(0, int(tutor_completion_delta * 0.15)),
                 )
                 # Evaluator usage line (evaluation LLM)
                 await meter.append_usage_line(
-                    operation_id, "tutor_evaluation", eval_model,
+                    operation_id,
+                    "tutor_evaluation",
+                    eval_model,
                     input_tokens=max(0, int(eval_prompt_delta * 0.7)),
                     output_tokens=max(0, int(eval_completion_delta * 0.7)),
                 )
                 # Safety critic usage line (evaluation LLM)
                 await meter.append_usage_line(
-                    operation_id, "tutor_safety", eval_model,
+                    operation_id,
+                    "tutor_safety",
+                    eval_model,
                     input_tokens=max(0, int(eval_prompt_delta * 0.3)),
                     output_tokens=max(0, int(eval_completion_delta * 0.3)),
                 )
 
                 # Finalize through operation-based path
-                final_credits = await meter.finalize_operation(
-                    user.id, operation_id, reserved_credits,
-                    reference_id=turn_id, reference_type="turn",
+                await meter.finalize_operation(
+                    user.id,
+                    operation_id,
+                    reserved_credits,
+                    reference_id=turn_id,
+                    reference_type="turn",
                 )
             else:
                 await meter.finalize_turn(
-                    user.id, turn_id, model_id,
-                    prompt_tokens, completion_tokens,
+                    user.id,
+                    turn_id,
+                    model_id,
+                    prompt_tokens,
+                    completion_tokens,
                     reserved_credits,
                 )
         elif byok.get("api_key"):
-            logger.info("Notebook turn %s used BYOK and bypassed platform credits", turn_id)
+            logger.info(
+                "Notebook turn %s used BYOK and bypassed platform credits", turn_id
+            )
 
         return TutorTurnResponse(
             turn_id=UUID(result.turn_id),
@@ -326,7 +382,13 @@ async def execute_notebook_turn(
         )
     except Exception as e:
         if operation_id and supports_operation_metering:
-            await meter.release_operation(user.id, operation_id, reserved_credits, reference_id=turn_id, reference_type="turn")
+            await meter.release_operation(
+                user.id,
+                operation_id,
+                reserved_credits,
+                reference_id=turn_id,
+                reference_type="turn",
+            )
         else:
             await meter.release_turn(user.id, turn_id, reserved_credits)
         logger.error(f"Notebook turn pipeline failed: {e}")
@@ -347,16 +409,16 @@ async def get_turns(
     await verify_session_owner(session_id, user, db)
     session_repo = SessionRepository(db)
     session = await session_repo.get_by_id(session_id)
-    
+
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Session {session_id} not found",
         )
-    
+
     turn_repo = TutorTurnRepository(db)
     turns = await turn_repo.get_by_session(session_id, limit=limit)
-    
+
     return {
         "session_id": session_id,
         "turns": [_serialize_turn(t) for t in turns],

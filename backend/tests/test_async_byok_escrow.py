@@ -22,7 +22,11 @@ class _FakeRepo:
 
     async def get_for_decrypt(self, escrow_id, *, purpose_type, purpose_id):
         escrow = self.rows.get(escrow_id)
-        if escrow and escrow.purpose_type == purpose_type and escrow.purpose_id == purpose_id:
+        if (
+            escrow
+            and escrow.purpose_type == purpose_type
+            and escrow.purpose_id == purpose_id
+        ):
             return escrow
         return None
 

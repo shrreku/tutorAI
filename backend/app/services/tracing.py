@@ -35,13 +35,14 @@ Trace hierarchy (objectives & steps are the working units):
     ├─ turn.persist                           ← db persistence
     └─ turn.score                             ← scoring
 """
+
 import logging
 import hashlib
 import os
 import re
 from typing import Any, Optional
 
-from langfuse import Langfuse, get_client, observe
+from langfuse import Langfuse, get_client
 
 from app.config import settings
 
@@ -55,13 +56,18 @@ MAX_TRACE_DICT_ITEMS = 20
 
 def is_detailed_tracing_enabled() -> bool:
     """Return whether verbose/manual Langfuse stage spans should be emitted."""
-    mode = (os.getenv("LANGFUSE_TRACE_MODE") or settings.LANGFUSE_TRACE_MODE or "simple").strip().lower()
+    mode = (
+        (os.getenv("LANGFUSE_TRACE_MODE") or settings.LANGFUSE_TRACE_MODE or "simple")
+        .strip()
+        .lower()
+    )
     return mode in {"detailed", "verbose", "full"}
 
 
 # ---------------------------------------------------------------------------
 # Initialisation
 # ---------------------------------------------------------------------------
+
 
 def init_langfuse() -> Optional[Langfuse]:
     """
@@ -115,7 +121,9 @@ def redact_text_for_trace(text: Optional[str], max_chars: int = MAX_TRACE_TEXT) 
         return ""
 
     cleaned = str(text)
-    cleaned = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[redacted-email]", cleaned)
+    cleaned = re.sub(
+        r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[redacted-email]", cleaned
+    )
     cleaned = re.sub(r"\b(?:\+?\d[\d\-\s().]{7,}\d)\b", "[redacted-phone]", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if len(cleaned) <= max_chars:
@@ -157,6 +165,7 @@ def should_sample_trace(key: str, sample_rate: float) -> bool:
 # ---------------------------------------------------------------------------
 # Scoring helpers
 # ---------------------------------------------------------------------------
+
 
 def score_trace(
     trace_id: str,

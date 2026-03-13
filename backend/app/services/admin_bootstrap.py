@@ -46,7 +46,9 @@ async def ensure_bootstrap_admin() -> None:
             user = await repo.get_by_external_id(bootstrap_email)
 
         password_hash = _hash_password(bootstrap_password)
-        display_name = (settings.ADMIN_BOOTSTRAP_DISPLAY_NAME or "StudyAgent Admin").strip() or "StudyAgent Admin"
+        display_name = (
+            settings.ADMIN_BOOTSTRAP_DISPLAY_NAME or "StudyAgent Admin"
+        ).strip() or "StudyAgent Admin"
 
         if user is None:
             db.add(
@@ -71,4 +73,6 @@ async def ensure_bootstrap_admin() -> None:
         user.preferences = preferences
         db.add(user)
         await db.commit()
-        logger.warning("Synchronized bootstrapped admin credentials for %s", bootstrap_email)
+        logger.warning(
+            "Synchronized bootstrapped admin credentials for %s", bootstrap_email
+        )

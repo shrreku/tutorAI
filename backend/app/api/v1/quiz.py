@@ -8,7 +8,7 @@ across restarts, the session's plan_state stores the final results.
 
 import logging
 import uuid
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -36,6 +36,7 @@ def _extract_byok_key(byok: dict | None) -> str | None:
     if byok and isinstance(byok, dict):
         return byok.get("api_key")
     return None
+
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,9 @@ async def submit_answer(
 
     # Verify ownership
     if quiz["user_id"] != str(user.id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+        )
 
     # Find the question
     question_data = None
@@ -223,7 +226,9 @@ async def get_quiz_results(
     quiz = _get_quiz(quiz_id)
 
     if quiz["user_id"] != str(user.id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+        )
 
     total = len(quiz["questions"])
     answers = quiz["answers"]
@@ -237,17 +242,19 @@ async def get_quiz_results(
     for q in quiz["questions"]:
         qid = q["question_id"]
         a = answers.get(qid)
-        per_question.append({
-            "question_id": qid,
-            "question_text": q["question_text"],
-            "concept": q["concept"],
-            "answered": a is not None,
-            "student_answer": a["answer"] if a else None,
-            "is_correct": a["grade"]["is_correct"] if a else None,
-            "score": a["grade"]["score"] if a else 0,
-            "correct_answer": q["correct_answer"],
-            "explanation": q["explanation"],
-        })
+        per_question.append(
+            {
+                "question_id": qid,
+                "question_text": q["question_text"],
+                "concept": q["concept"],
+                "answered": a is not None,
+                "student_answer": a["answer"] if a else None,
+                "is_correct": a["grade"]["is_correct"] if a else None,
+                "score": a["grade"]["score"] if a else 0,
+                "correct_answer": q["correct_answer"],
+                "explanation": q["explanation"],
+            }
+        )
 
     # Concept-level scores
     concept_scores: Dict[str, list] = {}
@@ -261,15 +268,12 @@ async def get_quiz_results(
         c: sum(scores) / len(scores) for c, scores in concept_scores.items()
     }
 
-    summary = (
-        f"You scored {correct}/{total} ({score_percent:.0f}%). "
-        + (
-            "Great job! You've shown solid understanding."
-            if score_percent >= 80
-            else "Good effort! Review the explanations for questions you missed."
-            if score_percent >= 50
-            else "Keep practicing! Review the concepts and try again."
-        )
+    summary = f"You scored {correct}/{total} ({score_percent:.0f}%). " + (
+        "Great job! You've shown solid understanding."
+        if score_percent >= 80
+        else "Good effort! Review the explanations for questions you missed."
+        if score_percent >= 50
+        else "Keep practicing! Review the concepts and try again."
     )
 
     # Persist results to session plan_state
@@ -279,14 +283,16 @@ async def get_quiz_results(
         session = await session_repo.get_by_id(uuid.UUID(session_id))
         if session and session.plan_state is not None:
             plan = session.plan_state
-            plan.setdefault("quiz_results", []).append({
-                "quiz_id": quiz_id,
-                "score_percent": score_percent,
-                "correct": correct,
-                "total": total,
-                "concept_scores": concept_averages,
-                "completed_at": datetime.now(timezone.utc).isoformat(),
-            })
+            plan.setdefault("quiz_results", []).append(
+                {
+                    "quiz_id": quiz_id,
+                    "score_percent": score_percent,
+                    "correct": correct,
+                    "total": total,
+                    "concept_scores": concept_averages,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             session.plan_state = plan
             flag_modified(session, "plan_state")
             await db.commit()
