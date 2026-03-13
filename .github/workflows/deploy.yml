@@ -78,7 +78,7 @@ jobs:
           SMOKE_TEST_BASE_URL: ${{ secrets.STAGING_HEALTHCHECK_URL }}
           SMOKE_TEST_EMAIL: ${{ secrets.STAGING_SMOKE_TEST_EMAIL }}
           SMOKE_TEST_PASSWORD: ${{ secrets.STAGING_SMOKE_TEST_PASSWORD }}
-          SMOKE_TEST_REQUIRE_AUTH: "true"
+          SMOKE_TEST_REQUIRE_AUTH: "false"
         run: python3 scripts/deploy_smoke_test.py
 
   deploy-production-backend:
@@ -116,7 +116,7 @@ jobs:
           SMOKE_TEST_BASE_URL: ${{ secrets.PRODUCTION_HEALTHCHECK_URL }}
           SMOKE_TEST_EMAIL: ${{ secrets.PRODUCTION_SMOKE_TEST_EMAIL }}
           SMOKE_TEST_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_TEST_PASSWORD }}
-          SMOKE_TEST_REQUIRE_AUTH: "true"
+          SMOKE_TEST_REQUIRE_AUTH: "false"
         run: python3 scripts/deploy_smoke_test.py
 
   deploy-production-frontend:

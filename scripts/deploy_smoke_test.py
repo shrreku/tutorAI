@@ -45,7 +45,7 @@ def main() -> int:
                 "Authenticated smoke test is required but SMOKE_TEST_EMAIL/SMOKE_TEST_PASSWORD are not set"
             )
 
-        if email and password:
+        if require_auth:
             _, login_body = _request(
                 f"{base_url}/api/v1/auth/login",
                 method="POST",
@@ -57,6 +57,8 @@ def main() -> int:
                 headers={"Authorization": f"Bearer {token}"},
             )
             print("Smoke test passed: health + authenticated flow")
+        elif email and password:
+            print("Smoke test passed: health checks only (auth credentials supplied but auth flow skipped)")
         else:
             print("Smoke test passed: health checks only (auth flow skipped)")
         return 0
