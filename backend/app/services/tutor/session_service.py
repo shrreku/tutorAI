@@ -10,7 +10,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.models.session import UserSession, UserProfile
+from app.models.session import UserSession, UserProfile, TutorTurn
 from app.models.resource import Resource
 from app.models.knowledge_base import ResourceConceptStats
 from app.agents.curriculum_agent import CurriculumAgent
@@ -410,6 +410,30 @@ class SessionService:
         )
         
         self.db.add(session)
+
+        # Persist a tutor-only bootstrap turn so the UI can immediately render
+        # a mode-aware opening message right after session creation.
+        bootstrap_turn = TutorTurn(
+            session_id=session.id,
+            turn_index=0,
+            student_message="",
+            tutor_response=session_overview,
+            tutor_question=None,
+            current_step_index=0,
+            current_step=plan_state.get("current_step"),
+            target_concepts=plan_state.get("focus_concepts", []),
+            pedagogical_action="session_bootstrap",
+            progression_decision=None,
+            policy_output={"source": "session_create", "mode": session_mode},
+            evaluator_output=None,
+            retrieved_chunks=None,
+            mastery_before=initial_mastery,
+            mastery_after=initial_mastery,
+            token_count=0,
+            latency_ms=0,
+        )
+        self.db.add(bootstrap_turn)
+
         await self.db.commit()
         await self.db.refresh(session)
         

@@ -61,7 +61,11 @@ def build_docling_converter():
 def _apply_base_options(pipeline_options: Any) -> None:
     pipeline_options.enable_remote_services = False
     pipeline_options.allow_external_plugins = False
-    pipeline_options.document_timeout = float(settings.INGESTION_DOCLING_TIMEOUT_S)
+    timeout_s = settings.INGESTION_DOCLING_TIMEOUT_S
+    if timeout_s and float(timeout_s) > 0:
+        pipeline_options.document_timeout = float(timeout_s)
+    elif hasattr(pipeline_options, "document_timeout"):
+        pipeline_options.document_timeout = None
 
     if settings.INGESTION_DOCLING_ARTIFACTS_PATH:
         pipeline_options.artifacts_path = settings.INGESTION_DOCLING_ARTIFACTS_PATH
@@ -110,6 +114,10 @@ def _apply_profile_options(pipeline_options: Any) -> None:
 
 
 def _apply_override_options(pipeline_options: Any) -> None:
+    # Honor the OCR feature flag: disabling it overrides any profile-level setting.
+    if not settings.FEATURE_OCR_ENABLED:
+        pipeline_options.do_ocr = False
+
     _set_table_mode(pipeline_options, settings.INGESTION_DOCLING_TABLE_MODE)
     _set_table_cell_matching(
         pipeline_options,

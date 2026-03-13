@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.plan import PlanState
+from app.models.session import TutorTurn
 from app.services.tutor.session_service import SessionService
 from app.services.tutor_runtime.plan_state_migration import migrate_plan_state_to_v3
 
@@ -76,10 +77,12 @@ def test_plan_state_read_keeps_v3_runtime_contract():
 class _DbStub:
     def __init__(self):
         self.added = None
+        self.added_items = []
         self.commit_count = 0
 
     def add(self, obj):
         self.added = obj
+        self.added_items.append(obj)
 
     async def commit(self):
         self.commit_count += 1
@@ -145,11 +148,17 @@ def test_session_service_writes_new_sessions_as_v3(monkeypatch):
     monkeypatch.setattr(SessionService, "_get_active_session", _get_active_session)
     monkeypatch.setattr(SessionService, "_get_concepts", _get_concepts)
 
-    service = SessionService(_DbStub(), _CurriculumStub())
+    db = _DbStub()
+    service = SessionService(db, _CurriculumStub())
     session = asyncio.run(service.create_session(resource_id=uuid.uuid4()))
 
     assert session.plan_state["version"] == 3
     assert session.plan_state["mode"] == "learn"
+    bootstrap_turns = [item for item in db.added_items if isinstance(item, TutorTurn)]
+    assert len(bootstrap_turns) == 1
+    assert bootstrap_turns[0].turn_index == 0
+    assert bootstrap_turns[0].pedagogical_action == "session_bootstrap"
+    assert bootstrap_turns[0].tutor_response
 
 
 def test_session_service_retires_legacy_active_session(monkeypatch):

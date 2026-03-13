@@ -332,20 +332,24 @@ export default function NotebookStudyPage() {
             {turns.map((turn) => (
               <div key={turn.turn_id} className="space-y-3">
                 {/* Student bubble */}
-                <div className="flex justify-end">
-                  <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-gold/10 border border-gold/20 px-4 py-3 text-sm text-foreground leading-relaxed whitespace-pre-wrap">
-                    {turn.student_message}
+                {turn.student_message?.trim() ? (
+                  <div className="flex justify-end">
+                    <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-gold/10 border border-gold/20 px-4 py-3 text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+                      {turn.student_message}
+                    </div>
                   </div>
-                </div>
+                ) : null}
                 {/* Tutor bubble */}
-                <div className="flex justify-start gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-card border border-border flex items-center justify-center shrink-0 mt-0.5">
-                    <Sparkles className="w-3.5 h-3.5 text-gold" />
+                {turn.tutor_response?.trim() ? (
+                  <div className="flex justify-start gap-3">
+                    <div className="w-7 h-7 rounded-lg bg-card border border-border flex items-center justify-center shrink-0 mt-0.5">
+                      <Sparkles className="w-3.5 h-3.5 text-gold" />
+                    </div>
+                    <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-card border border-border px-4 py-3 text-sm text-foreground leading-relaxed">
+                      {renderFormattedText(turn.tutor_response)}
+                    </div>
                   </div>
-                  <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-card border border-border px-4 py-3 text-sm text-foreground leading-relaxed">
-                    {renderFormattedText(turn.tutor_response)}
-                  </div>
-                </div>
+                ) : null}
               </div>
             ))}
             <div ref={scrollRef} />

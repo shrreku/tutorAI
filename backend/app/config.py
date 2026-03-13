@@ -42,7 +42,8 @@ class Settings(BaseSettings):
     INGESTION_DOCLING_ARTIFACTS_PATH: Optional[str] = None
     INGESTION_DOCLING_DEVICE: str = "auto"
     INGESTION_DOCLING_NUM_THREADS: int = 4
-    INGESTION_DOCLING_TIMEOUT_S: int = 120
+    # 0 disables the Docling document timeout for very large textbooks.
+    INGESTION_DOCLING_TIMEOUT_S: Optional[int] = 0
     INGESTION_DOCLING_OCR_ENGINE: str = "auto"  # auto | easyocr | tesseract | tesseract_cli | rapidocr | ocrmac
     INGESTION_DOCLING_OCR_LANGS: str = "eng"
     INGESTION_DOCLING_TABLE_MODE: str = "accurate"  # accurate | fast
