@@ -67,7 +67,9 @@ jobs:
             set -e
             cd "$DEPLOY_PATH"
             git fetch --all --tags --prune
-            git checkout "$APP_IMAGE_TAG"
+            git reset --hard
+            git clean -fd
+            git checkout -f "$APP_IMAGE_TAG"
             chmod +x scripts/deploy_remote.sh
             ./scripts/deploy_remote.sh
   deploy-production-backend:
@@ -94,7 +96,9 @@ jobs:
             set -e
             cd "$DEPLOY_PATH"
             git fetch --all --tags --prune
-            git checkout "$APP_IMAGE_TAG"
+            git reset --hard
+            git clean -fd
+            git checkout -f "$APP_IMAGE_TAG"
             chmod +x scripts/deploy_remote.sh
             ./scripts/deploy_remote.sh
   deploy-production-frontend:
