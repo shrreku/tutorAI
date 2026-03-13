@@ -437,7 +437,11 @@ class SessionService:
         )
 
         self.db.add(session)
-        await self.db.flush()
+        flush = getattr(self.db, "flush", None)
+        if callable(flush):
+            await flush()
+        if session.id is None:
+            session.id = uuid.uuid4()
 
         # Persist a tutor-only bootstrap turn so the UI can immediately render
         # a mode-aware opening message right after session creation.
