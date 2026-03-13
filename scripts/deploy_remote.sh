@@ -18,6 +18,10 @@ fi
 
 echo "$GHCR_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USERNAME" --password-stdin
 
+docker container prune -f
+docker image prune -a -f
+docker builder prune -a -f
+
 docker compose -f docker-compose.prod.yml pull api worker migrate
 
 docker compose -f docker-compose.prod.yml run --rm migrate
@@ -26,6 +30,8 @@ docker compose -f docker-compose.prod.yml up -d api worker
 
 docker compose -f docker-compose.prod.yml ps
 
+docker container prune -f
 docker image prune -f
+docker builder prune -f
 
 echo "Deploy finished for image tag: $APP_IMAGE_TAG"

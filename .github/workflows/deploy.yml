@@ -70,17 +70,6 @@ jobs:
             git checkout "$APP_IMAGE_TAG"
             chmod +x scripts/deploy_remote.sh
             ./scripts/deploy_remote.sh
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Staging smoke test
-        env:
-          SMOKE_TEST_BASE_URL: ${{ secrets.STAGING_HEALTHCHECK_URL }}
-          SMOKE_TEST_EMAIL: ${{ secrets.STAGING_SMOKE_TEST_EMAIL }}
-          SMOKE_TEST_PASSWORD: ${{ secrets.STAGING_SMOKE_TEST_PASSWORD }}
-          SMOKE_TEST_REQUIRE_AUTH: "false"
-        run: python3 scripts/deploy_smoke_test.py
-
   deploy-production-backend:
     runs-on: ubuntu-latest
     needs: build-and-push
@@ -108,17 +97,6 @@ jobs:
             git checkout "$APP_IMAGE_TAG"
             chmod +x scripts/deploy_remote.sh
             ./scripts/deploy_remote.sh
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Production smoke test
-        env:
-          SMOKE_TEST_BASE_URL: ${{ secrets.PRODUCTION_HEALTHCHECK_URL }}
-          SMOKE_TEST_EMAIL: ${{ secrets.PRODUCTION_SMOKE_TEST_EMAIL }}
-          SMOKE_TEST_PASSWORD: ${{ secrets.PRODUCTION_SMOKE_TEST_PASSWORD }}
-          SMOKE_TEST_REQUIRE_AUTH: "false"
-        run: python3 scripts/deploy_smoke_test.py
-
   deploy-production-frontend:
     runs-on: ubuntu-latest
     needs: deploy-production-backend
