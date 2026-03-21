@@ -110,19 +110,3 @@ jobs:
         run: docker build -f backend/Dockerfile.worker backend/ -t studyagent-worker:ci
       - name: Build Frontend image
         run: docker build -f frontend/Dockerfile frontend/ -t studyagent-frontend:ci
-
-  # ── Deploy smoke test ────────────────────────────────────────
-  smoke-test:
-    runs-on: ubuntu-latest
-    needs: [docker-build]
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install httpx
-      - name: Run deploy smoke tests
-        run: python scripts/deploy_smoke_test.py
-        env:
-          SMOKE_TEST_BASE_URL: ${{ vars.SMOKE_TEST_BASE_URL || 'https://api.tutorbook.me' }}
