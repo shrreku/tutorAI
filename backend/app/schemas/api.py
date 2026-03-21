@@ -428,7 +428,11 @@ class NotebookSessionCreateRequest(BaseModel):
         self.selected_topics = normalized_selected_topics or None
         self.mode = (self.mode or "learn").strip().lower()
 
-        if self.mode == "doubt" and not (self.topic or self.selected_topics):
+        has_anchor_resource = self.resource_id is not None
+
+        if self.mode == "doubt" and not (
+            self.topic or self.selected_topics or has_anchor_resource
+        ):
             raise ValueError(
                 "Doubt mode requires learner input in topic or selected_topics"
             )

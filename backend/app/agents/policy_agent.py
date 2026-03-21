@@ -283,9 +283,12 @@ Based on all the above, decide the pedagogical_action and progression_decision f
         roadmap = obj.get("step_roadmap") or []
         roadmap = roadmap if isinstance(roadmap, list) else []
         step_idx = int(getattr(state, "current_step_index", 0) or 0)
+        ad_hoc_count = int(getattr(state, "ad_hoc_count", 0) or 0)
+        max_ad_hoc = int(getattr(state, "max_ad_hoc_per_objective", 3) or 3)
 
         decision = output.progression_decision
         reasoning_suffix: list[str] = []
+        skip_rejected = False
 
         # Guard: forward-only skip with can_skip validation
         if decision == ProgressionDecision.SKIP_TO_STEP:
@@ -303,13 +306,42 @@ Based on all the above, decide the pedagogical_action and progression_decision f
             if not (valid_forward and valid_bounds and can_skip_window):
                 decision = ProgressionDecision.CONTINUE_STEP
                 output.skip_target_index = None
+                skip_rejected = True
                 reasoning_suffix.append("guard:skip_rejected")
+
+        # Guard: do not keep inserting ad-hoc steps once budget is exhausted.
+        if decision == ProgressionDecision.INSERT_AD_HOC and ad_hoc_count >= max_ad_hoc:
+            decision = ProgressionDecision.ADVANCE_STEP
+            output.ad_hoc_step_type = None
+            reasoning_suffix.append("guard:force_advance_from_ad_hoc_budget")
 
         output.progression_decision = decision
 
         # Fill student_intent if missing (lightweight heuristic)
         if not output.student_intent:
             output.student_intent = self._infer_student_intent(state)
+
+        # Guard: when the learner explicitly wants to move on, advance unless a
+        # recent low evaluation indicates they still need to resolve the checkpoint.
+        if output.student_intent == "move_on":
+            eval_score = None
+            latest_evaluation = getattr(state, "latest_evaluation", None) or {}
+            if isinstance(latest_evaluation, dict):
+                raw_score = latest_evaluation.get("overall_score")
+                if isinstance(raw_score, (int, float)):
+                    eval_score = float(raw_score)
+
+            if eval_score is not None and eval_score < 0.5:
+                output.progression_decision = ProgressionDecision.CONTINUE_STEP
+                if not output.recommended_strategy:
+                    output.recommended_strategy = "assessment"
+                reasoning_suffix.append("guard:move_on_blocked_by_low_evaluation")
+            elif (
+                output.progression_decision == ProgressionDecision.CONTINUE_STEP
+                and not skip_rejected
+            ):
+                output.progression_decision = ProgressionDecision.ADVANCE_STEP
+                reasoning_suffix.append("guard:move_on_advances")
 
         # Always keep target concepts bounded and non-empty when possible
         if output.target_concepts:
