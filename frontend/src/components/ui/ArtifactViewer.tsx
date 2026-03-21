@@ -19,7 +19,7 @@ import {
   ARTIFACT_TYPE_BADGE,
   ARTIFACT_TYPE_COLOR,
   ARTIFACT_TYPE_ICON,
-} from '../icons/ArtifactIcons';
+} from '../icons/ArtifactCatalog';
 import RichTutorContent from './RichTutorContent';
 import SelectableCapture from './SelectableCapture';
 

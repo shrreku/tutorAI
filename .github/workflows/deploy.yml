@@ -54,6 +54,7 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           APP_IMAGE_TAG: ${{ github.sha }}
+          APP_GIT_REF: ${{ github.ref_name }}
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_PREFIX: ${{ github.repository }}
@@ -62,13 +63,13 @@ jobs:
           host: ${{ secrets.STAGING_SSH_HOST }}
           username: ${{ secrets.STAGING_SSH_USER }}
           key: ${{ secrets.STAGING_SSH_KEY }}
-          envs: APP_IMAGE_TAG,GHCR_USERNAME,GHCR_TOKEN,IMAGE_PREFIX,DEPLOY_PATH
+          envs: APP_IMAGE_TAG,APP_GIT_REF,GHCR_USERNAME,GHCR_TOKEN,IMAGE_PREFIX,DEPLOY_PATH
           script: |
             set -e
             cd "$DEPLOY_PATH"
             git fetch --all --tags --prune
             git reset --hard
-            git checkout -f "$APP_IMAGE_TAG"
+            git checkout -f "$APP_GIT_REF"
             chmod +x scripts/deploy_remote.sh
             ./scripts/deploy_remote.sh
   deploy-production-backend:
@@ -82,6 +83,7 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           APP_IMAGE_TAG: ${{ github.sha }}
+          APP_GIT_REF: ${{ github.ref_name }}
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_PREFIX: ${{ github.repository }}
@@ -90,13 +92,13 @@ jobs:
           host: ${{ secrets.PRODUCTION_SSH_HOST }}
           username: ${{ secrets.PRODUCTION_SSH_USER }}
           key: ${{ secrets.PRODUCTION_SSH_KEY }}
-          envs: APP_IMAGE_TAG,GHCR_USERNAME,GHCR_TOKEN,IMAGE_PREFIX,DEPLOY_PATH
+          envs: APP_IMAGE_TAG,APP_GIT_REF,GHCR_USERNAME,GHCR_TOKEN,IMAGE_PREFIX,DEPLOY_PATH
           script: |
             set -e
             cd "$DEPLOY_PATH"
             git fetch --all --tags --prune
             git reset --hard
-            git checkout -f "$APP_IMAGE_TAG"
+            git checkout -f "$APP_GIT_REF"
             chmod +x scripts/deploy_remote.sh
             ./scripts/deploy_remote.sh
   deploy-production-frontend:

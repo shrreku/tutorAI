@@ -12,9 +12,12 @@ import {
   Files,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { ARTIFACT_TYPE_COLOR } from '../icons/ArtifactCatalog';
 import {
-  ARTIFACT_TYPE_COLOR,
-  QuizIcon, FlashcardsIcon, SummaryIcon, RevisionPlanIcon,
+  QuizIcon,
+  FlashcardsIcon,
+  SummaryIcon,
+  RevisionPlanIcon,
 } from '../icons/ArtifactIcons';
 import type { ArtifactEventPayload, SourceCitationPayload } from '../../types/session-events';
 import type { NotebookArtifact } from '../../types/api';
