@@ -48,6 +48,7 @@ __all__ = [
     "Chunk",
     "ChunkConcept",
     "Formula",
+    "SubChunk",
     "ResourceConceptStats",
     "ResourceConceptEvidence",
     "ResourceConceptGraph",

@@ -46,7 +46,9 @@ from app.services.async_byok_escrow import (
     AsyncByokEscrowService,
     async_byok_feature_available,
 )
-from app.services.batched_curriculum_preparation import BatchedCurriculumPreparationService
+from app.services.batched_curriculum_preparation import (
+    BatchedCurriculumPreparationService,
+)
 from app.services.ingestion.enricher import ChunkEnricher
 from app.services.ingestion.ontology_extractor import OntologyExtractor
 from app.services.ingestion.pipeline import IngestionPipeline

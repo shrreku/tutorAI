@@ -383,7 +383,9 @@ def test_session_service_allows_doubt_mode_without_concepts(monkeypatch):
     assert session.plan_state["current_step"] == "clarify"
 
 
-def test_session_service_uses_scoped_curriculum_source_and_seeds_rolling_planner(monkeypatch):
+def test_session_service_uses_scoped_curriculum_source_and_seeds_rolling_planner(
+    monkeypatch,
+):
     anchor_resource_id = uuid.uuid4()
     second_resource_id = uuid.uuid4()
 

@@ -3,8 +3,6 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 import uuid
 
-import pytest
-
 import app.worker as worker_module
 
 
@@ -124,7 +122,9 @@ def test_reconcile_orphaned_jobs_requeues_pending_and_fails_running(monkeypatch)
     assert running_job.error_stage == "enrich"
     assert running_job.completed_at is not None
     assert running_resource.status == "failed"
-    assert "Worker restarted while ingestion was in progress" in (running_resource.error_message or "")
+    assert "Worker restarted while ingestion was in progress" in (
+        running_resource.error_message or ""
+    )
     assert running_job.metrics["recovery"]["resumable"] is True
     assert fake_session.commit_calls == 1
 
@@ -471,24 +471,28 @@ def test_process_job_uses_async_byok_escrow_when_present(monkeypatch):
     assert job.metrics["async_byok"]["status"] == "consumed"
 
 
-
 def test_worker_loop_survives_redis_dequeue_failure(monkeypatch):
-    calls = {'count': 0}
+    calls = {"count": 0}
 
     async def _fake_dequeue(timeout=2):
         del timeout
-        calls['count'] += 1
-        if calls['count'] == 1:
+        calls["count"] += 1
+        if calls["count"] == 1:
             from redis.exceptions import ConnectionError
-            raise ConnectionError('queue unavailable')
+
+            raise ConnectionError("queue unavailable")
         worker_module._shutdown.set()
         return None
 
-    monkeypatch.setattr(worker_module, 'dequeue_ingestion_job', _fake_dequeue)
-    monkeypatch.setattr(worker_module, 'reconcile_orphaned_jobs', lambda: asyncio.sleep(0))
-    monkeypatch.setattr(worker_module.settings, 'INGESTION_PREWARM_ENABLED', False, raising=False)
+    monkeypatch.setattr(worker_module, "dequeue_ingestion_job", _fake_dequeue)
+    monkeypatch.setattr(
+        worker_module, "reconcile_orphaned_jobs", lambda: asyncio.sleep(0)
+    )
+    monkeypatch.setattr(
+        worker_module.settings, "INGESTION_PREWARM_ENABLED", False, raising=False
+    )
     worker_module._shutdown = asyncio.Event()
 
     asyncio.run(worker_module.worker_loop())
 
-    assert calls['count'] >= 2
+    assert calls["count"] >= 2

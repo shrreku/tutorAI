@@ -263,7 +263,9 @@ def test_progression_guard_allows_objective_advance_when_policy_requests_it():
         for e in updated_plan.get("__trace_events", [])
         if e.get("name") == "guard_override"
     ]
-    assert not any(e.get("guard_name") == "objective_readiness_not_met" for e in guard_events)
+    assert not any(
+        e.get("guard_name") == "objective_readiness_not_met" for e in guard_events
+    )
 
 
 def test_progression_advances_objective_even_when_fluid_progression_flag_is_disabled():

@@ -30,9 +30,8 @@ def build_curriculum_scope(
     resource_ids = _stringify_resource_ids(scope_resource_ids)
     if not resource_ids and anchor_resource_id:
         resource_ids = [str(anchor_resource_id)]
-    normalized_scope_type = (
-        (scope_type or "").strip()
-        or ("notebook" if len(resource_ids) > 1 and notebook_id else "single_resource")
+    normalized_scope_type = (scope_type or "").strip() or (
+        "notebook" if len(resource_ids) > 1 and notebook_id else "single_resource"
     )
     return {
         "scope_type": normalized_scope_type,
@@ -56,10 +55,11 @@ def resolve_plan_scope(
     if not resource_ids and plan.get("resource_id"):
         resource_ids = [str(plan.get("resource_id"))]
     notebook_id = stored_scope.get("notebook_id") or notebook_context.get("notebook_id")
-    anchor_resource_id = stored_scope.get("anchor_resource_id") or plan.get("resource_id")
-    scope_type = (
-        stored_scope.get("scope_type")
-        or ("notebook" if len(resource_ids) > 1 and notebook_id else "single_resource")
+    anchor_resource_id = stored_scope.get("anchor_resource_id") or plan.get(
+        "resource_id"
+    )
+    scope_type = stored_scope.get("scope_type") or (
+        "notebook" if len(resource_ids) > 1 and notebook_id else "single_resource"
     )
     return {
         "scope_type": scope_type,
@@ -81,7 +81,9 @@ def sync_runtime_contract_views(
     objective_progress = deepcopy(plan.get("objective_progress") or {})
     mastery_snapshot = dict(mastery_snapshot or {})
     weak_concepts = [
-        concept for concept, score in mastery_snapshot.items() if float(score or 0.0) < 0.4
+        concept
+        for concept, score in mastery_snapshot.items()
+        if float(score or 0.0) < 0.4
     ]
     plan["curriculum_scope"] = scope
     plan["curriculum_plan"] = {
@@ -123,7 +125,9 @@ def sync_runtime_contract_views(
     return plan
 
 
-def build_policy_progression_intent(policy_output: Any, plan: dict[str, Any]) -> dict[str, Any]:
+def build_policy_progression_intent(
+    policy_output: Any, plan: dict[str, Any]
+) -> dict[str, Any]:
     decision = getattr(policy_output, "progression_decision", None)
     decision_name = decision.name if hasattr(decision, "name") else str(decision or "")
     scope_shift_request = getattr(policy_output, "scope_shift_request", None) or {}

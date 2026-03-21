@@ -15,7 +15,9 @@ def create_storage_provider(config: Settings) -> StorageProvider:
     """
     if config.STORAGE_BACKEND == "s3":
         if not config.S3_BUCKET_NAME:
-            logger.warning("S3 backend selected but S3_BUCKET_NAME is not set – falling back to local")
+            logger.warning(
+                "S3 backend selected but S3_BUCKET_NAME is not set – falling back to local"
+            )
             return LocalStorageProvider(config.STORAGE_LOCAL_DIR)
 
         from app.services.storage.s3_provider import S3StorageProvider

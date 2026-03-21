@@ -273,7 +273,9 @@ def _rolling_objective_limit(
     return 3
 
 
-def _build_objective_progress_seed(objective_queue: list[dict]) -> dict[str, dict[str, int]]:
+def _build_objective_progress_seed(
+    objective_queue: list[dict],
+) -> dict[str, dict[str, int]]:
     return {
         obj.get("objective_id", f"obj_{index}"): {
             "attempts": 0,
@@ -357,7 +359,9 @@ class SessionService:
             topic=topic or resource.topic,
             selected_topics=selected_topics,
         )
-        planning_resource_ids = list(curriculum_scope.get("resource_ids") or [str(resource_id)])
+        planning_resource_ids = list(
+            curriculum_scope.get("resource_ids") or [str(resource_id)]
+        )
 
         # Check for existing active session
         existing = None
@@ -472,7 +476,9 @@ class SessionService:
                 "strategy": "rolling",
                 "visible_objectives": len(objective_queue),
                 "objective_limit": objective_limit,
-                "remaining_concepts_estimate": max(0, len(concepts) - len(objective_queue)),
+                "remaining_concepts_estimate": max(
+                    0, len(concepts) - len(objective_queue)
+                ),
                 "remaining_concepts_sample": [],
             }
         if objective_limit and not curriculum_planner:
@@ -487,7 +493,9 @@ class SessionService:
                 "objective_batch_size": objective_limit,
                 "extend_when_remaining": 1,
                 "extension_count": 0,
-                "remaining_concepts_estimate": max(0, len(concepts) - len(objective_queue)),
+                "remaining_concepts_estimate": max(
+                    0, len(concepts) - len(objective_queue)
+                ),
                 "total_concepts": len(concepts),
                 "last_planning_mode": "initial",
             }
@@ -709,7 +717,9 @@ class SessionService:
         self,
         resource_ids: list[uuid.UUID | str],
     ) -> list[str]:
-        normalized_resource_ids = [uuid.UUID(str(resource_id)) for resource_id in resource_ids]
+        normalized_resource_ids = [
+            uuid.UUID(str(resource_id)) for resource_id in resource_ids
+        ]
         result = await self.db.execute(
             select(ResourceConceptStats).where(
                 ResourceConceptStats.resource_id.in_(normalized_resource_ids)
@@ -726,7 +736,9 @@ class SessionService:
                     "topo_order": None,
                 },
             )
-            record["teach_count"] = int(record["teach_count"] or 0) + int(row.teach_count or 0)
+            record["teach_count"] = int(record["teach_count"] or 0) + int(
+                row.teach_count or 0
+            )
             record["importance_score"] = max(
                 float(record["importance_score"] or 0.0),
                 float(row.importance_score or 0.0),

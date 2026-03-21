@@ -8,7 +8,7 @@ from app.services.ingestion.docling_config import (
     _apply_override_options,
     _apply_profile_options,
 )
-from app.services.ingestion.ingestion_types import SectionData, token_len
+from app.services.ingestion.ingestion_types import SectionData
 
 
 class _FakeDoc:
@@ -121,19 +121,19 @@ def test_docling_chunker_merges_small_docling_chunks():
     chunks = [
         SimpleNamespace(
             chunk_index=0,
-            text='A ' * 180,
-            section_heading='Intro',
+            text="A " * 180,
+            section_heading="Intro",
             page_start=1,
             page_end=1,
-            metadata={'a': 1},
+            metadata={"a": 1},
         ),
         SimpleNamespace(
             chunk_index=1,
-            text='B ' * 180,
-            section_heading='Intro',
+            text="B " * 180,
+            section_heading="Intro",
             page_start=1,
             page_end=1,
-            metadata={'b': 2},
+            metadata={"b": 2},
         ),
     ]
 
@@ -141,8 +141,8 @@ def test_docling_chunker_merges_small_docling_chunks():
 
     assert len(merged) == 1
     assert merged[0].chunk_index == 0
-    assert 'A ' in merged[0].text
-    assert 'B ' in merged[0].text
+    assert "A " in merged[0].text
+    assert "B " in merged[0].text
 
 
 def test_docling_chunker_merges_tiny_boundary_chunks():
@@ -150,16 +150,16 @@ def test_docling_chunker_merges_tiny_boundary_chunks():
     chunks = [
         SimpleNamespace(
             chunk_index=0,
-            text='A ' * 40,
-            section_heading='Heading A',
+            text="A " * 40,
+            section_heading="Heading A",
             page_start=1,
             page_end=1,
             metadata={},
         ),
         SimpleNamespace(
             chunk_index=1,
-            text='B ' * 300,
-            section_heading='Heading B',
+            text="B " * 300,
+            section_heading="Heading B",
             page_start=1,
             page_end=2,
             metadata={},
@@ -170,7 +170,10 @@ def test_docling_chunker_merges_tiny_boundary_chunks():
 
     assert len(merged) == 1
     assert merged[0].chunk_index == 0
-    assert 'Heading A' != merged[0].section_heading or merged[0].section_heading is not None
+    assert (
+        "Heading A" != merged[0].section_heading
+        or merged[0].section_heading is not None
+    )
 
 
 def test_docling_chunker_builds_hf_tokenizer_with_chunk_budget(monkeypatch):

@@ -224,9 +224,7 @@ class CurriculumPreparationService:
     ) -> None:
         chunk_ids = [chunk.id for chunk in chunks]
         await self.db.execute(
-            delete(ChunkConcept).where(
-                ChunkConcept.chunk_id.in_(chunk_ids)
-            )
+            delete(ChunkConcept).where(ChunkConcept.chunk_id.in_(chunk_ids))
         )
         for chunk, enrichment in zip(chunks, enrichments):
             existing = dict(chunk.enrichment_metadata or {})
@@ -261,8 +259,7 @@ class CurriculumPreparationService:
         )
         sub_chunks = list(sub_chunk_result.scalars().all())
         enrichments_by_chunk_id = {
-            chunk.id: enrichment
-            for chunk, enrichment in zip(chunks, enrichments)
+            chunk.id: enrichment for chunk, enrichment in zip(chunks, enrichments)
         }
         for sub_chunk in sub_chunks:
             enrichment = enrichments_by_chunk_id.get(sub_chunk.parent_chunk_id)
@@ -542,7 +539,9 @@ class CurriculumPreparationService:
         for concept_id in sorted(concept_rows.keys()):
             row = concept_rows[concept_id]
             candidate_names = sorted(row["raw_names"])
-            label = candidate_names[0] if candidate_names else concept_id.replace("_", " ")
+            label = (
+                candidate_names[0] if candidate_names else concept_id.replace("_", " ")
+            )
             normalized_label = str(label).strip().lower()
             concepts.append(
                 {

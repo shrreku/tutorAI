@@ -41,7 +41,9 @@ from app.services.async_byok_escrow import (
     async_byok_feature_available,
 )
 from app.services.credits.meter import CreditMeter
-from app.services.batched_curriculum_preparation import BatchedCurriculumPreparationService
+from app.services.batched_curriculum_preparation import (
+    BatchedCurriculumPreparationService,
+)
 from app.services.embedding.factory import create_embedding_provider
 from app.services.ingestion.enricher import ChunkEnricher
 from app.services.ingestion.ontology_extractor import OntologyExtractor
@@ -311,9 +313,7 @@ def _job_status_payload(job: IngestionJob) -> IngestionStatusResponse:
     resume_hint = None
     if resumable:
         if resume_from_stage:
-            resume_hint = (
-                f"Retry will continue from the last saved {resume_from_stage} checkpoint."
-            )
+            resume_hint = f"Retry will continue from the last saved {resume_from_stage} checkpoint."
         else:
             resume_hint = "Retry will continue from the last saved checkpoint."
     return IngestionStatusResponse(

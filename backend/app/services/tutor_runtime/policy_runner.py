@@ -11,6 +11,7 @@ from app.schemas.agent_state import PolicyState
 
 from app.services.mastery import check_prereq_gate, compute_average_mastery
 from app.services.tutor_runtime.events import append_trace_event
+from app.services.tutor_runtime.guardrails import build_guard_override_metadata
 
 from app.services.tutor_runtime.policy_reranker import rerank_policy_output
 from app.services.tutor_runtime.step_state import build_curriculum_slice, get_step_index
@@ -49,7 +50,11 @@ def _apply_prereq_gate_to_policy_output(
     rewrite the policy's progression decision.
     """
 
-    scope = (current_obj.get("concept_scope") or {}) if isinstance(current_obj, dict) else {}
+    scope = (
+        (current_obj.get("concept_scope") or {})
+        if isinstance(current_obj, dict)
+        else {}
+    )
     prereq_concepts = scope.get("prereq") or []
     prereq_concepts = [c for c in prereq_concepts if isinstance(c, str) and c.strip()]
     if not prereq_concepts:
@@ -78,7 +83,9 @@ def _apply_prereq_gate_to_policy_output(
         "Then ask a quick check question to confirm understanding."
     ).strip()
     policy_output.planner_guidance = (
-        f"{gate_guidance}\n{existing_guidance}".strip() if existing_guidance else gate_guidance
+        f"{gate_guidance}\n{existing_guidance}".strip()
+        if existing_guidance
+        else gate_guidance
     )
 
     existing_directives = getattr(policy_output, "retrieval_directives", None) or {}
@@ -131,13 +138,19 @@ def _apply_pending_checkpoint_guidance(
             "Offer exactly two options: (1) answer the pending checkpoint now, or (2) skip ahead with a brief note that mastery may be incomplete. "
             "Do not give another long justification for staying on the same step."
         )
-        existing_guidance = (getattr(policy_output, "planner_guidance", None) or "").strip()
+        existing_guidance = (
+            getattr(policy_output, "planner_guidance", None) or ""
+        ).strip()
         policy_output.planner_guidance = (
             f"{binary_choice_guidance}\n{existing_guidance}".strip()
             if existing_guidance
             else binary_choice_guidance
         )
-        if getattr(policy_output, "recommended_strategy", None) in {None, "assessment", "socratic"}:
+        if getattr(policy_output, "recommended_strategy", None) in {
+            None,
+            "assessment",
+            "socratic",
+        }:
             policy_output.recommended_strategy = "direct"
         append_trace_event(
             plan,
@@ -174,7 +187,11 @@ def _apply_doubt_adjacent_guidance(
     if not isinstance(retrieval_directives, dict):
         retrieval_directives = {}
 
-    scope = (current_obj.get("concept_scope") or {}) if isinstance(current_obj, dict) else {}
+    scope = (
+        (current_obj.get("concept_scope") or {})
+        if isinstance(current_obj, dict)
+        else {}
+    )
     objective_concepts = {
         str(concept).strip()
         for concept in (
@@ -187,7 +204,9 @@ def _apply_doubt_adjacent_guidance(
     adjacent_concepts = [
         concept for concept in target_concepts if concept not in objective_concepts
     ]
-    ad_hoc_step_type = str(getattr(policy_output, "ad_hoc_step_type", "") or "").strip().lower()
+    ad_hoc_step_type = (
+        str(getattr(policy_output, "ad_hoc_step_type", "") or "").strip().lower()
+    )
     retrieval_focus = str(retrieval_directives.get("focus") or "").strip().lower()
     prerequisite_signal = (
         retrieval_focus == "prereq"
@@ -209,9 +228,7 @@ def _apply_doubt_adjacent_guidance(
     )
     existing_guidance = (getattr(policy_output, "planner_guidance", None) or "").strip()
     policy_output.planner_guidance = (
-        f"{guidance}\n{existing_guidance}".strip()
-        if existing_guidance
-        else guidance
+        f"{guidance}\n{existing_guidance}".strip() if existing_guidance else guidance
     )
 
     if getattr(policy_output, "recommended_strategy", None) in {None, "socratic"}:

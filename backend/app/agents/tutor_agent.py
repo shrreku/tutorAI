@@ -187,7 +187,10 @@ Write your tutoring response now."""
         step = state.effective_step_type or state.current_step
         mode = (state.session_mode or "learn").strip().lower()
         planner_guidance = (state.planner_guidance or "").strip().lower()
-        if "offer exactly two options" in planner_guidance and "mastery may be incomplete" in planner_guidance:
+        if (
+            "offer exactly two options" in planner_guidance
+            and "mastery may be incomplete" in planner_guidance
+        ):
             response = (
                 "We can do either of these:\n"
                 "1. Answer the pending checkpoint now so I can verify this step.\n"

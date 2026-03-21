@@ -11,8 +11,6 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
-from sqlalchemy.orm import selectinload
-
 from app.models.chunk import Chunk
 from app.models.knowledge_base import (
     ResourceBundle,
@@ -144,7 +142,9 @@ class RetrievalService:
             seen_resource_ids: set[uuid.UUID] = set()
             for value in resource_ids:
                 try:
-                    normalized_value = value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+                    normalized_value = (
+                        value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+                    )
                 except (TypeError, ValueError):
                     continue
                 if normalized_value in seen_resource_ids:
@@ -209,9 +209,7 @@ class RetrievalService:
         if sorted_chunks:
             best_score = sorted_chunks[0].relevance_score
             cutoff = best_score * SCORE_CUTOFF_RATIO
-            sorted_chunks = [
-                c for c in sorted_chunks if c.relevance_score >= cutoff
-            ]
+            sorted_chunks = [c for c in sorted_chunks if c.relevance_score >= cutoff]
 
         # Optionally include neighbors
         if include_neighbors and sorted_chunks:

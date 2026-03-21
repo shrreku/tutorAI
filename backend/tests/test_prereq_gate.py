@@ -157,7 +157,9 @@ def test_policy_runner_adds_binary_choice_guidance_when_checkpoint_is_pending_an
                     "support": [],
                     "prereq": [],
                 },
-                "step_roadmap": [{"type": "assess", "target_concepts": ["conditional_probability"]}],
+                "step_roadmap": [
+                    {"type": "assess", "target_concepts": ["conditional_probability"]}
+                ],
                 "success_criteria": {"min_correct": 1, "min_mastery": 0.6},
             }
         ],

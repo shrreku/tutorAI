@@ -181,7 +181,8 @@ class CurriculumAgent:
                     prereq_chains = [
                         chain
                         for chain in prereq_chains
-                        if chain and all(concept in selected_concepts for concept in chain)
+                        if chain
+                        and all(concept in selected_concepts for concept in chain)
                     ]
 
         messages = self._build_messages(
@@ -311,7 +312,8 @@ class CurriculumAgent:
                     prereq_chains = [
                         chain
                         for chain in prereq_chains
-                        if chain and all(concept in selected_concepts for concept in chain)
+                        if chain
+                        and all(concept in selected_concepts for concept in chain)
                     ]
 
         covered = set(completed_concepts)
@@ -432,7 +434,11 @@ class CurriculumAgent:
         normalized: list[UUID] = []
         seen: set[UUID] = set()
         for resource_id in resource_ids or []:
-            value = UUID(str(resource_id)) if not isinstance(resource_id, UUID) else resource_id
+            value = (
+                UUID(str(resource_id))
+                if not isinstance(resource_id, UUID)
+                else resource_id
+            )
             if value in seen:
                 continue
             seen.add(value)
@@ -448,9 +454,8 @@ class CurriculumAgent:
         scope_type: Optional[str] = None,
         notebook_id: Optional[UUID | str] = None,
     ) -> str:
-        normalized_scope_type = (
-            (scope_type or "").strip()
-            or ("notebook" if len(resource_ids) > 1 and notebook_id else "single_resource")
+        normalized_scope_type = (scope_type or "").strip() or (
+            "notebook" if len(resource_ids) > 1 and notebook_id else "single_resource"
         )
         if notebook_id:
             return f"{normalized_scope_type}:{notebook_id}"
@@ -512,7 +517,11 @@ class CurriculumAgent:
             adjacency[source].append((target, support))
             incoming.add(target)
 
-        roots = [concept for concept in concepts if concept in adjacency and concept not in incoming]
+        roots = [
+            concept
+            for concept in concepts
+            if concept in adjacency and concept not in incoming
+        ]
         if not roots:
             roots = [concept for concept in concepts if concept in adjacency][:6]
 
@@ -563,9 +572,8 @@ class CurriculumAgent:
             concept for concept in concepts if concept not in covered_concepts
         ]
         rolling_enabled = bool(objective_limit and remaining_concepts)
-        normalized_scope_type = (
-            (scope_type or "").strip()
-            or ("notebook" if len(resource_ids) > 1 and notebook_id else "single_resource")
+        normalized_scope_type = (scope_type or "").strip() or (
+            "notebook" if len(resource_ids) > 1 and notebook_id else "single_resource"
         )
         plan_horizon = {
             "version": 1,

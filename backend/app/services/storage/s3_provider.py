@@ -8,6 +8,7 @@ Respects the following settings:
   - MINIO_ENDPOINT (if using MinIO / R2)
   - MINIO_ACCESS_KEY / MINIO_SECRET_KEY
 """
+
 import asyncio
 import logging
 import uuid

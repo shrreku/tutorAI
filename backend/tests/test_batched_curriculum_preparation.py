@@ -22,6 +22,7 @@ from app.services.batched_curriculum_preparation import (
 # Fakes
 # ---------------------------------------------------------------------------
 
+
 class _FakeDb:
     def __init__(self, resource):
         self.resource = resource
@@ -134,7 +135,11 @@ class _FakeKBBuilder:
 
     async def build(self, *args, **kwargs):
         self.calls.append({"args": args, "kwargs": kwargs})
-        return {"concepts_admitted": 3, "evidence_created": 4, "prereq_hints_created": 1}
+        return {
+            "concepts_admitted": 3,
+            "evidence_created": 4,
+            "prereq_hints_created": 1,
+        }
 
 
 class _FakeGraphBuilder:
@@ -149,6 +154,7 @@ class _FakeGraphBuilder:
 # ---------------------------------------------------------------------------
 # Tests: progressive_ready_capabilities
 # ---------------------------------------------------------------------------
+
 
 def test_default_capabilities_include_progressive_fields():
     caps = default_resource_capabilities()
@@ -200,6 +206,7 @@ def test_progressive_ready_capabilities_zero_batches():
 # ---------------------------------------------------------------------------
 # Tests: resource_readiness
 # ---------------------------------------------------------------------------
+
 
 def test_is_resource_study_ready_with_progressive():
     resource = SimpleNamespace(
@@ -256,6 +263,7 @@ def test_get_batch_progress():
 # ---------------------------------------------------------------------------
 # Tests: BatchedCurriculumPreparationService
 # ---------------------------------------------------------------------------
+
 
 def test_batched_service_processes_resource(monkeypatch):
     resource_id = uuid4()
@@ -536,7 +544,6 @@ def test_estimate_tokens():
     assert service._estimate_tokens("") >= 1
 
 
-
 def test_batched_service_resets_curriculum_state_before_rebuild(monkeypatch):
     resource_id = uuid4()
     resource = SimpleNamespace(
@@ -577,32 +584,34 @@ def test_batched_service_resets_curriculum_state_before_rebuild(monkeypatch):
         seen["reset"] += 1
 
     async def _plan_batches(_resource_id, _chunks):
-        return [SimpleNamespace(
-            id=uuid4(),
-            resource_id=_resource_id,
-            batch_index=0,
-            status="pending",
-            chunk_index_start=0,
-            chunk_index_end=0,
-            section_headings=["Conduction"],
-            chunk_ids=[str(chunk.id)],
-            token_estimate=100,
-            ontology_status="pending",
-            enrichment_status="pending",
-            kb_merge_status="pending",
-            graph_merge_status="pending",
-            is_retrieval_ready=False,
-            is_study_ready=False,
-            concepts_admitted=0,
-            graph_edges_created=0,
-            ontology_context=None,
-            result_json=None,
-            error_message=None,
-            ontology_completed_at=None,
-            enrichment_completed_at=None,
-            kb_merge_completed_at=None,
-            completed_at=None,
-        )]
+        return [
+            SimpleNamespace(
+                id=uuid4(),
+                resource_id=_resource_id,
+                batch_index=0,
+                status="pending",
+                chunk_index_start=0,
+                chunk_index_end=0,
+                section_headings=["Conduction"],
+                chunk_ids=[str(chunk.id)],
+                token_estimate=100,
+                ontology_status="pending",
+                enrichment_status="pending",
+                kb_merge_status="pending",
+                graph_merge_status="pending",
+                is_retrieval_ready=False,
+                is_study_ready=False,
+                concepts_admitted=0,
+                graph_edges_created=0,
+                ontology_context=None,
+                result_json=None,
+                error_message=None,
+                ontology_completed_at=None,
+                enrichment_completed_at=None,
+                kb_merge_completed_at=None,
+                completed_at=None,
+            )
+        ]
 
     async def _persist_enrichments(_chunks, _enrichments):
         return None
@@ -613,26 +622,36 @@ def test_batched_service_resets_curriculum_state_before_rebuild(monkeypatch):
     async def _upsert_processing_manifest_artifact(**_kwargs):
         return SimpleNamespace(id=uuid4())
 
-    async def _upsert_curriculum_artifact(_resource, _kb, _bundle, source_chunk_ids, related_artifact_ids=None):
+    async def _upsert_curriculum_artifact(
+        _resource, _kb, _bundle, source_chunk_ids, related_artifact_ids=None
+    ):
         return SimpleNamespace(id=uuid4())
 
     async def _save_ontology_data(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr(service, '_get_chunks', _get_chunks)
-    monkeypatch.setattr(service, '_reset_curriculum_state', _reset_curriculum_state)
-    monkeypatch.setattr(service, '_plan_batches', _plan_batches)
-    monkeypatch.setattr(service, '_persist_enrichments', _persist_enrichments)
-    monkeypatch.setattr(service, '_build_bundles', _build_bundles)
-    monkeypatch.setattr(service, '_upsert_processing_manifest_artifact', _upsert_processing_manifest_artifact)
-    monkeypatch.setattr(service, '_upsert_curriculum_artifact', _upsert_curriculum_artifact)
-    monkeypatch.setattr('app.services.batched_curriculum_preparation.save_ontology_data', _save_ontology_data)
+    monkeypatch.setattr(service, "_get_chunks", _get_chunks)
+    monkeypatch.setattr(service, "_reset_curriculum_state", _reset_curriculum_state)
+    monkeypatch.setattr(service, "_plan_batches", _plan_batches)
+    monkeypatch.setattr(service, "_persist_enrichments", _persist_enrichments)
+    monkeypatch.setattr(service, "_build_bundles", _build_bundles)
+    monkeypatch.setattr(
+        service,
+        "_upsert_processing_manifest_artifact",
+        _upsert_processing_manifest_artifact,
+    )
+    monkeypatch.setattr(
+        service, "_upsert_curriculum_artifact", _upsert_curriculum_artifact
+    )
+    monkeypatch.setattr(
+        "app.services.batched_curriculum_preparation.save_ontology_data",
+        _save_ontology_data,
+    )
 
     summary = asyncio.run(service.ensure_curriculum_ready(resource_id))
 
-    assert summary['prepared'] is True
-    assert seen['reset'] == 1
-
+    assert summary["prepared"] is True
+    assert seen["reset"] == 1
 
 
 def test_batched_service_rebuilds_kb_and_graph_each_batch(monkeypatch):
@@ -683,61 +702,97 @@ def test_batched_service_rebuilds_kb_and_graph_each_batch(monkeypatch):
 
     async def _plan_batches(_resource_id, _chunks):
         batch1 = SimpleNamespace(
-            id=uuid4(), resource_id=_resource_id, batch_index=0, status="pending",
-            chunk_index_start=0, chunk_index_end=2, section_headings=["Conduction"],
-            chunk_ids=[str(c.id) for c in _chunks[:3]], token_estimate=300,
-            ontology_status="pending", enrichment_status="pending", kb_merge_status="pending",
-            graph_merge_status="pending", is_retrieval_ready=False, is_study_ready=False,
-            concepts_admitted=0, graph_edges_created=0, ontology_context=None, result_json=None,
-            error_message=None, ontology_completed_at=None, enrichment_completed_at=None,
-            kb_merge_completed_at=None, completed_at=None,
+            id=uuid4(),
+            resource_id=_resource_id,
+            batch_index=0,
+            status="pending",
+            chunk_index_start=0,
+            chunk_index_end=2,
+            section_headings=["Conduction"],
+            chunk_ids=[str(c.id) for c in _chunks[:3]],
+            token_estimate=300,
+            ontology_status="pending",
+            enrichment_status="pending",
+            kb_merge_status="pending",
+            graph_merge_status="pending",
+            is_retrieval_ready=False,
+            is_study_ready=False,
+            concepts_admitted=0,
+            graph_edges_created=0,
+            ontology_context=None,
+            result_json=None,
+            error_message=None,
+            ontology_completed_at=None,
+            enrichment_completed_at=None,
+            kb_merge_completed_at=None,
+            completed_at=None,
         )
         batch2 = SimpleNamespace(
-            id=uuid4(), resource_id=_resource_id, batch_index=1, status="pending",
-            chunk_index_start=3, chunk_index_end=5, section_headings=["Radiation"],
-            chunk_ids=[str(c.id) for c in _chunks[3:]], token_estimate=300,
-            ontology_status="pending", enrichment_status="pending", kb_merge_status="pending",
-            graph_merge_status="pending", is_retrieval_ready=False, is_study_ready=False,
-            concepts_admitted=0, graph_edges_created=0, ontology_context=None, result_json=None,
-            error_message=None, ontology_completed_at=None, enrichment_completed_at=None,
-            kb_merge_completed_at=None, completed_at=None,
+            id=uuid4(),
+            resource_id=_resource_id,
+            batch_index=1,
+            status="pending",
+            chunk_index_start=3,
+            chunk_index_end=5,
+            section_headings=["Radiation"],
+            chunk_ids=[str(c.id) for c in _chunks[3:]],
+            token_estimate=300,
+            ontology_status="pending",
+            enrichment_status="pending",
+            kb_merge_status="pending",
+            graph_merge_status="pending",
+            is_retrieval_ready=False,
+            is_study_ready=False,
+            concepts_admitted=0,
+            graph_edges_created=0,
+            ontology_context=None,
+            result_json=None,
+            error_message=None,
+            ontology_completed_at=None,
+            enrichment_completed_at=None,
+            kb_merge_completed_at=None,
+            completed_at=None,
         )
         return [batch1, batch2]
 
     async def _upsert_processing_manifest_artifact(**_kwargs):
         return SimpleNamespace(id=uuid4())
 
-    async def _upsert_curriculum_artifact(_resource, _kb, _bundle, source_chunk_ids, related_artifact_ids=None):
+    async def _upsert_curriculum_artifact(
+        _resource, _kb, _bundle, source_chunk_ids, related_artifact_ids=None
+    ):
         return SimpleNamespace(id=uuid4())
 
     async def _save_ontology_data(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr(service, '_get_chunks', _get_chunks)
-    monkeypatch.setattr(service, '_persist_enrichments', _persist_enrichments)
-    monkeypatch.setattr(service, '_build_bundles', _build_bundles)
-    monkeypatch.setattr(service, '_plan_batches', _plan_batches)
-    monkeypatch.setattr(service, '_upsert_processing_manifest_artifact', _upsert_processing_manifest_artifact)
-    monkeypatch.setattr(service, '_upsert_curriculum_artifact', _upsert_curriculum_artifact)
-    monkeypatch.setattr('app.services.batched_curriculum_preparation.save_ontology_data', _save_ontology_data)
+    monkeypatch.setattr(service, "_get_chunks", _get_chunks)
+    monkeypatch.setattr(service, "_persist_enrichments", _persist_enrichments)
+    monkeypatch.setattr(service, "_build_bundles", _build_bundles)
+    monkeypatch.setattr(service, "_plan_batches", _plan_batches)
+    monkeypatch.setattr(
+        service,
+        "_upsert_processing_manifest_artifact",
+        _upsert_processing_manifest_artifact,
+    )
+    monkeypatch.setattr(
+        service, "_upsert_curriculum_artifact", _upsert_curriculum_artifact
+    )
+    monkeypatch.setattr(
+        "app.services.batched_curriculum_preparation.save_ontology_data",
+        _save_ontology_data,
+    )
 
     summary = asyncio.run(service.ensure_curriculum_ready(resource_id))
 
-    assert summary['prepared'] is True
-    assert all(call['kwargs'].get('force_rebuild') is True for call in kb_builder.calls)
-    assert all(call['kwargs'].get('force_rebuild') is True for call in graph_builder.calls)
+    assert summary["prepared"] is True
+    assert all(call["kwargs"].get("force_rebuild") is True for call in kb_builder.calls)
+    assert all(
+        call["kwargs"].get("force_rebuild") is True for call in graph_builder.calls
+    )
 
 
 def test_batched_persist_enrichments_updates_child_sub_chunks():
-    resource = SimpleNamespace(
-        id=uuid4(),
-        filename="heat.pdf",
-        capabilities_json={},
-        curriculum_ready_at=None,
-        tutoring_ready_at=None,
-        graph_ready_at=None,
-        processing_profile="core_only",
-    )
     parent_chunk = SimpleNamespace(
         id=uuid4(),
         chunk_index=0,

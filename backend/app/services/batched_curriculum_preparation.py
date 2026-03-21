@@ -17,11 +17,10 @@ import hashlib
 import json
 import logging
 import uuid
-from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Awaitable, Callable, Optional
 
-from sqlalchemy import delete, select, func as sa_func
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chunk import Chunk, ChunkConcept
@@ -131,9 +130,7 @@ class BatchedCurriculumPreparationService:
             batch_progress_end = 10 + int(80 * ((i + 1) / max(total_batches, 1)))
 
             if progress_callback is not None:
-                await progress_callback(
-                    f"batch_{i}_ontology", batch_progress_base
-                )
+                await progress_callback(f"batch_{i}_ontology", batch_progress_base)
 
             try:
                 batch_result = await self._process_single_batch(
@@ -146,9 +143,7 @@ class BatchedCurriculumPreparationService:
                 )
 
                 if batch_result.get("ontology_relations"):
-                    all_ontology_relations.extend(
-                        batch_result["ontology_relations"]
-                    )
+                    all_ontology_relations.extend(batch_result["ontology_relations"])
                 total_concepts_admitted += batch_result.get("concepts_admitted", 0)
                 total_graph_edges += batch_result.get("graph_edges", 0)
 
@@ -178,9 +173,7 @@ class BatchedCurriculumPreparationService:
                 )
 
             except Exception as exc:
-                logger.error(
-                    "Batch %d failed for resource %s: %s", i, resource_id, exc
-                )
+                logger.error("Batch %d failed for resource %s: %s", i, resource_id, exc)
                 batch.status = "failed"
                 batch.error_message = str(exc)[:2000]
                 await self.db.flush()
@@ -232,9 +225,7 @@ class BatchedCurriculumPreparationService:
             "graph_edges": total_graph_edges,
             "topic_bundles": bundle_result.get("topic_bundles_created", 0),
             "total_batches": total_batches,
-            "batches_completed": sum(
-                1 for b in batches if b.status == "completed"
-            ),
+            "batches_completed": sum(1 for b in batches if b.status == "completed"),
             "batches_failed": sum(1 for b in batches if b.status == "failed"),
         }
 
@@ -243,7 +234,9 @@ class BatchedCurriculumPreparationService:
             delete(ResourceBundle).where(ResourceBundle.resource_id == resource_id)
         )
         await self.db.execute(
-            delete(ResourceTopicBundle).where(ResourceTopicBundle.resource_id == resource_id)
+            delete(ResourceTopicBundle).where(
+                ResourceTopicBundle.resource_id == resource_id
+            )
         )
         await self.db.execute(
             delete(ResourceConceptGraph).where(
@@ -289,9 +282,7 @@ class BatchedCurriculumPreparationService:
         """
         # Clear any existing batches for this resource
         await self.db.execute(
-            delete(ProcessingBatch).where(
-                ProcessingBatch.resource_id == resource_id
-            )
+            delete(ProcessingBatch).where(ProcessingBatch.resource_id == resource_id)
         )
         await self.db.flush()
 
@@ -321,9 +312,7 @@ class BatchedCurriculumPreparationService:
         accum_tokens = 0
 
         for group in section_groups:
-            group_tokens = sum(
-                self._estimate_tokens(c.text) for c in group
-            )
+            group_tokens = sum(self._estimate_tokens(c.text) for c in group)
             if (
                 accumulator
                 and accum_tokens + group_tokens > self.batch_token_target
@@ -356,9 +345,7 @@ class BatchedCurriculumPreparationService:
                 chunk_index_end=batch_chunks[-1].chunk_index,
                 section_headings=headings,
                 chunk_ids=[str(c.id) for c in batch_chunks],
-                token_estimate=sum(
-                    self._estimate_tokens(c.text) for c in batch_chunks
-                ),
+                token_estimate=sum(self._estimate_tokens(c.text) for c in batch_chunks),
             )
             self.db.add(batch)
             db_batches.append(batch)
@@ -459,9 +446,7 @@ class BatchedCurriculumPreparationService:
         return {
             "concepts_admitted": kb_result.get("concepts_admitted", 0),
             "graph_edges": graph_result.get("edges_created", 0),
-            "ontology_relations": (
-                ontology.semantic_relations if ontology else []
-            ),
+            "ontology_relations": (ontology.semantic_relations if ontology else []),
             "batch_index": batch.batch_index,
         }
 
@@ -600,9 +585,7 @@ class BatchedCurriculumPreparationService:
     ) -> None:
         chunk_ids = [chunk.id for chunk in chunks]
         await self.db.execute(
-            delete(ChunkConcept).where(
-                ChunkConcept.chunk_id.in_(chunk_ids)
-            )
+            delete(ChunkConcept).where(ChunkConcept.chunk_id.in_(chunk_ids))
         )
         for chunk, enrichment in zip(chunks, enrichments):
             existing = dict(chunk.enrichment_metadata or {})
@@ -637,8 +620,7 @@ class BatchedCurriculumPreparationService:
         )
         sub_chunks = list(sub_chunk_result.scalars().all())
         enrichments_by_chunk_id = {
-            chunk.id: enrichment
-            for chunk, enrichment in zip(chunks, enrichments)
+            chunk.id: enrichment for chunk, enrichment in zip(chunks, enrichments)
         }
         for sub_chunk in sub_chunks:
             enrichment = enrichments_by_chunk_id.get(sub_chunk.parent_chunk_id)

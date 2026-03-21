@@ -7,7 +7,6 @@ from app.config import settings
 from app.schemas.agent_output import (
     PedagogicalAction,
     PolicyOrchestratorOutput,
-    ProgressionDecision,
 )
 
 

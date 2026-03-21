@@ -66,7 +66,9 @@ def _build_turn_citations(
     if isinstance(stored_citations, list) and stored_citations:
         return stored_citations
 
-    retrieved_chunks = turn.retrieved_chunks if isinstance(turn.retrieved_chunks, list) else []
+    retrieved_chunks = (
+        turn.retrieved_chunks if isinstance(turn.retrieved_chunks, list) else []
+    )
     if not retrieved_chunks:
         return []
 
@@ -95,7 +97,9 @@ def _build_turn_citations(
         citations.append(
             {
                 "citation_id": f"cite-{index + 1}",
-                "resource_id": str(chunk.resource_id) if chunk and chunk.resource_id else None,
+                "resource_id": str(chunk.resource_id)
+                if chunk and chunk.resource_id
+                else None,
                 "chunk_id": chunk_id,
                 "sub_chunk_id": item.get("sub_chunk_id"),
                 "page_start": getattr(chunk, "page_start", None),
@@ -108,7 +112,9 @@ def _build_turn_citations(
     return citations
 
 
-def _serialize_turn(turn: TutorTurn, chunk_lookup: dict[str, Chunk] | None = None) -> dict:
+def _serialize_turn(
+    turn: TutorTurn, chunk_lookup: dict[str, Chunk] | None = None
+) -> dict:
     """Serialize TutorTurn into API-friendly payload with evidence fields."""
     policy_output = turn.policy_output if isinstance(turn.policy_output, dict) else {}
     return {
@@ -518,8 +524,14 @@ async def get_turns(
     chunk_lookup: dict[str, Chunk] = {}
     if chunk_ids:
         chunk_rows = (
-            await db.execute(select(Chunk).where(Chunk.id.in_([UUID(cid) for cid in chunk_ids])))
-        ).scalars().all()
+            (
+                await db.execute(
+                    select(Chunk).where(Chunk.id.in_([UUID(cid) for cid in chunk_ids]))
+                )
+            )
+            .scalars()
+            .all()
+        )
         chunk_lookup = {str(chunk.id): chunk for chunk in chunk_rows}
 
     serialized_turns = [_serialize_turn(t, chunk_lookup) for t in turns]
@@ -532,7 +544,9 @@ async def get_turns(
                 plan, session.status == "completed"
             )
     except Exception as exc:
-        logger.warning("Failed to build study map snapshot for session %s: %s", session_id, exc)
+        logger.warning(
+            "Failed to build study map snapshot for session %s: %s", session_id, exc
+        )
 
     if serialized_turns and study_map_snapshot:
         serialized_turns[-1]["study_map_snapshot"] = study_map_snapshot

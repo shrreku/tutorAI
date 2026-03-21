@@ -6,7 +6,6 @@ from app.models.resource import (
     default_resource_capabilities,
     core_ready_capabilities,
     study_ready_capabilities,
-    progressive_ready_capabilities,
 )
 
 

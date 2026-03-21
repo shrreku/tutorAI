@@ -60,7 +60,9 @@ from app.schemas.api import (
 from app.services.tutor_runtime.persistence import clear_transient_runtime_flags
 from app.services.llm.factory import create_llm_provider
 from app.services.embedding.factory import create_embedding_provider
-from app.services.batched_curriculum_preparation import BatchedCurriculumPreparationService
+from app.services.batched_curriculum_preparation import (
+    BatchedCurriculumPreparationService,
+)
 from app.services.ingestion.enricher import ChunkEnricher
 from app.services.ingestion.ontology_extractor import OntologyExtractor
 from app.services.notebook_artifacts import NotebookArtifactService

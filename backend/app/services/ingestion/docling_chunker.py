@@ -153,8 +153,10 @@ class DoclingChunker:
             small_fragment = (
                 buffer_tokens < self.min_tokens or chunk_tokens < self.min_tokens
             )
-            should_merge = compatible_pages and within_capacity and (
-                compatible_heading or small_fragment
+            should_merge = (
+                compatible_pages
+                and within_capacity
+                and (compatible_heading or small_fragment)
             )
 
             if should_merge:
@@ -271,7 +273,9 @@ class DoclingChunker:
         return pieces
 
     def _split_text_spans(self, text: str) -> list[str]:
-        paragraphs = [paragraph.strip() for paragraph in text.split("\n\n") if paragraph.strip()]
+        paragraphs = [
+            paragraph.strip() for paragraph in text.split("\n\n") if paragraph.strip()
+        ]
         if len(paragraphs) > 1:
             return paragraphs
 
@@ -284,7 +288,9 @@ class DoclingChunker:
     def _split_sentences(self, text: str) -> list[str]:
         import re
 
-        return [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
+        return [
+            part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()
+        ]
 
     def _hard_split_text(self, text: str) -> list[str]:
         words = [word for word in text.split() if word]

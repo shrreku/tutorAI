@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 # Event type enum
 # ---------------------------------------------------------------------------
 
+
 class SessionEventType(str, Enum):
     # Session lifecycle
     SESSION_STARTED = "session.started"
@@ -68,8 +69,10 @@ class SessionEventType(str, Enum):
 # Payload shapes
 # ---------------------------------------------------------------------------
 
+
 class SessionBriefPayload(BaseModel):
     """Sent at session start with context summary."""
+
     notebook_id: UUID
     session_id: UUID
     mode: str
@@ -84,6 +87,7 @@ class SessionBriefPayload(BaseModel):
 
 class ObjectiveSnapshot(BaseModel):
     """Snapshot of a learning objective."""
+
     objective_id: str
     title: str
     description: Optional[str] = None
@@ -97,6 +101,7 @@ class ObjectiveSnapshot(BaseModel):
 
 class TutorMessageDeltaPayload(BaseModel):
     """Incremental tutor text chunk for streaming."""
+
     turn_id: str
     delta: str
     content_type: str = "text"  # text | markdown | latex | concept_card | quiz_card
@@ -104,6 +109,7 @@ class TutorMessageDeltaPayload(BaseModel):
 
 class TutorMessageCompletedPayload(BaseModel):
     """Final tutor message with structured metadata."""
+
     turn_id: str
     response: str
     tutor_question: Optional[str] = None
@@ -120,13 +126,17 @@ class TutorMessageCompletedPayload(BaseModel):
 
 class StructuredContentBlock(BaseModel):
     """A block of structured content within a tutor message."""
-    block_type: str  # text | concept_card | quiz_card | checkpoint | latex | diagram | code
+
+    block_type: (
+        str  # text | concept_card | quiz_card | checkpoint | latex | diagram | code
+    )
     content: str = ""
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ObjectiveUpdatedPayload(BaseModel):
     """Objective progress changed."""
+
     objective_id: str
     title: str
     status: str  # pending | active | completed | skipped
@@ -137,6 +147,7 @@ class ObjectiveUpdatedPayload(BaseModel):
 
 class MasteryUpdatedPayload(BaseModel):
     """Concept mastery changed."""
+
     concept_id: str
     previous_score: float = 0.0
     new_score: float = 0.0
@@ -145,6 +156,7 @@ class MasteryUpdatedPayload(BaseModel):
 
 class ArtifactEventPayload(BaseModel):
     """Artifact lifecycle event."""
+
     artifact_id: str
     artifact_type: str  # notes | flashcards | quiz | revision_plan | concept_card
     status: str  # generating | ready | error
@@ -156,6 +168,7 @@ class ArtifactEventPayload(BaseModel):
 
 class CheckpointRequestedPayload(BaseModel):
     """Tutor requests understanding check from student."""
+
     checkpoint_id: str
     checkpoint_type: str = "understanding"  # understanding | recall | application
     question: str
@@ -166,6 +179,7 @@ class CheckpointRequestedPayload(BaseModel):
 
 class CheckpointResponsePayload(BaseModel):
     """Student responded to a checkpoint."""
+
     checkpoint_id: str
     response: str
     is_correct: Optional[bool] = None
@@ -175,6 +189,7 @@ class CheckpointResponsePayload(BaseModel):
 
 class SourceCitationPayload(BaseModel):
     """Source reference attached to tutor content."""
+
     citation_id: str
     resource_id: str
     resource_name: Optional[str] = None
@@ -185,6 +200,7 @@ class SourceCitationPayload(BaseModel):
 
 class WarningPayload(BaseModel):
     """Operational warning surfaced to UI."""
+
     warning_type: str
     message: str
     selected_model_id: Optional[str] = None
@@ -194,6 +210,7 @@ class WarningPayload(BaseModel):
 
 class SessionCompletedPayload(BaseModel):
     """Session completion summary."""
+
     session_id: UUID
     summary_text: Optional[str] = None
     concepts_strong: List[str] = Field(default_factory=list)
@@ -209,8 +226,10 @@ class SessionCompletedPayload(BaseModel):
 # Envelope
 # ---------------------------------------------------------------------------
 
+
 class SessionEvent(BaseModel):
     """Canonical event envelope for the live study workspace."""
+
     event_type: SessionEventType
     timestamp: datetime = Field(default_factory=lambda: datetime.now())
     session_id: UUID
@@ -222,6 +241,7 @@ class SessionEvent(BaseModel):
 # ---------------------------------------------------------------------------
 # Helper to construct events
 # ---------------------------------------------------------------------------
+
 
 def make_event(
     event_type: SessionEventType,

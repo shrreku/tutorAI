@@ -14,7 +14,7 @@ from app.services.ingestion.ingestion_types import ChunkData, token_len
 logger = logging.getLogger(__name__)
 
 # Sentence-ending pattern: period, !, ? followed by whitespace or end
-_SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
 
 @dataclass
@@ -25,7 +25,7 @@ class SubChunkData:
     sub_index: int
     text: str
     char_start: int  # offset in parent chunk text
-    char_end: int    # offset in parent chunk text
+    char_end: int  # offset in parent chunk text
     page_start: Optional[int] = None
     page_end: Optional[int] = None
 
@@ -72,15 +72,17 @@ class SubChunker:
 
             # If parent is already small enough, create a single sub-chunk
             if parent_tokens <= self.max_tokens:
-                all_sub_chunks.append(SubChunkData(
-                    parent_chunk_index=chunk.chunk_index,
-                    sub_index=0,
-                    text=chunk.text,
-                    char_start=0,
-                    char_end=len(chunk.text),
-                    page_start=chunk.page_start,
-                    page_end=chunk.page_end,
-                ))
+                all_sub_chunks.append(
+                    SubChunkData(
+                        parent_chunk_index=chunk.chunk_index,
+                        sub_index=0,
+                        text=chunk.text,
+                        char_start=0,
+                        char_end=len(chunk.text),
+                        page_start=chunk.page_start,
+                        page_end=chunk.page_end,
+                    )
+                )
                 parent_count += 1
                 continue
 
@@ -95,7 +97,8 @@ class SubChunker:
 
         logger.info(
             "[SUB-CHUNKER] %d parent chunks → %d sub-chunks (%.1f avg), %d skipped",
-            parent_count, len(all_sub_chunks),
+            parent_count,
+            len(all_sub_chunks),
             len(all_sub_chunks) / max(1, parent_count),
             skipped,
         )
@@ -121,16 +124,22 @@ class SubChunker:
 
         sub_chunks: list[SubChunkData] = []
         sub_index = 0
-        current_sentences: list[tuple[str, int, int]] = []  # (text, char_start, char_end)
+        current_sentences: list[
+            tuple[str, int, int]
+        ] = []  # (text, char_start, char_end)
         current_tokens = 0
 
         for sent_text, sent_start, sent_end in sentences:
             sent_tokens = token_len(sent_text)
 
             # If adding this sentence exceeds target, flush current buffer
-            if current_sentences and (current_tokens + sent_tokens > self.target_tokens):
+            if current_sentences and (
+                current_tokens + sent_tokens > self.target_tokens
+            ):
                 sub = self._flush_buffer(
-                    chunk, current_sentences, sub_index,
+                    chunk,
+                    current_sentences,
+                    sub_index,
                 )
                 sub_chunks.append(sub)
                 sub_index += 1
@@ -139,7 +148,9 @@ class SubChunker:
                 current_sentences, current_tokens = self._compute_overlap(
                     current_sentences,
                 )
-                while current_sentences and current_tokens + sent_tokens > self.max_tokens:
+                while (
+                    current_sentences and current_tokens + sent_tokens > self.max_tokens
+                ):
                     removed = current_sentences.pop(0)
                     current_tokens -= token_len(removed[0])
 
@@ -183,9 +194,7 @@ class SubChunker:
             if token_len(span_text) <= self.max_tokens:
                 normalized.append((span_text, span_start, span_end))
                 continue
-            normalized.extend(
-                self._split_oversized_span(text, span_start, span_end)
-            )
+            normalized.extend(self._split_oversized_span(text, span_start, span_end))
         return normalized
 
     def _split_oversized_span(
@@ -217,9 +226,7 @@ class SubChunker:
                     )
                     current_start = None
                     current_end = None
-                pieces.extend(
-                    self._hard_split_text(source_text, word_start, word_end)
-                )
+                pieces.extend(self._hard_split_text(source_text, word_start, word_end))
                 continue
             if current_start is None:
                 current_start = word_start
@@ -306,7 +313,12 @@ class SubChunker:
             if not stripped:
                 offset += len(part)
                 # Account for the whitespace that was split on
-                while offset < len(text) and text[offset:offset+1] in (' ', '\n', '\t', '\r'):
+                while offset < len(text) and text[offset : offset + 1] in (
+                    " ",
+                    "\n",
+                    "\t",
+                    "\r",
+                ):
                     offset += 1
                 continue
 
@@ -318,7 +330,12 @@ class SubChunker:
             results.append((stripped, start, end))
             offset = end
             # Skip past whitespace
-            while offset < len(text) and text[offset:offset+1] in (' ', '\n', '\t', '\r'):
+            while offset < len(text) and text[offset : offset + 1] in (
+                " ",
+                "\n",
+                "\t",
+                "\r",
+            ):
                 offset += 1
 
         return results

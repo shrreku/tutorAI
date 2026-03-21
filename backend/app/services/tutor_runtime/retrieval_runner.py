@@ -208,7 +208,9 @@ async def retrieve_knowledge(
             "resource_ids": notebook_resource_ids or [],
         },
     )
-    scope_resource_ids = resolved_scope.get("resource_ids") or [str(session.resource_id)]
+    scope_resource_ids = resolved_scope.get("resource_ids") or [
+        str(session.resource_id)
+    ]
     if notebook_id and notebook_resource_ids:
         session_resource_id = str(session.resource_id)
         if session_resource_id not in set(notebook_resource_ids):

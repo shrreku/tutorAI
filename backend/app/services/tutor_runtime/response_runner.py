@@ -52,7 +52,11 @@ def _should_offer_learn_session_recommendation(
     if not isinstance(retrieval_directives, dict):
         retrieval_directives = {}
 
-    scope = (current_obj.get("concept_scope") or {}) if isinstance(current_obj, dict) else {}
+    scope = (
+        (current_obj.get("concept_scope") or {})
+        if isinstance(current_obj, dict)
+        else {}
+    )
     objective_concepts = {
         str(concept).strip()
         for concept in (
@@ -65,7 +69,9 @@ def _should_offer_learn_session_recommendation(
     adjacent_concepts = [
         concept for concept in target_concepts if concept not in objective_concepts
     ]
-    ad_hoc_step_type = str(getattr(policy_output, "ad_hoc_step_type", "") or "").strip().lower()
+    ad_hoc_step_type = (
+        str(getattr(policy_output, "ad_hoc_step_type", "") or "").strip().lower()
+    )
     retrieval_focus = str(retrieval_directives.get("focus") or "").strip().lower()
     prerequisite_signal = (
         retrieval_focus == "prereq"
@@ -238,7 +244,9 @@ async def generate_response(
                         reason="doubt_question_is_prerequisite_or_adjacent",
                         details={
                             "objective_id": current_obj.get("objective_id"),
-                            "target_concepts": getattr(policy_output, "target_concepts", None)
+                            "target_concepts": getattr(
+                                policy_output, "target_concepts", None
+                            )
                             or [],
                         },
                     ),

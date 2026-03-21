@@ -383,11 +383,20 @@ class TurnPipeline:
 
         plan["objective_queue"] = objective_queue + new_objectives
         self._seed_objective_progress_entries(plan, new_objectives)
-        planner_state["extension_count"] = int(planner_state.get("extension_count", 0) or 0) + 1
+        planner_state["extension_count"] = (
+            int(planner_state.get("extension_count", 0) or 0) + 1
+        )
         planner_state["remaining_concepts_estimate"] = max(
             0,
             int(planner_state.get("remaining_concepts_estimate", 0) or 0)
-            - len(self._collect_completed_concepts({"objective_queue": new_objectives, "current_objective_index": len(new_objectives)})),
+            - len(
+                self._collect_completed_concepts(
+                    {
+                        "objective_queue": new_objectives,
+                        "current_objective_index": len(new_objectives),
+                    }
+                )
+            ),
         )
         plan_horizon = dict(plan.get("plan_horizon") or {})
         plan_horizon["version"] = int(plan_horizon.get("version", 1) or 1)
@@ -478,22 +487,26 @@ class TurnPipeline:
                     s_status = "completed"
                 else:
                     s_status = "upcoming"
-                steps_snapshot.append({
-                    "type": step.get("type", "explain"),
-                    "goal": step.get("goal", ""),
-                    "status": s_status,
-                })
+                steps_snapshot.append(
+                    {
+                        "type": step.get("type", "explain"),
+                        "goal": step.get("goal", ""),
+                        "status": s_status,
+                    }
+                )
 
-            objectives_snapshot.append({
-                "objective_id": obj_id,
-                "title": obj.get("title", ""),
-                "status": status,
-                "primary_concepts": scope.get("primary", []),
-                "support_concepts": scope.get("support", []),
-                "prereq_concepts": scope.get("prereq", []),
-                "steps": steps_snapshot,
-                "progress": progress,
-            })
+            objectives_snapshot.append(
+                {
+                    "objective_id": obj_id,
+                    "title": obj.get("title", ""),
+                    "status": status,
+                    "primary_concepts": scope.get("primary", []),
+                    "support_concepts": scope.get("support", []),
+                    "prereq_concepts": scope.get("prereq", []),
+                    "steps": steps_snapshot,
+                    "progress": progress,
+                }
+            )
 
         return {
             "current_objective_index": current_obj_idx,
@@ -514,7 +527,7 @@ class TurnPipeline:
         citations = []
         for i, chunk in enumerate(retrieved_chunks):
             citation = {
-                "citation_id": f"cite-{i+1}",
+                "citation_id": f"cite-{i + 1}",
                 "chunk_id": str(chunk.chunk_id),
                 "page_start": chunk.page_start,
                 "page_end": chunk.page_end,
@@ -597,7 +610,9 @@ class TurnPipeline:
             retrieval_contract=retrieval_contract,
             response_contract=response_contract,
             study_map_delta=study_map_delta,
-            study_map_snapshot=TurnPipeline._build_study_map_snapshot(plan, session_complete),
+            study_map_snapshot=TurnPipeline._build_study_map_snapshot(
+                plan, session_complete
+            ),
             citations=TurnPipeline._build_citations(retrieved_chunks),
             session_summary=session_summary,
         )

@@ -81,7 +81,9 @@ def init_otel(app: "FastAPI") -> None:
 
         trace.set_tracer_provider(provider)
         FastAPIInstrumentor.instrument_app(app)
-        logger.info("OpenTelemetry initialised (service=%s)", settings.OTEL_SERVICE_NAME)
+        logger.info(
+            "OpenTelemetry initialised (service=%s)", settings.OTEL_SERVICE_NAME
+        )
     except ImportError:
         logger.warning("opentelemetry packages not installed – skipping OTEL init")
     except Exception:

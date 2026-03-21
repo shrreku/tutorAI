@@ -248,7 +248,9 @@ class IngestionPipeline:
             return None
         sections_payload = payload.get("sections")
         chunks_payload = payload.get("chunks")
-        if not isinstance(sections_payload, list) or not isinstance(chunks_payload, list):
+        if not isinstance(sections_payload, list) or not isinstance(
+            chunks_payload, list
+        ):
             return None
         sections = [
             self._deserialize_section(item)
@@ -270,7 +272,9 @@ class IngestionPipeline:
         )
 
     async def _clear_partial_core_state(self, resource_id: uuid.UUID) -> None:
-        await self.db.execute(delete(SubChunk).where(SubChunk.resource_id == resource_id))
+        await self.db.execute(
+            delete(SubChunk).where(SubChunk.resource_id == resource_id)
+        )
         await self.db.execute(
             delete(ChunkConcept).where(
                 ChunkConcept.chunk_id.in_(
@@ -342,7 +346,9 @@ class IngestionPipeline:
                     resource_id,
                 )
                 await self._clear_partial_core_state(resource_id)
-                await self._update_job_stage(job_id, IngestionStage.EMBED, 55, metrics=metrics)
+                await self._update_job_stage(
+                    job_id, IngestionStage.EMBED, 55, metrics=metrics
+                )
             else:
                 # Stage 1: Parse PDF
                 logger.info(f"Stage 1: Parsing PDF for resource {resource_id}")
@@ -371,9 +377,7 @@ class IngestionPipeline:
                 metrics["stages"]["chunk"] = {
                     "chunks": len(chunks),
                     "strategy": chunking_result.strategy,
-                    "embedding_strategy": chunking_metadata.get(
-                        "embedding_strategy"
-                    ),
+                    "embedding_strategy": chunking_metadata.get("embedding_strategy"),
                 }
                 metrics["document"] = document_metrics
                 metrics["recovery"] = {
@@ -721,9 +725,7 @@ class IngestionPipeline:
 
         chunk_id_map: dict[int, uuid.UUID] = {}
 
-        for i, (chunk, enrichment) in enumerate(
-            zip(chunks, enrichments)
-        ):
+        for i, (chunk, enrichment) in enumerate(zip(chunks, enrichments)):
             enrichment_payload = dict(enrichment)
             enrichment_payload["docling"] = {
                 "chunk_provenance": chunk.metadata,
@@ -793,25 +795,28 @@ class IngestionPipeline:
                 )
                 continue
 
-            self.db.add(SubChunk(
-                id=uuid.uuid4(),
-                parent_chunk_id=parent_chunk_id,
-                resource_id=resource_id,
-                sub_index=sc.sub_index,
-                text=sc.text,
-                char_start=sc.char_start,
-                char_end=sc.char_end,
-                page_start=sc.page_start,
-                page_end=sc.page_end,
-                enrichment_metadata=enrichment_payload,
-                embedding=embedding,
-                embedding_model_id=self.embedding.model_id,
-            ))
+            self.db.add(
+                SubChunk(
+                    id=uuid.uuid4(),
+                    parent_chunk_id=parent_chunk_id,
+                    resource_id=resource_id,
+                    sub_index=sc.sub_index,
+                    text=sc.text,
+                    char_start=sc.char_start,
+                    char_end=sc.char_end,
+                    page_start=sc.page_start,
+                    page_end=sc.page_end,
+                    enrichment_metadata=enrichment_payload,
+                    embedding=embedding,
+                    embedding_model_id=self.embedding.model_id,
+                )
+            )
 
         await self.db.flush()
         logger.info(
             "[INGESTION] Saved %d sub-chunks for resource %s",
-            len(sub_chunks), resource_id,
+            len(sub_chunks),
+            resource_id,
         )
 
     async def _persist_core_artifacts(

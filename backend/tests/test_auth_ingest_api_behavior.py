@@ -440,7 +440,7 @@ def test_get_ingestion_status_returns_billing_state(monkeypatch):
                         "status": "released",
                         "release_reason": "worker_failure",
                         "file_size_bytes": 2048,
-                    }
+                    },
                 },
             )
 

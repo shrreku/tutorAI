@@ -109,10 +109,14 @@ def test_ingestion_pipeline_run_completes_with_fixture_resource(monkeypatch):
         pipeline_module.IngestionPipeline, "_save_sub_chunks", _save_sub_chunks
     )
     monkeypatch.setattr(
-        pipeline_module.IngestionPipeline, "_load_chunk_checkpoint", _load_chunk_checkpoint
+        pipeline_module.IngestionPipeline,
+        "_load_chunk_checkpoint",
+        _load_chunk_checkpoint,
     )
     monkeypatch.setattr(
-        pipeline_module.IngestionPipeline, "_upsert_chunk_checkpoint", _upsert_chunk_checkpoint
+        pipeline_module.IngestionPipeline,
+        "_upsert_chunk_checkpoint",
+        _upsert_chunk_checkpoint,
     )
     monkeypatch.setattr(
         pipeline_module.IngestionPipeline,

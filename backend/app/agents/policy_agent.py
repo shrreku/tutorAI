@@ -408,7 +408,9 @@ Based on all the above, decide the pedagogical_action and progression_decision f
                     planner_guidance=(
                         "Offer exactly two options: answer the pending checkpoint now, or skip ahead with a note that mastery may be incomplete. Keep it concise."
                     ),
-                    target_concepts=state.focus_concepts[:3] if state.focus_concepts else None,
+                    target_concepts=state.focus_concepts[:3]
+                    if state.focus_concepts
+                    else None,
                 )
 
         if session_mode == "doubt":
