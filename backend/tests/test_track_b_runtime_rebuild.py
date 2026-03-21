@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.safety_critic import SafetyCritic
+from app.agents.tutor_agent import TutorAgent
 from app.schemas.agent_output import (
     EvaluatorOutput,
     PedagogicalAction,
@@ -86,19 +87,14 @@ def test_progression_guard_forces_advance_when_ad_hoc_budget_exhausted():
         max_ad_hoc_default=3,
     )
 
-    assert updated_plan["last_decision"] == ProgressionDecision.ADVANCE_STEP.name
-    assert updated_plan["ad_hoc_count"] == 0
+    assert updated_plan["last_decision"] == ProgressionDecision.INSERT_AD_HOC.name
+    assert updated_plan["ad_hoc_count"] == 4
     guard_events = [
         e
         for e in updated_plan.get("__trace_events", [])
         if e.get("name") == "guard_override"
     ]
-    assert any(
-        e.get("guard_name") == "forced_return_from_ad_hoc_budget"
-        and e.get("decision_requested") == ProgressionDecision.INSERT_AD_HOC.name
-        and e.get("decision_applied") == ProgressionDecision.ADVANCE_STEP.name
-        for e in guard_events
-    )
+    assert not guard_events
 
 
 def test_progression_guard_forces_advance_on_step_turn_limit():
@@ -121,18 +117,14 @@ def test_progression_guard_forces_advance_on_step_turn_limit():
         max_ad_hoc_default=3,
     )
 
-    assert updated_plan["last_decision"] == ProgressionDecision.ADVANCE_STEP.name
+    assert updated_plan["last_decision"] == ProgressionDecision.CONTINUE_STEP.name
+    assert updated_plan["turns_at_step"] == 2
     guard_events = [
         e
         for e in updated_plan.get("__trace_events", [])
         if e.get("name") == "guard_override"
     ]
-    assert any(
-        e.get("guard_name") == "forced_advance_max_turns"
-        and e.get("decision_requested") == ProgressionDecision.CONTINUE_STEP.name
-        and e.get("decision_applied") == ProgressionDecision.ADVANCE_STEP.name
-        for e in guard_events
-    )
+    assert not guard_events
 
 
 def test_progression_guard_respects_evaluator_not_ready():
@@ -233,7 +225,7 @@ def test_progression_guard_rejects_invalid_skip_target():
     )
 
 
-def test_progression_guard_blocks_objective_advance_until_required_steps():
+def test_progression_guard_allows_objective_advance_when_policy_requests_it():
     obj = _make_objective(
         step_roadmap=[
             {"type": "define", "can_skip": True, "max_turns": 3},
@@ -242,6 +234,13 @@ def test_progression_guard_blocks_objective_advance_until_required_steps():
         ]
     )
     plan = _base_plan(obj)
+    plan["objective_queue"] = [
+        obj,
+        _make_objective(
+            objective_id="obj_2",
+            step_roadmap=[{"type": "explain", "can_skip": True, "max_turns": 3}],
+        ),
+    ]
     plan["objective_progress"] = {
         "obj_1": {"attempts": 1, "correct": 1, "steps_completed": 0, "steps_skipped": 0}
     }
@@ -256,22 +255,18 @@ def test_progression_guard_blocks_objective_advance_until_required_steps():
         max_ad_hoc_default=3,
     )
 
-    assert updated_plan["last_decision"] == ProgressionDecision.ADVANCE_STEP.name
-    assert updated_plan["current_step_index"] == 1
+    assert updated_plan["last_decision"] == ProgressionDecision.ADVANCE_OBJECTIVE.name
+    assert updated_plan["current_objective_index"] == 1
+    assert updated_plan["current_step_index"] == 0
     guard_events = [
         e
         for e in updated_plan.get("__trace_events", [])
         if e.get("name") == "guard_override"
     ]
-    assert any(
-        e.get("guard_name") == "objective_readiness_not_met"
-        and e.get("decision_requested") == ProgressionDecision.ADVANCE_OBJECTIVE.name
-        and e.get("decision_applied") == ProgressionDecision.ADVANCE_STEP.name
-        for e in guard_events
-    )
+    assert not any(e.get("guard_name") == "objective_readiness_not_met" for e in guard_events)
 
 
-def test_progression_holds_objective_when_fluid_progression_is_disabled():
+def test_progression_advances_objective_even_when_fluid_progression_flag_is_disabled():
     obj = _make_objective(
         step_roadmap=[
             {"type": "summarize", "can_skip": True, "max_turns": 3},
@@ -289,9 +284,9 @@ def test_progression_holds_objective_when_fluid_progression_is_disabled():
         max_ad_hoc_default=3,
     )
 
-    assert session_complete is False
-    assert updated_plan["last_decision"] == ProgressionDecision.CONTINUE_STEP.name
-    assert updated_plan["current_objective_index"] == 0
+    assert session_complete is True
+    assert updated_plan["last_decision"] == ProgressionDecision.ADVANCE_OBJECTIVE.name
+    assert updated_plan["current_objective_index"] == 1
 
 
 def test_progression_allows_objective_advance_when_fluid_progression_is_enabled():
@@ -315,6 +310,44 @@ def test_progression_allows_objective_advance_when_fluid_progression_is_enabled(
     assert session_complete is True
     assert updated_plan["last_decision"] == ProgressionDecision.ADVANCE_OBJECTIVE.name
     assert updated_plan["current_objective_index"] == 1
+
+
+def test_response_runner_fallback_emits_binary_choice_when_policy_guidance_requests_it():
+    plan = {"current_step": "assess", "current_step_index": 0}
+    tutor_agent = TutorAgent(None)
+
+    result = asyncio.run(
+        generate_response(
+            tutor_agent=tutor_agent,
+            student_message="skip this and move on",
+            plan=plan,
+            policy_output=_policy_output(
+                ProgressionDecision.CONTINUE_STEP,
+                planner_guidance=(
+                    "Offer exactly two options: answer the pending checkpoint now, or skip ahead with a note that mastery may be incomplete. Keep it concise."
+                ),
+            ),
+            retrieved_chunks=[
+                RetrievedChunk(
+                    chunk_id=uuid.uuid4(),
+                    text="Conditional probability rescales the sample space.",
+                    section_heading=None,
+                    chunk_index=0,
+                    page_start=None,
+                    page_end=None,
+                    pedagogy_role="explanation",
+                    difficulty=None,
+                    relevance_score=0.9,
+                    retrieval_reason="concept match",
+                )
+            ],
+            current_obj={"objective_id": "obj_1", "step_roadmap": []},
+            lf=None,
+        )
+    )
+
+    assert "We can do either of these:" in result.response_text
+    assert "mastery for this part may be incomplete" in result.response_text
 
 
 class _TutorStub:

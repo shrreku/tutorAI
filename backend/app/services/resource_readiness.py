@@ -6,6 +6,7 @@ from app.models.resource import (
     default_resource_capabilities,
     core_ready_capabilities,
     study_ready_capabilities,
+    progressive_ready_capabilities,
 )
 
 
@@ -114,4 +115,32 @@ def is_resource_study_ready(resource: Any, *, latest_job: Any | None = None) -> 
         or capabilities.get("can_start_learn_session")
         or capabilities.get("can_start_practice_session")
         or capabilities.get("can_start_revision_session")
+        or capabilities.get("progressive_study_ready")
+        or capabilities.get("has_partial_curriculum")
     )
+
+
+def is_resource_progressively_ready(
+    resource: Any, *, latest_job: Any | None = None
+) -> bool:
+    """True when at least one batch is study-ready (partial curriculum available)."""
+    capabilities = normalized_resource_capabilities(resource, latest_job=latest_job)
+    return bool(
+        capabilities.get("progressive_study_ready")
+        or capabilities.get("has_partial_curriculum")
+        or int(capabilities.get("ready_batch_count", 0)) > 0
+    )
+
+
+def get_batch_progress(resource: Any) -> dict:
+    """Return batch-level progress summary from capabilities."""
+    capabilities = getattr(resource, "capabilities_json", None) or {}
+    return {
+        "ready_batch_count": int(capabilities.get("ready_batch_count", 0)),
+        "total_batch_count": int(capabilities.get("total_batch_count", 0)),
+        "progressive_study_ready": bool(capabilities.get("progressive_study_ready")),
+        "has_partial_curriculum": bool(capabilities.get("has_partial_curriculum")),
+        "supports_incremental_curriculum": bool(
+            capabilities.get("supports_incremental_curriculum")
+        ),
+    }

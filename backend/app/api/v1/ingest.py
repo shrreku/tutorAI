@@ -41,7 +41,7 @@ from app.services.async_byok_escrow import (
     async_byok_feature_available,
 )
 from app.services.credits.meter import CreditMeter
-from app.services.curriculum_preparation import CurriculumPreparationService
+from app.services.batched_curriculum_preparation import BatchedCurriculumPreparationService
 from app.services.embedding.factory import create_embedding_provider
 from app.services.ingestion.enricher import ChunkEnricher
 from app.services.ingestion.ontology_extractor import OntologyExtractor
@@ -303,19 +303,36 @@ def _job_status_payload(job: IngestionJob) -> IngestionStatusResponse:
     capability_progress = (
         metrics.get("capability_progress") if isinstance(metrics, dict) else None
     )
+    recovery = metrics.get("recovery") if isinstance(metrics, dict) else None
+    resumable = bool(recovery.get("resumable")) if isinstance(recovery, dict) else False
+    resume_from_stage = (
+        recovery.get("resume_from_stage") if isinstance(recovery, dict) else None
+    )
+    resume_hint = None
+    if resumable:
+        if resume_from_stage:
+            resume_hint = (
+                f"Retry will continue from the last saved {resume_from_stage} checkpoint."
+            )
+        else:
+            resume_hint = "Retry will continue from the last saved checkpoint."
     return IngestionStatusResponse(
         job_id=job.id,
         resource_id=job.resource_id,
         status=job.status,
-        job_kind=job.job_kind,
-        requested_capability=job.requested_capability,
-        scope_type=job.scope_type,
-        scope_key=job.scope_key,
-        current_stage=job.current_stage,
-        progress_percent=job.progress_percent,
-        error_message=job.error_message,
-        started_at=job.started_at,
-        completed_at=job.completed_at,
+        job_kind=getattr(job, "job_kind", "core_ingest"),
+        requested_capability=getattr(job, "requested_capability", None),
+        scope_type=getattr(job, "scope_type", None),
+        scope_key=getattr(job, "scope_key", None),
+        current_stage=getattr(job, "current_stage", None),
+        progress_percent=getattr(job, "progress_percent", 0),
+        error_message=getattr(job, "error_message", None),
+        error_stage=getattr(job, "error_stage", None),
+        resumable=resumable,
+        resume_hint=resume_hint,
+        last_completed_stage=resume_from_stage,
+        started_at=getattr(job, "started_at", None),
+        completed_at=getattr(job, "completed_at", None),
         document_metrics=document if isinstance(document, dict) else None,
         capability_progress=capability_progress
         if isinstance(capability_progress, dict)
@@ -440,7 +457,7 @@ async def _continue_background_curriculum_preparation(
         byok_api_key=byok_api_key,
         byok_api_base_url=byok_api_base_url,
     )
-    service = CurriculumPreparationService(
+    service = BatchedCurriculumPreparationService(
         db,
         ontology_extractor=OntologyExtractor(
             ontology_llm,
@@ -522,6 +539,9 @@ async def _continue_background_curriculum_preparation(
             "search_ready": True,
             "doubt_ready": True,
             "learn_ready": True,
+            "ready_batch_count": summary.get("batches_completed", 0),
+            "total_batch_count": summary.get("total_batches", 0),
+            "progressive_study_ready": summary.get("batches_completed", 0) > 0,
         },
         "curriculum_billing": {
             "estimated_credits_low": int(

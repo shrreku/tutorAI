@@ -1,0 +1,1644 @@
+{
+  "user_external_id": "admin+studyagent@example.com",
+  "resource_ids": [
+    "3ed546ac-539c-473e-b1bd-60a961656df9",
+    "a5bc0956-66ab-42cd-90b7-35f4173817e5"
+  ],
+  "notebook_create_status": 201,
+  "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+  "notebook_title": "Cascade API Session Audit b5c9da7d",
+  "attachments": [
+    {
+      "resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+      "status": 201
+    },
+    {
+      "resource_id": "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+      "status": 201
+    }
+  ],
+  "sessions": [
+    {
+      "mode": "learn",
+      "create_status": 201,
+      "session_id": "b099d417-0641-45ca-bc34-8b46b2abcb3e",
+      "active_topic": "Probability Theory Fundamentals",
+      "total_objectives": 3,
+      "session_overview": "Welcome! In this session we will cover 3 learning objective(s): 1) Define and Verify Sigma-Fields and Event Spaces; 2) Construct Probability Spaces and Apply Axioms; 3) Master Conditional Probability and Independence. Let's get started!",
+      "first_objective_title": "Define and Verify Sigma-Fields and Event Spaces",
+      "first_objective_concepts": [
+        "sigma_field",
+        "event_space"
+      ],
+      "preparation_summary": {
+        "scope_type": "notebook",
+        "scope_resource_ids": [
+          "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+          "3ed546ac-539c-473e-b1bd-60a961656df9"
+        ],
+        "required_capabilities": [
+          "can_answer_doubts",
+          "has_resource_profile"
+        ],
+        "artifacts_created": 0,
+        "topic_artifacts_created": 0,
+        "topic_scope_keys": [
+          "learn:formula-not-decoded-random-function",
+          "learn:probability-formula-not-decoded-let"
+        ],
+        "blocking_resources": [],
+        "session_brief_artifact_id": "5af058fe-52dc-4f21-aee3-28f79a71af31",
+        "resource_profiles_ready": true,
+        "curriculum_preparation": {
+          "prepared": false,
+          "reason": "already_ready"
+        }
+      },
+      "turns": [
+        {
+          "turn_index": 1,
+          "status": 200,
+          "message": "Start teaching me the first important concept from these MTL106 notes. Keep it concrete and cite the source.",
+          "current_step": "define",
+          "step_transition": "step:0\u21921",
+          "objective_title": "Define and Verify Sigma-Fields and Event Spaces",
+          "focus_concepts": [
+            "sigma_field",
+            "event_space",
+            "class_of_sets",
+            "measurable_space"
+          ],
+          "awaiting_evaluation": true,
+          "response_excerpt": "In the MTL106 notes (Lecture 2), we transition from a simple \"counting\" approach to the **Axiomatic Approach of Probability**. \n\nWhile it\u2019s intuitive to think we can just assign a probability to every possible subset of ",
+          "tutor_question": "Does it make sense why we might need to be picky about which sets we call \"events\" when dealing with infinite possibilities?",
+          "citations_count": 10,
+          "retrieval_contract": {
+            "query": "motivation for sigma-fields in probability theory and MTL106 course notes context\nMotivate the need for sigma-fields using a concrete example like the real line or infinite coin tosses.\nProvide a concrete motivation for sigma-fields. Explain that we can't always assign probability to every subset (like on the real line) and need a collection of 'measurable' sets. Mention the MTL106 context.\nStep goal: Explain why we need a formal structure for events beyond simple sets.\nTarget concepts: sigma_field\nPedagogical focus: motivate\nStudent question: Start teaching me the first important concept from these MTL106 notes. Keep it concrete and cite the source.",
+            "target_concepts": [
+              "sigma_field"
+            ],
+            "pedagogy_roles": [
+              "motivation",
+              "intuition",
+              "definition",
+              "example",
+              "explanation"
+            ],
+            "scope_type": "notebook",
+            "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+            "resource_ids": [
+              "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+              "3ed546ac-539c-473e-b1bd-60a961656df9"
+            ],
+            "objective_id": "obj_01_sigma_field_structure",
+            "objective_title": "Define and Verify Sigma-Fields and Event Spaces",
+            "directives": {
+              "query": "motivation for sigma-fields in probability theory and MTL106 course notes context",
+              "focus": "primary",
+              "expand_prereqs": true
+            },
+            "retrieved_chunk_ids": [
+              "0fb489d6-1b91-461c-8a34-24ff6e45bafc",
+              "3749b4b4-4b90-4647-8d18-d50bdccf5afc",
+              "23e13c95-d63b-4225-a899-a9150b6d5010",
+              "bc9db254-5338-468d-bd30-b41cb764bcb9",
+              "df6ac344-0570-403a-85e6-66816fdc7104",
+              "3a3da613-3d73-4560-bdb9-0af77631ff35",
+              "db2067ad-66cb-4afb-9ab2-aaca671251b9",
+              "6281d37a-da99-48b4-8e41-720181e93398",
+              "902491d9-4477-4e56-ad17-f283239904a8",
+              "515ea671-7371-434c-b368-ffbdebe02ccf"
+            ]
+          },
+          "progression_contract": {
+            "decision": "CONTINUE_STEP",
+            "skip_target_index": null,
+            "next_objective_index": null,
+            "ad_hoc_step_type": null,
+            "student_intent": "engaged",
+            "replan_required": false,
+            "replan_reason": null,
+            "scope_shift_request": {},
+            "current_scope": {
+              "scope_type": "notebook",
+              "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+              "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+              "resource_ids": [
+                "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                "3ed546ac-539c-473e-b1bd-60a961656df9"
+              ],
+              "topic": "Probability Theory Fundamentals",
+              "selected_topics": []
+            },
+            "requested_decision": "CONTINUE_STEP",
+            "applied_decision": "CONTINUE_STEP",
+            "accepted": true,
+            "transition": "step:0\u21921",
+            "guard_labels": [
+              "forced_advance_max_turns"
+            ],
+            "rejection_reason": null,
+            "session_complete": false,
+            "last_replan_request": {},
+            "last_scope_shift": {}
+          },
+          "response_contract": {
+            "pedagogical_action": "motivate",
+            "recommended_strategy": "direct",
+            "planner_guidance": "Provide a concrete motivation for sigma-fields. Explain that we can't always assign probability to every subset (like on the real line) and need a collection of 'measurable' sets. Mention the MTL106 context.",
+            "turn_plan": {
+              "goal": "Motivate the need for sigma-fields using a concrete example like the real line or infinite coin tosses.",
+              "interaction_type": "explain_concept",
+              "expected_student_action": "reflect",
+              "tutor_question": null,
+              "constraints": [
+                "Cite MTL106 notes",
+                "Keep it concrete",
+                "Explain why simple power sets are insufficient for continuous spaces"
+              ]
+            },
+            "tutor_question": null,
+            "evidence_chunk_ids": [
+              "0fb489d6-1b91-461c-8a34-24ff6e45bafc",
+              "3749b4b4-4b90-4647-8d18-d50bdccf5afc",
+              "23e13c95-d63b-4225-a899-a9150b6d5010",
+              "bc9db254-5338-468d-bd30-b41cb764bcb9",
+              "df6ac344-0570-403a-85e6-66816fdc7104",
+              "3a3da613-3d73-4560-bdb9-0af77631ff35",
+              "db2067ad-66cb-4afb-9ab2-aaca671251b9",
+              "6281d37a-da99-48b4-8e41-720181e93398",
+              "902491d9-4477-4e56-ad17-f283239904a8",
+              "515ea671-7371-434c-b368-ffbdebe02ccf"
+            ]
+          },
+          "study_map_delta": {
+            "transition": "step:0\u21921",
+            "from": {
+              "objective_index": 0,
+              "step_index": 0,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Theory Fundamentals",
+                "selected_topics": []
+              }
+            },
+            "to": {
+              "objective_index": 0,
+              "step_index": 1,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Theory Fundamentals",
+                "selected_topics": []
+              }
+            },
+            "changed": {
+              "objective": false,
+              "step": true,
+              "scope": false
+            },
+            "transition_contract": {
+              "decision": "CONTINUE_STEP",
+              "skip_target_index": null,
+              "next_objective_index": null,
+              "ad_hoc_step_type": null,
+              "student_intent": "engaged",
+              "replan_required": false,
+              "replan_reason": null,
+              "scope_shift_request": {},
+              "current_scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Theory Fundamentals",
+                "selected_topics": []
+              },
+              "requested_decision": "CONTINUE_STEP",
+              "applied_decision": "CONTINUE_STEP",
+              "accepted": true,
+              "transition": "step:0\u21921",
+              "guard_labels": [
+                "forced_advance_max_turns"
+              ],
+              "rejection_reason": null,
+              "session_complete": false,
+              "last_replan_request": {},
+              "last_scope_shift": {}
+            }
+          }
+        },
+        {
+          "turn_index": 2,
+          "status": 200,
+          "message": "I think the key idea is that a vector space needs closure under addition and scalar multiplication. What part would you teach next?",
+          "current_step": "define",
+          "step_transition": "step:1 (ad_hoc #1/4, stay)",
+          "objective_title": "Define and Verify Sigma-Fields and Event Spaces",
+          "focus_concepts": [
+            "sigma_field",
+            "event_space",
+            "class_of_sets",
+            "measurable_space"
+          ],
+          "awaiting_evaluation": true,
+          "response_excerpt": "I see where you're coming from! You're thinking about \"closure,\" which is a central idea in many areas of math. However, a **sigma-field** (also called a sigma-algebra) is built on set theory rather than linear algebra.\n",
+          "tutor_question": "To be considered a formal sigma-field, a collection of sets must satisfy three specific axioms. Based on your notes or what you've seen so far, do you recall what those three rules are?",
+          "citations_count": 7,
+          "retrieval_contract": {
+            "query": "axioms of a sigma-field vs vector space properties\nCorrect the confusion between vector spaces and sigma-fields by highlighting set-theoretic closure.\nGently correct the student: explain that while both involve 'closure', sigma-fields deal with sets and operations like complements and countable unions. Then, ask them to recall the three specific axioms for a sigma-field from the notes.\nStep goal: State the three axioms of a sigma-field.\nTarget concepts: sigma_field\nPedagogical focus: correct\nStudent question: I think the key idea is that a vector space needs closure under addition and scalar multiplication. What part would you teach next?",
+            "target_concepts": [
+              "sigma_field"
+            ],
+            "pedagogy_roles": [
+              "definition",
+              "theory",
+              "explanation"
+            ],
+            "scope_type": "notebook",
+            "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+            "resource_ids": [
+              "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+              "3ed546ac-539c-473e-b1bd-60a961656df9"
+            ],
+            "objective_id": "obj_01_sigma_field_structure",
+            "objective_title": "Define and Verify Sigma-Fields and Event Spaces",
+            "directives": {
+              "query": "axioms of a sigma-field vs vector space properties",
+              "focus": "misconception",
+              "expand_prereqs": true
+            },
+            "retrieved_chunk_ids": [
+              "5b873b77-a86d-4197-9db9-1dc747c368b1",
+              "4d972fc8-ed96-4a77-96ea-00321612574b",
+              "5f6bd8f4-16cf-41f2-aba1-05e8b4df23f3",
+              "01141c3e-d04a-48cc-bad8-dca026182702",
+              "891daef4-934a-4588-842a-887ec34220b3",
+              "5f51f236-0616-46c4-ab29-86a5a38a6bd4",
+              "fb56e4b6-e7a2-4fe4-88bc-74b69a5caf36"
+            ]
+          },
+          "progression_contract": {
+            "decision": "INSERT_AD_HOC",
+            "skip_target_index": null,
+            "next_objective_index": null,
+            "ad_hoc_step_type": "misconception_correction",
+            "student_intent": "confused",
+            "replan_required": false,
+            "replan_reason": null,
+            "scope_shift_request": {},
+            "current_scope": {
+              "scope_type": "notebook",
+              "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+              "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+              "resource_ids": [
+                "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                "3ed546ac-539c-473e-b1bd-60a961656df9"
+              ],
+              "topic": "Probability Theory Fundamentals",
+              "selected_topics": []
+            },
+            "requested_decision": "INSERT_AD_HOC",
+            "applied_decision": "INSERT_AD_HOC",
+            "accepted": true,
+            "transition": "step:1 (ad_hoc #1/4, stay)",
+            "guard_labels": [],
+            "rejection_reason": null,
+            "session_complete": false,
+            "last_replan_request": {},
+            "last_scope_shift": {}
+          },
+          "response_contract": {
+            "pedagogical_action": "correct",
+            "recommended_strategy": "scaffolded",
+            "planner_guidance": "Gently correct the student: explain that while both involve 'closure', sigma-fields deal with sets and operations like complements and countable unions. Then, ask them to recall the three specific axioms for a sigma-field from the notes.",
+            "turn_plan": {
+              "goal": "Correct the confusion between vector spaces and sigma-fields by highlighting set-theoretic closure.",
+              "interaction_type": "correct_mistake",
+              "expected_student_action": "reflect",
+              "tutor_question": null,
+              "constraints": [
+                "Explicitly mention that we use set operations like unions and complements, not addition or scalar multiplication."
+              ]
+            },
+            "tutor_question": null,
+            "evidence_chunk_ids": [
+              "5b873b77-a86d-4197-9db9-1dc747c368b1",
+              "4d972fc8-ed96-4a77-96ea-00321612574b",
+              "5f6bd8f4-16cf-41f2-aba1-05e8b4df23f3",
+              "01141c3e-d04a-48cc-bad8-dca026182702",
+              "891daef4-934a-4588-842a-887ec34220b3",
+              "5f51f236-0616-46c4-ab29-86a5a38a6bd4",
+              "fb56e4b6-e7a2-4fe4-88bc-74b69a5caf36"
+            ]
+          },
+          "study_map_delta": {
+            "transition": "step:1 (ad_hoc #1/4, stay)",
+            "from": {
+              "objective_index": 0,
+              "step_index": 1,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Theory Fundamentals",
+                "selected_topics": []
+              }
+            },
+            "to": {
+              "objective_index": 0,
+              "step_index": 1,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Theory Fundamentals",
+                "selected_topics": []
+              }
+            },
+            "changed": {
+              "objective": false,
+              "step": false,
+              "scope": false
+            },
+            "transition_contract": {
+              "decision": "INSERT_AD_HOC",
+              "skip_target_index": null,
+              "next_objective_index": null,
+              "ad_hoc_step_type": "misconception_correction",
+              "student_intent": "confused",
+              "replan_required": false,
+              "replan_reason": null,
+              "scope_shift_request": {},
+              "current_scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Theory Fundamentals",
+                "selected_topics": []
+              },
+              "requested_decision": "INSERT_AD_HOC",
+              "applied_decision": "INSERT_AD_HOC",
+              "accepted": true,
+              "transition": "step:1 (ad_hoc #1/4, stay)",
+              "guard_labels": [],
+              "rejection_reason": null,
+              "session_complete": false,
+              "last_replan_request": {},
+              "last_scope_shift": {}
+            }
+          }
+        }
+      ],
+      "history_status": 200,
+      "history_turn_count": 3,
+      "history_turn_indexes": [
+        0,
+        1,
+        2
+      ]
+    },
+    {
+      "mode": "doubt",
+      "create_status": 201,
+      "session_id": "84da6001-4f75-43c3-ac00-120e10002f9b",
+      "active_topic": "Probability Space and Axiomatic Foundations",
+      "total_objectives": 2,
+      "session_overview": "This is a doubt-clearing session for Probability Space and Axiomatic Foundations. We will answer the specific confusion directly, verify it against the material, and stop once the point is clear.",
+      "first_objective_title": "Define and Verify Sigma-Fields",
+      "first_objective_concepts": [
+        "sigma_field",
+        "event_space"
+      ],
+      "preparation_summary": {
+        "scope_type": "notebook",
+        "scope_resource_ids": [
+          "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+          "3ed546ac-539c-473e-b1bd-60a961656df9"
+        ],
+        "required_capabilities": [
+          "can_answer_doubts"
+        ],
+        "artifacts_created": 0,
+        "topic_artifacts_created": 0,
+        "topic_scope_keys": [],
+        "blocking_resources": [],
+        "session_brief_artifact_id": "5af058fe-52dc-4f21-aee3-28f79a71af31",
+        "resource_profiles_ready": true
+      },
+      "turns": [
+        {
+          "turn_index": 1,
+          "status": 200,
+          "message": "I am confused about the difference between linear independence and spanning. Explain the distinction using the notes.",
+          "current_step": "clarify",
+          "step_transition": "step:0 (ad_hoc #1/2, stay)",
+          "objective_title": "Define and Verify Sigma-Fields",
+          "focus_concepts": [
+            "sigma_field",
+            "event_space",
+            "class_of_sets"
+          ],
+          "awaiting_evaluation": true,
+          "response_excerpt": "It sounds like you're looking for a solid foundation in how sets of objects \"build\" a space before we dive into the specific rules of sigma-fields. While the provided notes focus heavily on probability densities and rand",
+          "tutor_question": "Does that distinction between \"covering the space\" (spanning) and \"having no redundancies\" (independence) make sense to you?",
+          "citations_count": 10,
+          "retrieval_contract": {
+            "query": "distinction between linear independence and spanning sets with examples\nExplain the distinction between linear independence and spanning using the provided notes.\nProvide a clear, direct comparison of linear independence vs spanning. Use a simple 2D or 3D vector space analogy. After explaining, bridge back to why we need well-defined structures like sigma-fields for probability.\nStep goal: Surface the main confusion about this topic and define the question to resolve.\nTarget concepts: linear_independence, spanning\nPedagogical focus: clarify\nStudent question: I am confused about the difference between linear independence and spanning. Explain the distinction using the notes.",
+            "target_concepts": [
+              "linear_independence",
+              "spanning"
+            ],
+            "pedagogy_roles": [
+              "explanation"
+            ],
+            "scope_type": "notebook",
+            "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+            "resource_ids": [
+              "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+              "3ed546ac-539c-473e-b1bd-60a961656df9"
+            ],
+            "objective_id": "obj_01_sigma_field_structure",
+            "objective_title": "Define and Verify Sigma-Fields",
+            "directives": {
+              "query": "distinction between linear independence and spanning sets with examples",
+              "focus": "prereq",
+              "expand_prereqs": true
+            },
+            "retrieved_chunk_ids": [
+              "5f51f236-0616-46c4-ab29-86a5a38a6bd4",
+              "4d972fc8-ed96-4a77-96ea-00321612574b",
+              "c8073a56-6fb4-4e86-841a-8acfe3428fc6",
+              "5b873b77-a86d-4197-9db9-1dc747c368b1",
+              "437e82a5-9ad5-4cb6-a52e-39c94d1419aa",
+              "3a3da613-3d73-4560-bdb9-0af77631ff35",
+              "bc9db254-5338-468d-bd30-b41cb764bcb9",
+              "0fb489d6-1b91-461c-8a34-24ff6e45bafc",
+              "df6ac344-0570-403a-85e6-66816fdc7104",
+              "db2067ad-66cb-4afb-9ab2-aaca671251b9"
+            ]
+          },
+          "progression_contract": {
+            "decision": "INSERT_AD_HOC",
+            "skip_target_index": null,
+            "next_objective_index": null,
+            "ad_hoc_step_type": "prerequisite_clarification",
+            "student_intent": "asking_question",
+            "replan_required": false,
+            "replan_reason": null,
+            "scope_shift_request": {},
+            "current_scope": {
+              "scope_type": "notebook",
+              "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+              "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+              "resource_ids": [
+                "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                "3ed546ac-539c-473e-b1bd-60a961656df9"
+              ],
+              "topic": "Probability Space and Axiomatic Foundations",
+              "selected_topics": []
+            },
+            "requested_decision": "INSERT_AD_HOC",
+            "applied_decision": "INSERT_AD_HOC",
+            "accepted": true,
+            "transition": "step:0 (ad_hoc #1/2, stay)",
+            "guard_labels": [],
+            "rejection_reason": null,
+            "session_complete": false,
+            "last_replan_request": {},
+            "last_scope_shift": {}
+          },
+          "response_contract": {
+            "pedagogical_action": "clarify",
+            "recommended_strategy": "direct",
+            "planner_guidance": "Provide a clear, direct comparison of linear independence vs spanning. Use a simple 2D or 3D vector space analogy. After explaining, bridge back to why we need well-defined structures like sigma-fields for probability.",
+            "turn_plan": {
+              "goal": "Explain the distinction between linear independence and spanning using the provided notes.",
+              "interaction_type": "explain_concept",
+              "expected_student_action": "reflect",
+              "tutor_question": "Does that distinction between 'not having redundant vectors' (independence) and 'covering the whole space' (spanning) make sense in the context of your notes?",
+              "constraints": [
+                "Use the distinction between 'efficiency' and 'coverage'.",
+                "Refer to the student's mention of 'the notes'."
+              ]
+            },
+            "tutor_question": null,
+            "evidence_chunk_ids": [
+              "5f51f236-0616-46c4-ab29-86a5a38a6bd4",
+              "4d972fc8-ed96-4a77-96ea-00321612574b",
+              "c8073a56-6fb4-4e86-841a-8acfe3428fc6",
+              "5b873b77-a86d-4197-9db9-1dc747c368b1",
+              "437e82a5-9ad5-4cb6-a52e-39c94d1419aa",
+              "3a3da613-3d73-4560-bdb9-0af77631ff35",
+              "bc9db254-5338-468d-bd30-b41cb764bcb9",
+              "0fb489d6-1b91-461c-8a34-24ff6e45bafc",
+              "df6ac344-0570-403a-85e6-66816fdc7104",
+              "db2067ad-66cb-4afb-9ab2-aaca671251b9"
+            ]
+          },
+          "study_map_delta": {
+            "transition": "step:0 (ad_hoc #1/2, stay)",
+            "from": {
+              "objective_index": 0,
+              "step_index": 0,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Space and Axiomatic Foundations",
+                "selected_topics": []
+              }
+            },
+            "to": {
+              "objective_index": 0,
+              "step_index": 0,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Space and Axiomatic Foundations",
+                "selected_topics": []
+              }
+            },
+            "changed": {
+              "objective": false,
+              "step": false,
+              "scope": false
+            },
+            "transition_contract": {
+              "decision": "INSERT_AD_HOC",
+              "skip_target_index": null,
+              "next_objective_index": null,
+              "ad_hoc_step_type": "prerequisite_clarification",
+              "student_intent": "asking_question",
+              "replan_required": false,
+              "replan_reason": null,
+              "scope_shift_request": {},
+              "current_scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Space and Axiomatic Foundations",
+                "selected_topics": []
+              },
+              "requested_decision": "INSERT_AD_HOC",
+              "applied_decision": "INSERT_AD_HOC",
+              "accepted": true,
+              "transition": "step:0 (ad_hoc #1/2, stay)",
+              "guard_labels": [],
+              "rejection_reason": null,
+              "session_complete": false,
+              "last_replan_request": {},
+              "last_scope_shift": {}
+            }
+          }
+        },
+        {
+          "turn_index": 2,
+          "status": 200,
+          "message": "Can you check whether this intuition is right: spanning is about coverage, independence is about redundancy?",
+          "current_step": "clarify",
+          "step_transition": "step:0 (ad_hoc #2/2, stay)",
+          "objective_title": "Define and Verify Sigma-Fields",
+          "focus_concepts": [
+            "sigma_field",
+            "event_space",
+            "class_of_sets"
+          ],
+          "awaiting_evaluation": true,
+          "response_excerpt": "Spot on! Your intuition is exactly right. In a linear algebra or general \"class of sets\" context:\n\n*   **Spanning** means your collection is \"big enough\" to cover or build every element in the space.\n*   **Independence**",
+          "tutor_question": "To make sure we're on the same page, if our sample space is a simple coin flip $\\{H, T\\}$, can you think of a set of events that would \"cover\" everything we might want to measure?",
+          "citations_count": 10,
+          "retrieval_contract": {
+            "query": "analogy between linear spanning/independence and set algebra structures\nValidate the student's intuition on spanning vs independence and transition to sigma-fields.\nConfirm that spanning is indeed about coverage and independence is about non-redundancy. Then, bridge this to Probability by explaining that a sigma-field is a way to 'cover' all possible events we care about without missing any logical combinations.\nStep goal: Surface the main confusion about this topic and define the question to resolve.\nTarget concepts: class_of_sets\nPedagogical focus: clarify\nStudent question: Can you check whether this intuition is right: spanning is about coverage, independence is about redundancy?",
+            "target_concepts": [
+              "class_of_sets"
+            ],
+            "pedagogy_roles": [
+              "explanation"
+            ],
+            "scope_type": "notebook",
+            "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+            "resource_ids": [
+              "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+              "3ed546ac-539c-473e-b1bd-60a961656df9"
+            ],
+            "objective_id": "obj_01_sigma_field_structure",
+            "objective_title": "Define and Verify Sigma-Fields",
+            "directives": {
+              "query": "analogy between linear spanning/independence and set algebra structures",
+              "focus": "prereq",
+              "expand_prereqs": true
+            },
+            "retrieved_chunk_ids": [
+              "0fb489d6-1b91-461c-8a34-24ff6e45bafc",
+              "23e13c95-d63b-4225-a899-a9150b6d5010",
+              "3749b4b4-4b90-4647-8d18-d50bdccf5afc",
+              "5f6bd8f4-16cf-41f2-aba1-05e8b4df23f3",
+              "01141c3e-d04a-48cc-bad8-dca026182702",
+              "5f51f236-0616-46c4-ab29-86a5a38a6bd4",
+              "891daef4-934a-4588-842a-887ec34220b3",
+              "fb56e4b6-e7a2-4fe4-88bc-74b69a5caf36",
+              "5b873b77-a86d-4197-9db9-1dc747c368b1",
+              "4d972fc8-ed96-4a77-96ea-00321612574b"
+            ]
+          },
+          "progression_contract": {
+            "decision": "INSERT_AD_HOC",
+            "skip_target_index": null,
+            "next_objective_index": null,
+            "ad_hoc_step_type": "clarify_prerequisite",
+            "student_intent": "engaged",
+            "replan_required": false,
+            "replan_reason": null,
+            "scope_shift_request": {},
+            "current_scope": {
+              "scope_type": "notebook",
+              "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+              "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+              "resource_ids": [
+                "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                "3ed546ac-539c-473e-b1bd-60a961656df9"
+              ],
+              "topic": "Probability Space and Axiomatic Foundations",
+              "selected_topics": []
+            },
+            "requested_decision": "INSERT_AD_HOC",
+            "applied_decision": "INSERT_AD_HOC",
+            "accepted": true,
+            "transition": "step:0 (ad_hoc #2/2, stay)",
+            "guard_labels": [],
+            "rejection_reason": null,
+            "session_complete": false,
+            "last_replan_request": {},
+            "last_scope_shift": {}
+          },
+          "response_contract": {
+            "pedagogical_action": "clarify",
+            "recommended_strategy": "direct",
+            "planner_guidance": "Confirm that spanning is indeed about coverage and independence is about non-redundancy. Then, bridge this to Probability by explaining that a sigma-field is a way to 'cover' all possible events we care about without missing any logical combinations.",
+            "turn_plan": {
+              "goal": "Validate the student's intuition on spanning vs independence and transition to sigma-fields.",
+              "interaction_type": "explain_concept",
+              "expected_student_action": "reflect",
+              "tutor_question": "Does that distinction make sense before we look at how 'coverage' and 'redundancy' apply to the way we organize events in a sigma-field?",
+              "constraints": [
+                "Keep the linear algebra explanation very brief.",
+                "Pivot the conversation toward the structure of sigma-fields."
+              ]
+            },
+            "tutor_question": null,
+            "evidence_chunk_ids": [
+              "0fb489d6-1b91-461c-8a34-24ff6e45bafc",
+              "23e13c95-d63b-4225-a899-a9150b6d5010",
+              "3749b4b4-4b90-4647-8d18-d50bdccf5afc",
+              "5f6bd8f4-16cf-41f2-aba1-05e8b4df23f3",
+              "01141c3e-d04a-48cc-bad8-dca026182702",
+              "5f51f236-0616-46c4-ab29-86a5a38a6bd4",
+              "891daef4-934a-4588-842a-887ec34220b3",
+              "fb56e4b6-e7a2-4fe4-88bc-74b69a5caf36",
+              "5b873b77-a86d-4197-9db9-1dc747c368b1",
+              "4d972fc8-ed96-4a77-96ea-00321612574b"
+            ]
+          },
+          "study_map_delta": {
+            "transition": "step:0 (ad_hoc #2/2, stay)",
+            "from": {
+              "objective_index": 0,
+              "step_index": 0,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Space and Axiomatic Foundations",
+                "selected_topics": []
+              }
+            },
+            "to": {
+              "objective_index": 0,
+              "step_index": 0,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Space and Axiomatic Foundations",
+                "selected_topics": []
+              }
+            },
+            "changed": {
+              "objective": false,
+              "step": false,
+              "scope": false
+            },
+            "transition_contract": {
+              "decision": "INSERT_AD_HOC",
+              "skip_target_index": null,
+              "next_objective_index": null,
+              "ad_hoc_step_type": "clarify_prerequisite",
+              "student_intent": "engaged",
+              "replan_required": false,
+              "replan_reason": null,
+              "scope_shift_request": {},
+              "current_scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Space and Axiomatic Foundations",
+                "selected_topics": []
+              },
+              "requested_decision": "INSERT_AD_HOC",
+              "applied_decision": "INSERT_AD_HOC",
+              "accepted": true,
+              "transition": "step:0 (ad_hoc #2/2, stay)",
+              "guard_labels": [],
+              "rejection_reason": null,
+              "session_complete": false,
+              "last_replan_request": {},
+              "last_scope_shift": {}
+            }
+          }
+        }
+      ],
+      "history_status": 200,
+      "history_turn_count": 3,
+      "history_turn_indexes": [
+        0,
+        1,
+        2
+      ]
+    },
+    {
+      "mode": "practice",
+      "create_status": 201,
+      "session_id": "348a2e69-54a5-4bce-9ea0-39d51fb7c84c",
+      "active_topic": "Probability Foundations and Axiomatic Systems",
+      "total_objectives": 3,
+      "session_overview": "This is a practice session for Probability Foundations and Axiomatic Systems. Expect more questions, fewer long explanations, and rapid feedback on your attempts.",
+      "first_objective_title": "Verify and Construct Sigma-Fields",
+      "first_objective_concepts": [
+        "sigma_field",
+        "event_space"
+      ],
+      "preparation_summary": {
+        "scope_type": "notebook",
+        "scope_resource_ids": [
+          "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+          "3ed546ac-539c-473e-b1bd-60a961656df9"
+        ],
+        "required_capabilities": [
+          "can_answer_doubts",
+          "has_resource_profile"
+        ],
+        "artifacts_created": 0,
+        "topic_artifacts_created": 0,
+        "topic_scope_keys": [
+          "practice:formula-not-decoded-random-function",
+          "practice:probability-formula-not-decoded-let"
+        ],
+        "blocking_resources": [],
+        "session_brief_artifact_id": "5af058fe-52dc-4f21-aee3-28f79a71af31",
+        "resource_profiles_ready": true,
+        "curriculum_preparation": {
+          "prepared": false,
+          "reason": "already_ready"
+        }
+      },
+      "turns": [
+        {
+          "turn_index": 1,
+          "status": 200,
+          "message": "Give me one practice question from the current material and wait for my answer.",
+          "current_step": "practice",
+          "step_transition": "step:0 (continue)",
+          "objective_title": "Verify and Construct Sigma-Fields",
+          "focus_concepts": [
+            "sigma_field",
+            "event_space",
+            "class_of_sets",
+            "measurable_space"
+          ],
+          "awaiting_evaluation": true,
+          "response_excerpt": "Sure thing! Let's jump straight into a construction problem to see how these properties work in practice.\n\nImagine we have a simple random experiment: **flipping a single coin**. The sample space is $\\Omega = \\{H, T\\}$, ",
+          "tutor_question": "List all the elements of the **largest possible** sigma-field for this coin flip experiment. In other words, what are all the different subsets of $\\{H, T\\}$ that satisfy those rules?",
+          "citations_count": 9,
+          "retrieval_contract": {
+            "query": "simple practice problem constructing a sigma-field for a coin toss or die roll\nPose a construction problem for a sigma-field on a simple sample space.\nPresent a clear, bounded problem asking the student to list the elements of a sigma-field for a simple sample space like a coin flip. Wait for their full response.\nStep goal: Construct a valid sigma-field for a simple sample space like a coin toss or die roll.\nTarget concepts: sigma_field, event_space\nPedagogical focus: assess\nStudent question: Give me one practice question from the current material and wait for my answer.",
+            "target_concepts": [
+              "sigma_field",
+              "event_space"
+            ],
+            "pedagogy_roles": [
+              "exercise",
+              "example",
+              "hint",
+              "explanation"
+            ],
+            "scope_type": "notebook",
+            "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+            "resource_ids": [
+              "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+              "3ed546ac-539c-473e-b1bd-60a961656df9"
+            ],
+            "objective_id": "obj_01_sigma_field_construction",
+            "objective_title": "Verify and Construct Sigma-Fields",
+            "directives": {
+              "query": "simple practice problem constructing a sigma-field for a coin toss or die roll",
+              "focus": "example",
+              "expand_prereqs": true
+            },
+            "retrieved_chunk_ids": [
+              "0fb489d6-1b91-461c-8a34-24ff6e45bafc",
+              "3749b4b4-4b90-4647-8d18-d50bdccf5afc",
+              "23e13c95-d63b-4225-a899-a9150b6d5010",
+              "bc9db254-5338-468d-bd30-b41cb764bcb9",
+              "df6ac344-0570-403a-85e6-66816fdc7104",
+              "5b873b77-a86d-4197-9db9-1dc747c368b1",
+              "4d972fc8-ed96-4a77-96ea-00321612574b",
+              "891daef4-934a-4588-842a-887ec34220b3",
+              "5f51f236-0616-46c4-ab29-86a5a38a6bd4"
+            ]
+          },
+          "progression_contract": {
+            "decision": "CONTINUE_STEP",
+            "skip_target_index": null,
+            "next_objective_index": null,
+            "ad_hoc_step_type": null,
+            "student_intent": "engaged",
+            "replan_required": false,
+            "replan_reason": null,
+            "scope_shift_request": {},
+            "current_scope": {
+              "scope_type": "notebook",
+              "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+              "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+              "resource_ids": [
+                "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                "3ed546ac-539c-473e-b1bd-60a961656df9"
+              ],
+              "topic": "Probability Foundations and Axiomatic Systems",
+              "selected_topics": []
+            },
+            "requested_decision": "CONTINUE_STEP",
+            "applied_decision": "CONTINUE_STEP",
+            "accepted": true,
+            "transition": "step:0 (continue)",
+            "guard_labels": [],
+            "rejection_reason": null,
+            "session_complete": false,
+            "last_replan_request": {},
+            "last_scope_shift": {}
+          },
+          "response_contract": {
+            "pedagogical_action": "assess",
+            "recommended_strategy": "assessment",
+            "planner_guidance": "Present a clear, bounded problem asking the student to list the elements of a sigma-field for a simple sample space like a coin flip. Wait for their full response.",
+            "turn_plan": {
+              "goal": "Pose a construction problem for a sigma-field on a simple sample space.",
+              "interaction_type": "check_understanding",
+              "expected_student_action": "solve",
+              "tutor_question": "Consider a single coin toss where the sample space is {H, T}. Can you list all the sets that must be in the smallest possible sigma-field for this experiment?",
+              "constraints": [
+                "Do not provide the answer.",
+                "Keep the sample space small (2-4 elements)."
+              ]
+            },
+            "tutor_question": null,
+            "evidence_chunk_ids": [
+              "0fb489d6-1b91-461c-8a34-24ff6e45bafc",
+              "3749b4b4-4b90-4647-8d18-d50bdccf5afc",
+              "23e13c95-d63b-4225-a899-a9150b6d5010",
+              "bc9db254-5338-468d-bd30-b41cb764bcb9",
+              "df6ac344-0570-403a-85e6-66816fdc7104",
+              "5b873b77-a86d-4197-9db9-1dc747c368b1",
+              "4d972fc8-ed96-4a77-96ea-00321612574b",
+              "891daef4-934a-4588-842a-887ec34220b3",
+              "5f51f236-0616-46c4-ab29-86a5a38a6bd4"
+            ]
+          },
+          "study_map_delta": {
+            "transition": "step:0 (continue)",
+            "from": {
+              "objective_index": 0,
+              "step_index": 0,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Foundations and Axiomatic Systems",
+                "selected_topics": []
+              }
+            },
+            "to": {
+              "objective_index": 0,
+              "step_index": 0,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Foundations and Axiomatic Systems",
+                "selected_topics": []
+              }
+            },
+            "changed": {
+              "objective": false,
+              "step": false,
+              "scope": false
+            },
+            "transition_contract": {
+              "decision": "CONTINUE_STEP",
+              "skip_target_index": null,
+              "next_objective_index": null,
+              "ad_hoc_step_type": null,
+              "student_intent": "engaged",
+              "replan_required": false,
+              "replan_reason": null,
+              "scope_shift_request": {},
+              "current_scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Foundations and Axiomatic Systems",
+                "selected_topics": []
+              },
+              "requested_decision": "CONTINUE_STEP",
+              "applied_decision": "CONTINUE_STEP",
+              "accepted": true,
+              "transition": "step:0 (continue)",
+              "guard_labels": [],
+              "rejection_reason": null,
+              "session_complete": false,
+              "last_replan_request": {},
+              "last_scope_shift": {}
+            }
+          }
+        },
+        {
+          "turn_index": 2,
+          "status": 200,
+          "message": "My answer: a set is a basis if it spans the space and is linearly independent.",
+          "current_step": "practice",
+          "step_transition": "step:0 (ad_hoc #1/3, stay)",
+          "objective_title": "Verify and Construct Sigma-Fields",
+          "focus_concepts": [
+            "sigma_field",
+            "event_space",
+            "class_of_sets",
+            "measurable_space"
+          ],
+          "awaiting_evaluation": true,
+          "response_excerpt": "I see where you're coming from\u2014you're thinking in terms of linear algebra! While \"basis\" and \"span\" are great for describing vector spaces, we are actually working in the world of **set theory** here.\n\nIn probability, a ",
+          "tutor_question": "If I want to create the smallest possible valid sigma-field that includes the event $\\{H\\}$, what other sets **must** be in that collection to satisfy the rules above?",
+          "citations_count": 11,
+          "retrieval_contract": {
+            "query": "difference between sigma-field properties and vector space properties\nAddress the linear algebra misconception and redirect to set theory properties.\nGently correct the student by explaining that we are working with collections of sets (sigma-fields) rather than vector spaces. Briefly define what we mean by 'closure' in this context (complements and unions) and ask them to try the practice question again with these rules in mind.\nStep goal: Construct a valid sigma-field for a simple sample space like a coin toss or die roll.\nTarget concepts: sigma_field, class_of_sets\nPedagogical focus: correct\nStudent question: My answer: a set is a basis if it spans the space and is linearly independent.",
+            "target_concepts": [
+              "sigma_field",
+              "class_of_sets"
+            ],
+            "pedagogy_roles": [
+              "exercise",
+              "example",
+              "hint",
+              "explanation"
+            ],
+            "scope_type": "notebook",
+            "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+            "resource_ids": [
+              "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+              "3ed546ac-539c-473e-b1bd-60a961656df9"
+            ],
+            "objective_id": "obj_01_sigma_field_construction",
+            "objective_title": "Verify and Construct Sigma-Fields",
+            "directives": {
+              "query": "difference between sigma-field properties and vector space properties",
+              "focus": "misconception",
+              "expand_prereqs": true
+            },
+            "retrieved_chunk_ids": [
+              "bc9db254-5338-468d-bd30-b41cb764bcb9",
+              "db2067ad-66cb-4afb-9ab2-aaca671251b9",
+              "437e82a5-9ad5-4cb6-a52e-39c94d1419aa",
+              "3a3da613-3d73-4560-bdb9-0af77631ff35",
+              "5f6bd8f4-16cf-41f2-aba1-05e8b4df23f3",
+              "01141c3e-d04a-48cc-bad8-dca026182702",
+              "891daef4-934a-4588-842a-887ec34220b3",
+              "fb56e4b6-e7a2-4fe4-88bc-74b69a5caf36",
+              "6281d37a-da99-48b4-8e41-720181e93398",
+              "902491d9-4477-4e56-ad17-f283239904a8",
+              "515ea671-7371-434c-b368-ffbdebe02ccf"
+            ]
+          },
+          "progression_contract": {
+            "decision": "INSERT_AD_HOC",
+            "skip_target_index": null,
+            "next_objective_index": null,
+            "ad_hoc_step_type": "clarification_of_domain",
+            "student_intent": "confused",
+            "replan_required": false,
+            "replan_reason": null,
+            "scope_shift_request": {},
+            "current_scope": {
+              "scope_type": "notebook",
+              "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+              "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+              "resource_ids": [
+                "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                "3ed546ac-539c-473e-b1bd-60a961656df9"
+              ],
+              "topic": "Probability Foundations and Axiomatic Systems",
+              "selected_topics": []
+            },
+            "requested_decision": "INSERT_AD_HOC",
+            "applied_decision": "INSERT_AD_HOC",
+            "accepted": true,
+            "transition": "step:0 (ad_hoc #1/3, stay)",
+            "guard_labels": [],
+            "rejection_reason": null,
+            "session_complete": false,
+            "last_replan_request": {},
+            "last_scope_shift": {}
+          },
+          "response_contract": {
+            "pedagogical_action": "correct",
+            "recommended_strategy": "scaffolded",
+            "planner_guidance": "Gently correct the student by explaining that we are working with collections of sets (sigma-fields) rather than vector spaces. Briefly define what we mean by 'closure' in this context (complements and unions) and ask them to try the practice question again with these rules in mind.",
+            "turn_plan": {
+              "goal": "Address the linear algebra misconception and redirect to set theory properties.",
+              "interaction_type": "correct_mistake",
+              "expected_student_action": "reflect",
+              "tutor_question": "Can you recall the three specific rules a collection of sets must follow to be a sigma-field, rather than a vector space?",
+              "constraints": [
+                "Do not use linear algebra terminology in the explanation.",
+                "Focus on closure under complements and countable unions."
+              ]
+            },
+            "tutor_question": null,
+            "evidence_chunk_ids": [
+              "bc9db254-5338-468d-bd30-b41cb764bcb9",
+              "db2067ad-66cb-4afb-9ab2-aaca671251b9",
+              "437e82a5-9ad5-4cb6-a52e-39c94d1419aa",
+              "3a3da613-3d73-4560-bdb9-0af77631ff35",
+              "5f6bd8f4-16cf-41f2-aba1-05e8b4df23f3",
+              "01141c3e-d04a-48cc-bad8-dca026182702",
+              "891daef4-934a-4588-842a-887ec34220b3",
+              "fb56e4b6-e7a2-4fe4-88bc-74b69a5caf36",
+              "6281d37a-da99-48b4-8e41-720181e93398",
+              "902491d9-4477-4e56-ad17-f283239904a8",
+              "515ea671-7371-434c-b368-ffbdebe02ccf"
+            ]
+          },
+          "study_map_delta": {
+            "transition": "step:0 (ad_hoc #1/3, stay)",
+            "from": {
+              "objective_index": 0,
+              "step_index": 0,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Foundations and Axiomatic Systems",
+                "selected_topics": []
+              }
+            },
+            "to": {
+              "objective_index": 0,
+              "step_index": 0,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Foundations and Axiomatic Systems",
+                "selected_topics": []
+              }
+            },
+            "changed": {
+              "objective": false,
+              "step": false,
+              "scope": false
+            },
+            "transition_contract": {
+              "decision": "INSERT_AD_HOC",
+              "skip_target_index": null,
+              "next_objective_index": null,
+              "ad_hoc_step_type": "clarification_of_domain",
+              "student_intent": "confused",
+              "replan_required": false,
+              "replan_reason": null,
+              "scope_shift_request": {},
+              "current_scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Foundations and Axiomatic Systems",
+                "selected_topics": []
+              },
+              "requested_decision": "INSERT_AD_HOC",
+              "applied_decision": "INSERT_AD_HOC",
+              "accepted": true,
+              "transition": "step:0 (ad_hoc #1/3, stay)",
+              "guard_labels": [],
+              "rejection_reason": null,
+              "session_complete": false,
+              "last_replan_request": {},
+              "last_scope_shift": {}
+            }
+          }
+        }
+      ],
+      "history_status": 200,
+      "history_turn_count": 3,
+      "history_turn_indexes": [
+        0,
+        1,
+        2
+      ]
+    },
+    {
+      "mode": "revision",
+      "create_status": 201,
+      "session_id": "6f5d5246-6c38-42f2-b7b9-d657ed5e2794",
+      "active_topic": "Probability Theory Revision",
+      "total_objectives": 3,
+      "session_overview": "This is a revision session for Probability Theory Revision. We will compress the core ideas, target weak spots, and use recall checks to consolidate memory.",
+      "first_objective_title": "Review Sigma-Fields and Probability Spaces",
+      "first_objective_concepts": [
+        "sigma_field",
+        "probability_space",
+        "probability_function"
+      ],
+      "preparation_summary": {
+        "scope_type": "notebook",
+        "scope_resource_ids": [
+          "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+          "3ed546ac-539c-473e-b1bd-60a961656df9"
+        ],
+        "required_capabilities": [
+          "can_answer_doubts",
+          "has_resource_profile"
+        ],
+        "artifacts_created": 0,
+        "topic_artifacts_created": 0,
+        "topic_scope_keys": [
+          "revision:formula-not-decoded-random-function",
+          "revision:probability-formula-not-decoded-let"
+        ],
+        "blocking_resources": [],
+        "session_brief_artifact_id": "5af058fe-52dc-4f21-aee3-28f79a71af31",
+        "resource_profiles_ready": true,
+        "curriculum_preparation": {
+          "prepared": false,
+          "reason": "already_ready"
+        }
+      },
+      "turns": [
+        {
+          "turn_index": 1,
+          "status": 200,
+          "message": "Help me revise the most important concepts quickly. Focus on weak or central ideas first.",
+          "current_step": "probe",
+          "step_transition": "step:0\u21921",
+          "objective_title": "Review Sigma-Fields and Probability Spaces",
+          "focus_concepts": [
+            "sigma_field",
+            "probability_space",
+            "probability_function",
+            "event_space",
+            "measurable_space"
+          ],
+          "awaiting_evaluation": true,
+          "response_excerpt": "To get our revision moving, let\u2019s look at the foundational \"triple\" that defines a **Probability Space**, denoted as $(\\Omega, \\mathcal{F}, P)$. \n\nThink of it as a three-part structure:\n1.  **$\\Omega$ (Sample Space):** T",
+          "tutor_question": "Do you remember the three formal properties a collection of sets must satisfy to be considered a **sigma-field**?",
+          "citations_count": 7,
+          "retrieval_contract": {
+            "query": "definition of probability space triplet (Omega, F, P) and its components\nBriefly summarize the probability space components and ask the student to identify the three properties of a sigma-field.\nProvide a concise summary of the (\u03a9, F, P) triplet. Then, transition into a Socratic probe about the properties of a sigma-field to assess current mastery as requested by the student's focus on central ideas.\nStep goal: Synthesize the (\u03a9, F, P) triplet components.\nTarget concepts: probability_space, sigma_field, probability_function\nPedagogical focus: summarize\nStudent question: Help me revise the most important concepts quickly. Focus on weak or central ideas first.",
+            "target_concepts": [
+              "probability_space",
+              "sigma_field",
+              "probability_function"
+            ],
+            "pedagogy_roles": [
+              "misconception",
+              "summary",
+              "explanation"
+            ],
+            "scope_type": "notebook",
+            "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+            "resource_ids": [
+              "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+              "3ed546ac-539c-473e-b1bd-60a961656df9"
+            ],
+            "objective_id": "obj_01_foundations_sigma_field",
+            "objective_title": "Review Sigma-Fields and Probability Spaces",
+            "directives": {
+              "query": "definition of probability space triplet (Omega, F, P) and its components",
+              "focus": "primary",
+              "expand_prereqs": false
+            },
+            "retrieved_chunk_ids": [
+              "23e13c95-d63b-4225-a899-a9150b6d5010",
+              "bc9db254-5338-468d-bd30-b41cb764bcb9",
+              "df6ac344-0570-403a-85e6-66816fdc7104",
+              "0fb489d6-1b91-461c-8a34-24ff6e45bafc",
+              "3749b4b4-4b90-4647-8d18-d50bdccf5afc",
+              "3a3da613-3d73-4560-bdb9-0af77631ff35",
+              "db2067ad-66cb-4afb-9ab2-aaca671251b9"
+            ]
+          },
+          "progression_contract": {
+            "decision": "CONTINUE_STEP",
+            "skip_target_index": null,
+            "next_objective_index": null,
+            "ad_hoc_step_type": null,
+            "student_intent": "engaged",
+            "replan_required": false,
+            "replan_reason": null,
+            "scope_shift_request": {},
+            "current_scope": {
+              "scope_type": "notebook",
+              "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+              "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+              "resource_ids": [
+                "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                "3ed546ac-539c-473e-b1bd-60a961656df9"
+              ],
+              "topic": "Probability Theory Revision",
+              "selected_topics": []
+            },
+            "requested_decision": "CONTINUE_STEP",
+            "applied_decision": "CONTINUE_STEP",
+            "accepted": true,
+            "transition": "step:0\u21921",
+            "guard_labels": [
+              "forced_advance_max_turns"
+            ],
+            "rejection_reason": null,
+            "session_complete": false,
+            "last_replan_request": {},
+            "last_scope_shift": {}
+          },
+          "response_contract": {
+            "pedagogical_action": "summarize",
+            "recommended_strategy": "review",
+            "planner_guidance": "Provide a concise summary of the (\u03a9, F, P) triplet. Then, transition into a Socratic probe about the properties of a sigma-field to assess current mastery as requested by the student's focus on central ideas.",
+            "turn_plan": {
+              "goal": "Briefly summarize the probability space components and ask the student to identify the three properties of a sigma-field.",
+              "interaction_type": "check_understanding",
+              "expected_student_action": "explain",
+              "tutor_question": "To start our revision, do you remember the three defining properties that a collection of subsets must satisfy to be called a sigma-field (F)?",
+              "constraints": null
+            },
+            "tutor_question": null,
+            "evidence_chunk_ids": [
+              "23e13c95-d63b-4225-a899-a9150b6d5010",
+              "bc9db254-5338-468d-bd30-b41cb764bcb9",
+              "df6ac344-0570-403a-85e6-66816fdc7104",
+              "0fb489d6-1b91-461c-8a34-24ff6e45bafc",
+              "3749b4b4-4b90-4647-8d18-d50bdccf5afc",
+              "3a3da613-3d73-4560-bdb9-0af77631ff35",
+              "db2067ad-66cb-4afb-9ab2-aaca671251b9"
+            ]
+          },
+          "study_map_delta": {
+            "transition": "step:0\u21921",
+            "from": {
+              "objective_index": 0,
+              "step_index": 0,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Theory Revision",
+                "selected_topics": []
+              }
+            },
+            "to": {
+              "objective_index": 0,
+              "step_index": 1,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Theory Revision",
+                "selected_topics": []
+              }
+            },
+            "changed": {
+              "objective": false,
+              "step": true,
+              "scope": false
+            },
+            "transition_contract": {
+              "decision": "CONTINUE_STEP",
+              "skip_target_index": null,
+              "next_objective_index": null,
+              "ad_hoc_step_type": null,
+              "student_intent": "engaged",
+              "replan_required": false,
+              "replan_reason": null,
+              "scope_shift_request": {},
+              "current_scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Theory Revision",
+                "selected_topics": []
+              },
+              "requested_decision": "CONTINUE_STEP",
+              "applied_decision": "CONTINUE_STEP",
+              "accepted": true,
+              "transition": "step:0\u21921",
+              "guard_labels": [
+                "forced_advance_max_turns"
+              ],
+              "rejection_reason": null,
+              "session_complete": false,
+              "last_replan_request": {},
+              "last_scope_shift": {}
+            }
+          }
+        },
+        {
+          "turn_index": 2,
+          "status": 200,
+          "message": "Now quiz me briefly on the most important distinction you just revised.",
+          "current_step": "probe",
+          "step_transition": "step:1 (continue)",
+          "objective_title": "Review Sigma-Fields and Probability Spaces",
+          "focus_concepts": [
+            "sigma_field",
+            "probability_space",
+            "probability_function",
+            "event_space",
+            "measurable_space"
+          ],
+          "awaiting_evaluation": true,
+          "response_excerpt": "Since we're focusing on the structure of a **sigma-field ($\\mathcal{F}$)**, the most critical distinction is between being closed under *finite* unions versus *countable* unions.\n\nHere is your quick quiz:\n\nA sigma-field ",
+          "tutor_question": "Why must a sigma-field be closed under countable unions ($\\bigcup_{i=1}^{\\infty} A_i$) rather than just finite unions ($\\bigcup_{i=1}^{n} A_i$)?",
+          "citations_count": 13,
+          "retrieval_contract": {
+            "query": "key distinctions and properties of sigma-fields for revision\nAssess the student's understanding of sigma-field closure properties via a brief quiz.\nProvide a sharp, concise question about the necessity of countable unions in sigma-fields to address the student's request for a 'brief quiz' on a 'central distinction'.\nStep goal: Recall the three closure properties of a sigma-field.\nTarget concepts: sigma_field\nPedagogical focus: assess\nStudent question: Now quiz me briefly on the most important distinction you just revised.",
+            "target_concepts": [
+              "sigma_field"
+            ],
+            "pedagogy_roles": [
+              "exercise",
+              "example",
+              "hint",
+              "explanation"
+            ],
+            "scope_type": "notebook",
+            "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+            "resource_ids": [
+              "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+              "3ed546ac-539c-473e-b1bd-60a961656df9"
+            ],
+            "objective_id": "obj_01_foundations_sigma_field",
+            "objective_title": "Review Sigma-Fields and Probability Spaces",
+            "directives": {
+              "query": "key distinctions and properties of sigma-fields for revision",
+              "focus": "primary",
+              "expand_prereqs": false
+            },
+            "retrieved_chunk_ids": [
+              "5b873b77-a86d-4197-9db9-1dc747c368b1",
+              "5f51f236-0616-46c4-ab29-86a5a38a6bd4",
+              "4d972fc8-ed96-4a77-96ea-00321612574b",
+              "5f6bd8f4-16cf-41f2-aba1-05e8b4df23f3",
+              "01141c3e-d04a-48cc-bad8-dca026182702",
+              "70670039-004b-4792-94cd-1a598ada7f99",
+              "3a3da613-3d73-4560-bdb9-0af77631ff35",
+              "437e82a5-9ad5-4cb6-a52e-39c94d1419aa",
+              "c7ad51aa-729c-4188-88db-fd2a7cd4b754",
+              "6281d37a-da99-48b4-8e41-720181e93398",
+              "71d1e894-3644-483a-a377-d2af0a38a0e7",
+              "891daef4-934a-4588-842a-887ec34220b3",
+              "fb56e4b6-e7a2-4fe4-88bc-74b69a5caf36"
+            ]
+          },
+          "progression_contract": {
+            "decision": "CONTINUE_STEP",
+            "skip_target_index": null,
+            "next_objective_index": null,
+            "ad_hoc_step_type": null,
+            "student_intent": "engaged",
+            "replan_required": false,
+            "replan_reason": null,
+            "scope_shift_request": {},
+            "current_scope": {
+              "scope_type": "notebook",
+              "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+              "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+              "resource_ids": [
+                "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                "3ed546ac-539c-473e-b1bd-60a961656df9"
+              ],
+              "topic": "Probability Theory Revision",
+              "selected_topics": []
+            },
+            "requested_decision": "CONTINUE_STEP",
+            "applied_decision": "CONTINUE_STEP",
+            "accepted": true,
+            "transition": "step:1 (continue)",
+            "guard_labels": [],
+            "rejection_reason": null,
+            "session_complete": false,
+            "last_replan_request": {},
+            "last_scope_shift": {}
+          },
+          "response_contract": {
+            "pedagogical_action": "assess",
+            "recommended_strategy": "assessment",
+            "planner_guidance": "Provide a sharp, concise question about the necessity of countable unions in sigma-fields to address the student's request for a 'brief quiz' on a 'central distinction'.",
+            "turn_plan": {
+              "goal": "Assess the student's understanding of sigma-field closure properties via a brief quiz.",
+              "interaction_type": "check_understanding",
+              "expected_student_action": "answer",
+              "tutor_question": "To test that distinction: if we have a collection of sets, what is the critical difference between being closed under finite unions versus countable unions in the context of a sigma-field?",
+              "constraints": [
+                "Keep it brief as per student request",
+                "Focus on the 'why' it matters for probability"
+              ]
+            },
+            "tutor_question": null,
+            "evidence_chunk_ids": [
+              "5b873b77-a86d-4197-9db9-1dc747c368b1",
+              "5f51f236-0616-46c4-ab29-86a5a38a6bd4",
+              "4d972fc8-ed96-4a77-96ea-00321612574b",
+              "5f6bd8f4-16cf-41f2-aba1-05e8b4df23f3",
+              "01141c3e-d04a-48cc-bad8-dca026182702",
+              "70670039-004b-4792-94cd-1a598ada7f99",
+              "3a3da613-3d73-4560-bdb9-0af77631ff35",
+              "437e82a5-9ad5-4cb6-a52e-39c94d1419aa",
+              "c7ad51aa-729c-4188-88db-fd2a7cd4b754",
+              "6281d37a-da99-48b4-8e41-720181e93398",
+              "71d1e894-3644-483a-a377-d2af0a38a0e7",
+              "891daef4-934a-4588-842a-887ec34220b3",
+              "fb56e4b6-e7a2-4fe4-88bc-74b69a5caf36"
+            ]
+          },
+          "study_map_delta": {
+            "transition": "step:1 (continue)",
+            "from": {
+              "objective_index": 0,
+              "step_index": 1,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Theory Revision",
+                "selected_topics": []
+              }
+            },
+            "to": {
+              "objective_index": 0,
+              "step_index": 1,
+              "scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Theory Revision",
+                "selected_topics": []
+              }
+            },
+            "changed": {
+              "objective": false,
+              "step": false,
+              "scope": false
+            },
+            "transition_contract": {
+              "decision": "CONTINUE_STEP",
+              "skip_target_index": null,
+              "next_objective_index": null,
+              "ad_hoc_step_type": null,
+              "student_intent": "engaged",
+              "replan_required": false,
+              "replan_reason": null,
+              "scope_shift_request": {},
+              "current_scope": {
+                "scope_type": "notebook",
+                "notebook_id": "1a2190ca-a287-491e-9d7a-b9f7a5767512",
+                "anchor_resource_id": "3ed546ac-539c-473e-b1bd-60a961656df9",
+                "resource_ids": [
+                  "a5bc0956-66ab-42cd-90b7-35f4173817e5",
+                  "3ed546ac-539c-473e-b1bd-60a961656df9"
+                ],
+                "topic": "Probability Theory Revision",
+                "selected_topics": []
+              },
+              "requested_decision": "CONTINUE_STEP",
+              "applied_decision": "CONTINUE_STEP",
+              "accepted": true,
+              "transition": "step:1 (continue)",
+              "guard_labels": [],
+              "rejection_reason": null,
+              "session_complete": false,
+              "last_replan_request": {},
+              "last_scope_shift": {}
+            }
+          }
+        }
+      ],
+      "history_status": 200,
+      "history_turn_count": 3,
+      "history_turn_indexes": [
+        0,
+        1,
+        2
+      ]
+    }
+  ]
+}

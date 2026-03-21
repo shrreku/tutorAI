@@ -4,6 +4,7 @@ Curriculum Agent - TICKET-024
 Generates learning objectives and curriculum plans from resource content.
 """
 
+from collections import defaultdict
 import logging
 from typing import Optional
 from uuid import UUID
@@ -103,6 +104,10 @@ class CurriculumAgent:
         topic: Optional[str] = None,
         selected_topics: Optional[list[str]] = None,
         mode: str = "learn",
+        scope_resource_ids: Optional[list[UUID | str]] = None,
+        scope_type: Optional[str] = None,
+        notebook_id: Optional[UUID | str] = None,
+        objective_limit: Optional[int] = None,
     ) -> dict:
         """
         Generate a curriculum plan for a resource.
@@ -114,17 +119,38 @@ class CurriculumAgent:
         Returns:
             Dict with active_topic and objective_queue
         """
-        # Get topic bundles and concepts
-        topic_bundles = await self._get_topic_bundles(resource_id)
-        concepts = await self._get_concepts(resource_id)
-        learning_objectives = await self._get_learning_objectives(resource_id)
-        concept_graph_edges = await self._get_concept_graph_edges(resource_id)
-        prereq_hints = await self._get_prereq_hints(resource_id)
+        planning_resource_ids = self._normalize_resource_ids(
+            scope_resource_ids,
+            fallback_resource_id=resource_id,
+        )
+        planning_scope = self._scope_label(
+            resource_ids=planning_resource_ids,
+            scope_type=scope_type,
+            notebook_id=notebook_id,
+        )
+
+        topic_bundles = await self._get_topic_bundles(planning_resource_ids)
+        concepts = await self._get_concepts(planning_resource_ids)
+        learning_objectives = await self._get_learning_objectives(planning_resource_ids)
+        concept_graph_edges = await self._get_concept_graph_edges(planning_resource_ids)
+        prereq_hints = await self._get_prereq_hints(planning_resource_ids)
+        prereq_chains = self._build_prereq_chains(prereq_hints, concepts)
 
         if not concepts:
-            raise ValueError(f"No concepts found for resource {resource_id}")
+            logger.warning(
+                "No concepts found for planning scope %s; generating fallback plan",
+                planning_scope,
+            )
+            return self._finalize_plan_payload(
+                active_topic=topic or "General",
+                objectives=self._create_fallback_objectives(["general"], mode=mode),
+                concepts=["general"],
+                resource_ids=planning_resource_ids,
+                scope_type=scope_type,
+                notebook_id=notebook_id,
+                objective_limit=objective_limit,
+            )
 
-        # Filter by selected topics if provided
         if selected_topics:
             filtered_bundles = [
                 b
@@ -134,7 +160,6 @@ class CurriculumAgent:
             ]
             if filtered_bundles:
                 topic_bundles = filtered_bundles
-                # Restrict concepts to those in selected topic bundles
                 selected_concepts = set()
                 for b in filtered_bundles:
                     selected_concepts.update(b.get("primary_concepts", []))
@@ -153,16 +178,24 @@ class CurriculumAgent:
                         if hint.get("source") in selected_concepts
                         and hint.get("target") in selected_concepts
                     ]
+                    prereq_chains = [
+                        chain
+                        for chain in prereq_chains
+                        if chain and all(concept in selected_concepts for concept in chain)
+                    ]
 
-        # Build prompt
         messages = self._build_messages(
             topic_bundles,
             concepts,
             learning_objectives,
             concept_graph_edges,
             prereq_hints,
+            prereq_chains,
             topic,
             mode,
+            planning_scope=planning_scope,
+            resource_count=len(planning_resource_ids),
+            objective_limit=objective_limit,
         )
 
         try:
@@ -171,7 +204,6 @@ class CurriculumAgent:
                 trace_name="curriculum_generate_plan",
             )
 
-            # Validate concepts in output
             valid_concepts = set(concepts)
             validated_objectives = []
 
@@ -181,23 +213,36 @@ class CurriculumAgent:
                     validated_objectives.append(validated_obj)
 
             if not validated_objectives:
-                # Fallback: create basic objective from concepts
-                validated_objectives = self._create_fallback_objectives(concepts)
+                validated_objectives = self._create_fallback_objectives(
+                    concepts,
+                    mode=mode,
+                )
 
-            return {
-                "active_topic": output.active_topic or topic or "General",
-                "objective_queue": validated_objectives,
-            }
+            validated_objectives = self._ensure_unique_objective_ids(
+                validated_objectives
+            )
+
+            return self._finalize_plan_payload(
+                active_topic=output.active_topic or topic or "General",
+                objectives=validated_objectives,
+                concepts=concepts,
+                resource_ids=planning_resource_ids,
+                scope_type=scope_type,
+                notebook_id=notebook_id,
+                objective_limit=objective_limit,
+            )
 
         except Exception as e:
             logger.error(f"Curriculum generation failed: {e}")
-            # Return fallback plan
-            return {
-                "active_topic": topic or "General",
-                "objective_queue": self._create_fallback_objectives(
-                    concepts, mode=mode
-                ),
-            }
+            return self._finalize_plan_payload(
+                active_topic=topic or "General",
+                objectives=self._create_fallback_objectives(concepts, mode=mode),
+                concepts=concepts,
+                resource_ids=planning_resource_ids,
+                scope_type=scope_type,
+                notebook_id=notebook_id,
+                objective_limit=objective_limit,
+            )
 
     @observe(name="curriculum-extend", capture_input=False)
     async def extend_plan(
@@ -205,6 +250,13 @@ class CurriculumAgent:
         resource_id: UUID,
         current_objectives: list[dict],
         completed_concepts: list[str],
+        *,
+        scope_resource_ids: Optional[list[UUID | str]] = None,
+        topic: Optional[str] = None,
+        selected_topics: Optional[list[str]] = None,
+        mode: str = "learn",
+        max_new_objectives: int = 2,
+        existing_objective_ids: Optional[list[str]] = None,
     ) -> list[dict]:
         """
         Generate additional objectives when horizon reached.
@@ -217,9 +269,51 @@ class CurriculumAgent:
         Returns:
             List of new objectives
         """
-        concepts = await self._get_concepts(resource_id)
+        planning_resource_ids = self._normalize_resource_ids(
+            scope_resource_ids,
+            fallback_resource_id=resource_id,
+        )
+        planning_scope = self._scope_label(resource_ids=planning_resource_ids)
+        topic_bundles = await self._get_topic_bundles(planning_resource_ids)
+        concepts = await self._get_concepts(planning_resource_ids)
+        learning_objectives = await self._get_learning_objectives(planning_resource_ids)
+        concept_graph_edges = await self._get_concept_graph_edges(planning_resource_ids)
+        prereq_hints = await self._get_prereq_hints(planning_resource_ids)
+        prereq_chains = self._build_prereq_chains(prereq_hints, concepts)
 
-        # Find uncovered concepts
+        if selected_topics:
+            filtered_bundles = [
+                b
+                for b in topic_bundles
+                if b["topic_id"] in selected_topics
+                or b["topic_name"] in selected_topics
+            ]
+            if filtered_bundles:
+                topic_bundles = filtered_bundles
+                selected_concepts = set()
+                for b in filtered_bundles:
+                    selected_concepts.update(b.get("primary_concepts", []))
+                    selected_concepts.update(b.get("support_concepts", []))
+                if selected_concepts:
+                    concepts = [c for c in concepts if c in selected_concepts]
+                    concept_graph_edges = [
+                        edge
+                        for edge in concept_graph_edges
+                        if edge.get("source") in selected_concepts
+                        and edge.get("target") in selected_concepts
+                    ]
+                    prereq_hints = [
+                        hint
+                        for hint in prereq_hints
+                        if hint.get("source") in selected_concepts
+                        and hint.get("target") in selected_concepts
+                    ]
+                    prereq_chains = [
+                        chain
+                        for chain in prereq_chains
+                        if chain and all(concept in selected_concepts for concept in chain)
+                    ]
+
         covered = set(completed_concepts)
         for obj in current_objectives:
             scope = obj.get("concept_scope", {})
@@ -230,18 +324,49 @@ class CurriculumAgent:
         if not remaining:
             return []
 
-        # Generate objectives for remaining concepts
-        topic_bundles = await self._get_topic_bundles(resource_id)
-        learning_objectives = await self._get_learning_objectives(resource_id)
-        concept_graph_edges = await self._get_concept_graph_edges(resource_id)
-        prereq_hints = await self._get_prereq_hints(resource_id)
         messages = self._build_messages(
-            topic_bundles,
+            [
+                {
+                    **bundle,
+                    "primary_concepts": [
+                        concept
+                        for concept in bundle.get("primary_concepts", [])
+                        if concept in set(remaining)
+                    ],
+                    "support_concepts": [
+                        concept
+                        for concept in bundle.get("support_concepts", [])
+                        if concept in set(remaining)
+                    ],
+                }
+                for bundle in topic_bundles
+                if set(bundle.get("primary_concepts", []) or []) & set(remaining)
+                or set(bundle.get("support_concepts", []) or []) & set(remaining)
+            ],
             remaining,
             learning_objectives,
-            concept_graph_edges,
-            prereq_hints,
-            None,
+            [
+                edge
+                for edge in concept_graph_edges
+                if edge.get("source") in set(remaining)
+                and edge.get("target") in set(remaining)
+            ],
+            [
+                hint
+                for hint in prereq_hints
+                if hint.get("source") in set(remaining)
+                and hint.get("target") in set(remaining)
+            ],
+            [
+                chain
+                for chain in prereq_chains
+                if chain and all(concept in set(remaining) for concept in chain)
+            ],
+            topic,
+            mode,
+            planning_scope=planning_scope,
+            resource_count=len(planning_resource_ids),
+            objective_limit=max_new_objectives,
         )
 
         try:
@@ -251,14 +376,23 @@ class CurriculumAgent:
             )
 
             valid_concepts = set(remaining)
-            return [
+            extended = [
                 self._validate_objective(obj, valid_concepts)
                 for obj in output.objective_queue
                 if self._validate_objective(obj, valid_concepts)
             ]
+            extended = self._ensure_unique_objective_ids(
+                extended,
+                existing_ids=existing_objective_ids,
+            )
+            return extended[: max(1, max_new_objectives)]
         except Exception as e:
             logger.error(f"Plan extension failed: {e}")
-            return [self._create_fallback_objective(remaining[:3])]
+            fallback = [self._create_fallback_objective(remaining[:3], mode=mode)]
+            return self._ensure_unique_objective_ids(
+                fallback,
+                existing_ids=existing_objective_ids,
+            )
 
     async def _generate_curriculum_output(
         self,
@@ -289,84 +423,347 @@ class CurriculumAgent:
                 trace_name=f"{trace_name}_retry",
             )
 
-    async def _get_topic_bundles(self, resource_id: UUID) -> list[dict]:
-        """Get topic bundles for resource."""
+    def _normalize_resource_ids(
+        self,
+        resource_ids: Optional[list[UUID | str]],
+        *,
+        fallback_resource_id: UUID,
+    ) -> list[UUID]:
+        normalized: list[UUID] = []
+        seen: set[UUID] = set()
+        for resource_id in resource_ids or []:
+            value = UUID(str(resource_id)) if not isinstance(resource_id, UUID) else resource_id
+            if value in seen:
+                continue
+            seen.add(value)
+            normalized.append(value)
+        if fallback_resource_id not in seen:
+            normalized.insert(0, fallback_resource_id)
+        return normalized
+
+    def _scope_label(
+        self,
+        *,
+        resource_ids: list[UUID],
+        scope_type: Optional[str] = None,
+        notebook_id: Optional[UUID | str] = None,
+    ) -> str:
+        normalized_scope_type = (
+            (scope_type or "").strip()
+            or ("notebook" if len(resource_ids) > 1 and notebook_id else "single_resource")
+        )
+        if notebook_id:
+            return f"{normalized_scope_type}:{notebook_id}"
+        return f"{normalized_scope_type}:{len(resource_ids)}"
+
+    def _collect_objective_concepts(self, objectives: list[dict]) -> list[str]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for obj in objectives:
+            scope = obj.get("concept_scope", {}) or {}
+            for concept in (
+                list(scope.get("primary", []) or [])
+                + list(scope.get("support", []) or [])
+                + list(scope.get("prereq", []) or [])
+            ):
+                if concept in seen:
+                    continue
+                seen.add(concept)
+                ordered.append(concept)
+        return ordered
+
+    def _ensure_unique_objective_ids(
+        self,
+        objectives: list[dict],
+        *,
+        existing_ids: Optional[list[str]] = None,
+    ) -> list[dict]:
+        seen = {objective_id for objective_id in (existing_ids or []) if objective_id}
+        normalized: list[dict] = []
+        for index, obj in enumerate(objectives):
+            candidate = str(obj.get("objective_id") or f"obj_{index + 1:02d}").strip()
+            if not candidate:
+                candidate = f"obj_{index + 1:02d}"
+            if candidate in seen:
+                suffix = 2
+                base = candidate
+                while f"{base}_{suffix}" in seen:
+                    suffix += 1
+                candidate = f"{base}_{suffix}"
+            updated = dict(obj)
+            updated["objective_id"] = candidate
+            normalized.append(updated)
+            seen.add(candidate)
+        return normalized
+
+    def _build_prereq_chains(
+        self,
+        prereq_hints: list[dict],
+        concepts: list[str],
+    ) -> list[list[str]]:
+        adjacency: dict[str, list[tuple[str, int]]] = defaultdict(list)
+        incoming: set[str] = set()
+        for hint in prereq_hints:
+            source = hint.get("source")
+            target = hint.get("target")
+            support = int(hint.get("support_count", 0) or 0)
+            if not source or not target or source == target:
+                continue
+            adjacency[source].append((target, support))
+            incoming.add(target)
+
+        roots = [concept for concept in concepts if concept in adjacency and concept not in incoming]
+        if not roots:
+            roots = [concept for concept in concepts if concept in adjacency][:6]
+
+        chains: list[list[str]] = []
+        seen_paths: set[tuple[str, ...]] = set()
+
+        def _walk(node: str, path: list[str]) -> None:
+            if len(chains) >= 8:
+                return
+            next_nodes = sorted(
+                adjacency.get(node, []),
+                key=lambda item: (-item[1], item[0]),
+            )
+            if not next_nodes and len(path) >= 2:
+                path_key = tuple(path)
+                if path_key not in seen_paths:
+                    seen_paths.add(path_key)
+                    chains.append(path[:])
+                return
+            for next_node, _support in next_nodes[:3]:
+                if next_node in path or len(path) >= 4:
+                    continue
+                _walk(next_node, path + [next_node])
+
+        for root in roots[:6]:
+            _walk(root, [root])
+            if len(chains) >= 8:
+                break
+
+        return chains
+
+    def _finalize_plan_payload(
+        self,
+        *,
+        active_topic: str,
+        objectives: list[dict],
+        concepts: list[str],
+        resource_ids: list[UUID],
+        scope_type: Optional[str],
+        notebook_id: Optional[UUID | str],
+        objective_limit: Optional[int],
+    ) -> dict:
+        normalized_objectives = list(objectives or [])
+        if objective_limit and objective_limit > 0:
+            normalized_objectives = normalized_objectives[:objective_limit]
+        covered_concepts = set(self._collect_objective_concepts(normalized_objectives))
+        remaining_concepts = [
+            concept for concept in concepts if concept not in covered_concepts
+        ]
+        rolling_enabled = bool(objective_limit and remaining_concepts)
+        normalized_scope_type = (
+            (scope_type or "").strip()
+            or ("notebook" if len(resource_ids) > 1 and notebook_id else "single_resource")
+        )
+        plan_horizon = {
+            "version": 1,
+            "strategy": "rolling" if rolling_enabled else "fixed",
+            "visible_objectives": len(normalized_objectives),
+            "objective_limit": objective_limit or len(normalized_objectives),
+            "remaining_concepts_estimate": len(remaining_concepts),
+            "remaining_concepts_sample": remaining_concepts[:8],
+        }
+        curriculum_planner = {
+            "version": 1,
+            "scope_type": normalized_scope_type,
+            "notebook_id": str(notebook_id) if notebook_id else None,
+            "resource_ids": [str(resource_id) for resource_id in resource_ids],
+            "resource_count": len(resource_ids),
+            "rolling_enabled": rolling_enabled,
+            "exhausted": not rolling_enabled,
+            "objective_batch_size": objective_limit or len(normalized_objectives),
+            "extend_when_remaining": 1,
+            "extension_count": 0,
+            "remaining_concepts_estimate": len(remaining_concepts),
+            "total_concepts": len(concepts),
+            "last_planning_mode": "initial",
+        }
+        return {
+            "active_topic": active_topic,
+            "objective_queue": normalized_objectives,
+            "plan_horizon": plan_horizon,
+            "curriculum_planner": curriculum_planner,
+        }
+
+    async def _get_topic_bundles(self, resource_ids: list[UUID]) -> list[dict]:
         result = await self.db.execute(
             select(ResourceTopicBundle).where(
-                ResourceTopicBundle.resource_id == resource_id
+                ResourceTopicBundle.resource_id.in_(resource_ids)
             )
         )
         bundles = result.scalars().all()
+        merged: dict[str, dict] = {}
 
-        return [
-            {
-                "topic_id": b.topic_id,
-                "topic_name": b.topic_name,
-                "primary_concepts": b.primary_concepts or [],
-                "support_concepts": b.support_concepts or [],
-            }
-            for b in bundles
-        ]
+        for bundle in bundles:
+            key = bundle.topic_id or bundle.topic_name
+            record = merged.setdefault(
+                key,
+                {
+                    "topic_id": bundle.topic_id,
+                    "topic_name": bundle.topic_name,
+                    "primary_concepts": [],
+                    "support_concepts": [],
+                },
+            )
+            for concept in bundle.primary_concepts or []:
+                if concept not in record["primary_concepts"]:
+                    record["primary_concepts"].append(concept)
+            for concept in bundle.support_concepts or []:
+                if concept in record["primary_concepts"]:
+                    continue
+                if concept not in record["support_concepts"]:
+                    record["support_concepts"].append(concept)
 
-    async def _get_concepts(self, resource_id: UUID) -> list[str]:
-        """Get admitted concepts for resource."""
-        result = await self.db.execute(
-            select(ResourceConceptStats.concept_id)
-            .where(ResourceConceptStats.resource_id == resource_id)
-            .order_by(ResourceConceptStats.teach_count.desc())
+        return sorted(
+            merged.values(),
+            key=lambda item: (-len(item["primary_concepts"]), item["topic_name"]),
         )
-        return [row[0] for row in result.fetchall()]
 
-    async def _get_learning_objectives(self, resource_id: UUID) -> list[dict]:
-        """Get ingestion-derived learning objective hints for the resource."""
+    async def _get_concepts(self, resource_ids: list[UUID]) -> list[str]:
+        result = await self.db.execute(
+            select(ResourceConceptStats).where(
+                ResourceConceptStats.resource_id.in_(resource_ids)
+            )
+        )
+        rows = result.scalars().all()
+        aggregated: dict[str, dict] = defaultdict(
+            lambda: {"teach_count": 0, "importance_score": 0.0, "topo_order": None}
+        )
+
+        for row in rows:
+            record = aggregated[row.concept_id]
+            record["teach_count"] += int(row.teach_count or 0)
+            record["importance_score"] = max(
+                float(record["importance_score"] or 0.0),
+                float(row.importance_score or 0.0),
+            )
+            if row.topo_order is not None and (
+                record["topo_order"] is None
+                or int(row.topo_order) < int(record["topo_order"])
+            ):
+                record["topo_order"] = int(row.topo_order)
+
+        ordered = sorted(
+            aggregated.items(),
+            key=lambda item: (
+                item[1]["topo_order"] is None,
+                item[1]["topo_order"] if item[1]["topo_order"] is not None else 10**9,
+                -item[1]["teach_count"],
+                -item[1]["importance_score"],
+                item[0],
+            ),
+        )
+        return [concept_id for concept_id, _meta in ordered]
+
+    async def _get_learning_objectives(self, resource_ids: list[UUID]) -> list[dict]:
         result = await self.db.execute(
             select(ResourceLearningObjective).where(
-                ResourceLearningObjective.resource_id == resource_id
+                ResourceLearningObjective.resource_id.in_(resource_ids)
             )
         )
         items = result.scalars().all()
-        return [
-            {
-                "objective_text": item.objective_text,
-                "specificity": item.specificity,
-            }
-            for item in items
-        ]
+        seen: set[tuple[str, str | None]] = set()
+        ordered: list[dict] = []
+        for item in items:
+            key = (item.objective_text, item.specificity)
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(
+                {
+                    "objective_text": item.objective_text,
+                    "specificity": item.specificity,
+                }
+            )
+        return ordered
 
-    async def _get_concept_graph_edges(self, resource_id: UUID) -> list[dict]:
-        """Get typed concept graph edges for the resource."""
+    async def _get_concept_graph_edges(self, resource_ids: list[UUID]) -> list[dict]:
         result = await self.db.execute(
             select(ResourceConceptGraph)
-            .where(ResourceConceptGraph.resource_id == resource_id)
+            .where(ResourceConceptGraph.resource_id.in_(resource_ids))
             .order_by(ResourceConceptGraph.confidence.desc())
         )
         edges = result.scalars().all()
-        return [
-            {
-                "source": edge.source_concept_id,
-                "target": edge.target_concept_id,
-                "relation_type": edge.relation_type,
-                "confidence": edge.confidence,
-            }
-            for edge in edges[:120]
-        ]
+        merged: dict[tuple[str, str, str], dict] = {}
 
-    async def _get_prereq_hints(self, resource_id: UUID) -> list[dict]:
-        """Get prerequisite hints for the resource."""
+        for edge in edges:
+            key = (
+                edge.source_concept_id,
+                edge.target_concept_id,
+                edge.relation_type,
+            )
+            record = merged.setdefault(
+                key,
+                {
+                    "source": edge.source_concept_id,
+                    "target": edge.target_concept_id,
+                    "relation_type": edge.relation_type,
+                    "confidence": float(edge.confidence or 0.0),
+                    "assoc_weight": float(edge.assoc_weight or 0.0),
+                },
+            )
+            record["confidence"] = max(
+                float(record.get("confidence") or 0.0),
+                float(edge.confidence or 0.0),
+            )
+            record["assoc_weight"] = max(
+                float(record.get("assoc_weight") or 0.0),
+                float(edge.assoc_weight or 0.0),
+            )
+
+        ordered = sorted(
+            merged.values(),
+            key=lambda item: (
+                -float(item.get("confidence") or 0.0),
+                -float(item.get("assoc_weight") or 0.0),
+                item.get("source") or "",
+                item.get("target") or "",
+            ),
+        )
+        return ordered[:160]
+
+    async def _get_prereq_hints(self, resource_ids: list[UUID]) -> list[dict]:
         result = await self.db.execute(
             select(ResourcePrereqHint)
-            .where(ResourcePrereqHint.resource_id == resource_id)
+            .where(ResourcePrereqHint.resource_id.in_(resource_ids))
             .order_by(ResourcePrereqHint.support_count.desc())
         )
         hints = result.scalars().all()
-        return [
-            {
-                "source": hint.source_concept_id,
-                "target": hint.target_concept_id,
-                "support_count": hint.support_count,
-            }
-            for hint in hints[:80]
-        ]
+        merged: dict[tuple[str, str], dict] = {}
+
+        for hint in hints:
+            key = (hint.source_concept_id, hint.target_concept_id)
+            record = merged.setdefault(
+                key,
+                {
+                    "source": hint.source_concept_id,
+                    "target": hint.target_concept_id,
+                    "support_count": 0,
+                },
+            )
+            record["support_count"] += int(hint.support_count or 0)
+
+        ordered = sorted(
+            merged.values(),
+            key=lambda item: (
+                -int(item.get("support_count") or 0),
+                item.get("source") or "",
+                item.get("target") or "",
+            ),
+        )
+        return ordered[:120]
 
     def _build_messages(
         self,
@@ -375,8 +772,13 @@ class CurriculumAgent:
         learning_objectives: list[dict],
         concept_graph_edges: list[dict],
         prereq_hints: list[dict],
+        prereq_chains: list[list[str]],
         topic: Optional[str],
         mode: str,
+        *,
+        planning_scope: str,
+        resource_count: int,
+        objective_limit: Optional[int],
     ) -> list[dict]:
         """Build messages for LLM."""
         bundles_text = (
@@ -411,16 +813,29 @@ class CurriculumAgent:
             )
             or "No prerequisite hints available"
         )
+        prereq_chains_text = (
+            "\n".join(
+                f"- {' -> '.join(chain)}"
+                for chain in prereq_chains[:12]
+                if len(chain) >= 2
+            )
+            or "No prerequisite chains available"
+        )
 
         normalized_mode = (mode or "learn").strip().lower()
         mode_guidance = MODE_CURRICULUM_GUIDANCE.get(
             normalized_mode, MODE_CURRICULUM_GUIDANCE["learn"]
         )
+        max_objective_text = (
+            str(max(1, int(objective_limit))) if objective_limit else "4"
+        )
 
-        user_content = f"""Create a curriculum plan for the following resource:
+        user_content = f"""Create a curriculum plan for the following knowledge scope:
 
     Session Mode: {normalized_mode}
     Mode Guidance: {mode_guidance}
+    Planning Scope: {planning_scope}
+    Resource Count: {resource_count}
 
 Topic Focus: {topic or "All topics"}
 
@@ -439,7 +854,10 @@ Concept Graph Edges:
 Prerequisite Hints:
 {prereq_hints_text}
 
-Generate 2-4 learning objectives that cover the key concepts, ordered by prerequisite dependencies.
+Combined Prerequisite Chains:
+{prereq_chains_text}
+
+Generate 1-{max_objective_text} learning objectives that cover the next most important concepts, ordered by prerequisite dependencies.
 """
 
         return [

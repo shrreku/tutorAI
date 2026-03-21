@@ -27,7 +27,7 @@ export interface Resource {
   status: string;
   lifecycle_status?: string | null;
   processing_profile?: string | null;
-  capabilities?: Record<string, boolean>;
+  capabilities?: Record<string, boolean | number>;
   uploaded_at: string;
   processed_at: string | null;
   latest_job?: IngestionStatus | null;
@@ -79,6 +79,10 @@ export interface IngestionStatus {
   current_stage: string | null;
   progress_percent: number;
   error_message: string | null;
+  error_stage?: string | null;
+  resumable?: boolean;
+  resume_hint?: string | null;
+  last_completed_stage?: string | null;
   started_at: string | null;
   completed_at: string | null;
   document_metrics?: IngestionDocumentMetrics | null;
@@ -99,6 +103,9 @@ export interface IngestionCapabilityProgress {
   search_ready: boolean;
   doubt_ready: boolean;
   learn_ready: boolean;
+  ready_batch_count?: number;
+  total_batch_count?: number;
+  progressive_study_ready?: boolean;
 }
 
 export interface IngestionBillingStatus {
@@ -216,6 +223,21 @@ export interface Session {
   current_step: string | null;
   current_concept_id: string | null;
   mastery: Record<string, number> | null;
+  curriculum_overview?: {
+    active_topic?: string | null;
+    total_objectives: number;
+    objectives: Array<{
+      objective_id: string;
+      title: string;
+      description?: string | null;
+      primary_concepts: string[];
+      support_concepts: string[];
+      prereq_concepts: string[];
+      step_count: number;
+      estimated_turns: number;
+    }>;
+    session_overview?: string | null;
+  } | null;
   created_at: string;
 }
 
@@ -447,6 +469,26 @@ export interface TutorTurnRequest {
   message: string;
 }
 
+export interface CitationData {
+  citation_id: string;
+  resource_id?: string;
+  chunk_id: string;
+  sub_chunk_id?: string;
+  page_start?: number;
+  page_end?: number;
+  section_heading?: string;
+  snippet: string;
+  relevance_score: number;
+  char_start?: number;
+  char_end?: number;
+}
+
+export interface StructuredContentBlockData {
+  block_type: string;
+  content: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface TutorTurnResponse {
   turn_id: string;
   response: string;
@@ -462,6 +504,13 @@ export interface TutorTurnResponse {
   session_complete: boolean;
   awaiting_evaluation: boolean;
   session_summary: SessionSummary | null;
+  progression_contract?: Record<string, unknown>;
+  retrieval_contract?: Record<string, unknown>;
+  response_contract?: Record<string, unknown>;
+  structured_content?: StructuredContentBlockData[] | null;
+  study_map_delta?: Record<string, unknown> | null;
+  study_map_snapshot?: Record<string, unknown> | null;
+  citations: CitationData[];
   // CM-015: Model routing transparency
   selected_model_id: string | null;
   routed_model_id: string | null;
@@ -520,6 +569,25 @@ export interface Turn {
   tutor_question: string | null;
   pedagogical_action: string | null;
   current_step: string | null;
+  current_step_index?: number;
+  objective_id?: string | null;
+  objective_title?: string | null;
+  step_transition?: string | null;
+  focus_concepts?: string[];
+  mastery_update?: Record<string, number> | null;
+  progression_decision?: string | null;
+  retrieved_chunks?: unknown[] | null;
+  policy_output?: unknown | null;
+  evaluator_output?: unknown | null;
+  latency_ms?: number | null;
+  session_summary?: SessionSummary | null;
+  progression_contract?: Record<string, unknown>;
+  retrieval_contract?: Record<string, unknown>;
+  response_contract?: Record<string, unknown>;
+  structured_content?: StructuredContentBlockData[] | null;
+  study_map_delta?: Record<string, unknown> | null;
+  study_map_snapshot?: Record<string, unknown> | null;
+  citations?: CitationData[];
   created_at: string;
 }
 

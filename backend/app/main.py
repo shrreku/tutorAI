@@ -15,6 +15,8 @@ from app.schemas.common import ErrorResponse
 from app.services.admin_bootstrap import ensure_bootstrap_admin
 from app.services.tracing import init_langfuse, flush_langfuse
 from app.services.embedding.factory import create_embedding_provider
+from app.observability import setup_observability
+from app import analytics
 
 
 logging.basicConfig(
@@ -87,8 +89,11 @@ async def lifespan(app: FastAPI):
             logger.info("Embedding provider prewarmed during API startup")
         except Exception as exc:
             logger.warning("Embedding prewarm failed during API startup: %s", exc)
+    # Observability: Sentry + OpenTelemetry (PROD-013)
+    setup_observability(app)
     yield
     logger.info("Shutting down StudyAgent API...")
+    analytics.shutdown()
     flush_langfuse()
     await engine.dispose()
 

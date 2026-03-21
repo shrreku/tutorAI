@@ -30,6 +30,7 @@ def main() -> int:
     checks = [
         f"{base_url}/api/v1/health/live",
         f"{base_url}/api/v1/health/ready",
+        f"{base_url}/api/v1/health/version",
     ]
 
     try:

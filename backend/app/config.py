@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     INGESTION_DOCLING_PICTURE_CLASSIFICATION: Optional[bool] = None
     INGESTION_DOCLING_PICTURE_DESCRIPTION: Optional[bool] = None
     INGESTION_DOCLING_CHART_EXTRACTION: Optional[bool] = None
+    INGESTION_DOCLING_CONTEXTUALIZED_TEXT: bool = False
+    INGESTION_EMBED_BATCH_SIZE: int = 32
 
     # Authentication
     AUTH_ENABLED: bool = True
@@ -204,6 +206,25 @@ class Settings(BaseSettings):
     HEALTH_CONSECUTIVE_ERROR_THRESHOLD: int = 3
     HEALTH_COOLDOWN_SECONDS: int = 300
     HEALTH_RECOVERY_SUCCESSES: int = 5
+
+    # Observability (PROD-013)
+    SENTRY_DSN: str = ""
+    SENTRY_ENVIRONMENT: str = "development"
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.1
+    SENTRY_PROFILES_SAMPLE_RATE: float = 0.1
+    OTEL_ENABLED: bool = False
+    OTEL_EXPORTER_ENDPOINT: str = ""
+    OTEL_SERVICE_NAME: str = "studyagent-api"
+
+    # Analytics (PROD-014)
+    POSTHOG_API_KEY: str = ""
+    POSTHOG_HOST: str = "https://us.i.posthog.com"
+    POSTHOG_ENABLED: bool = False
+
+    # Feature flags (PROD-014)
+    FF_WORKSPACE_V2_ENABLED: bool = True
+    FF_ACTIVE_LEARNING_ENABLED: bool = True
+    FF_ARTIFACT_GENERATION_ENABLED: bool = True
 
     model_config = {
         "env_file": ".env",

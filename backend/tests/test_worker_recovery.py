@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import uuid
@@ -52,8 +53,7 @@ class _FakeJobRepo:
         return None
 
 
-@pytest.mark.asyncio
-async def test_reconcile_orphaned_jobs_requeues_pending_and_fails_running(monkeypatch):
+def test_reconcile_orphaned_jobs_requeues_pending_and_fails_running(monkeypatch):
     pending_resource = SimpleNamespace(
         id=uuid.uuid4(),
         filename="pending.pdf",
@@ -75,6 +75,7 @@ async def test_reconcile_orphaned_jobs_requeues_pending_and_fails_running(monkey
         progress_percent=0,
         error_stage=None,
         error_message=None,
+        metrics={},
         started_at=None,
         completed_at=None,
     )
@@ -86,6 +87,7 @@ async def test_reconcile_orphaned_jobs_requeues_pending_and_fails_running(monkey
         progress_percent=45,
         error_stage=None,
         error_message=None,
+        metrics={"recovery": {"resumable": True, "resume_from_stage": "chunk"}},
         started_at=datetime.now(timezone.utc),
         completed_at=None,
     )
@@ -112,7 +114,7 @@ async def test_reconcile_orphaned_jobs_requeues_pending_and_fails_running(monkey
     monkeypatch.setattr(worker_module, "queued_job_ids", _fake_queued_job_ids)
     monkeypatch.setattr(worker_module, "enqueue_ingestion_job", _fake_enqueue)
 
-    summary = await worker_module.reconcile_orphaned_jobs()
+    summary = asyncio.run(worker_module.reconcile_orphaned_jobs())
 
     assert summary == {"requeued_pending": 1, "failed_running": 1}
     assert enqueued == [(str(pending_resource.id), str(pending_job.id))]
@@ -122,12 +124,12 @@ async def test_reconcile_orphaned_jobs_requeues_pending_and_fails_running(monkey
     assert running_job.error_stage == "enrich"
     assert running_job.completed_at is not None
     assert running_resource.status == "failed"
-    assert "worker restart" in (running_resource.error_message or "")
+    assert "Worker restarted while ingestion was in progress" in (running_resource.error_message or "")
+    assert running_job.metrics["recovery"]["resumable"] is True
     assert fake_session.commit_calls == 1
 
 
-@pytest.mark.asyncio
-async def test_reconcile_orphaned_jobs_does_not_duplicate_queued_pending_jobs(
+def test_reconcile_orphaned_jobs_does_not_duplicate_queued_pending_jobs(
     monkeypatch,
 ):
     resource = SimpleNamespace(
@@ -144,6 +146,7 @@ async def test_reconcile_orphaned_jobs_does_not_duplicate_queued_pending_jobs(
         progress_percent=0,
         error_stage=None,
         error_message=None,
+        metrics={},
         started_at=None,
         completed_at=None,
     )
@@ -164,11 +167,28 @@ async def test_reconcile_orphaned_jobs_does_not_duplicate_queued_pending_jobs(
     monkeypatch.setattr(worker_module, "queued_job_ids", _fake_queued_job_ids)
     monkeypatch.setattr(worker_module, "enqueue_ingestion_job", _fake_enqueue)
 
-    summary = await worker_module.reconcile_orphaned_jobs()
+    summary = asyncio.run(worker_module.reconcile_orphaned_jobs())
 
     assert summary == {"requeued_pending": 0, "failed_running": 0}
     assert enqueued == []
     assert fake_session.commit_calls == 1
+
+
+def test_reconcile_orphaned_jobs_skips_when_queue_lookup_fails(monkeypatch):
+    fake_session = _FakeSession(resources={}, jobs=[])
+
+    async def _fake_queued_job_ids():
+        raise RuntimeError("redis unavailable")
+
+    monkeypatch.setattr(worker_module, "IngestionJobRepository", _FakeJobRepo)
+    monkeypatch.setattr(
+        worker_module, "async_session_factory", _FakeSessionFactory(fake_session)
+    )
+    monkeypatch.setattr(worker_module, "queued_job_ids", _fake_queued_job_ids)
+
+    summary = asyncio.run(worker_module.reconcile_orphaned_jobs())
+
+    assert summary == {"requeued_pending": 0, "failed_running": 0}
 
 
 class _FakeSequencedSessionFactory:
@@ -185,8 +205,7 @@ class _FakeSequencedSessionFactory:
         return False
 
 
-@pytest.mark.asyncio
-async def test_process_job_finalizes_reserved_ingestion_credits(monkeypatch):
+def test_process_job_finalizes_reserved_ingestion_credits(monkeypatch):
     job = SimpleNamespace(
         id=uuid.uuid4(),
         resource_id=uuid.uuid4(),
@@ -255,8 +274,10 @@ async def test_process_job_finalizes_reserved_ingestion_credits(monkeypatch):
         _fake_continue_background_curriculum_preparation,
     )
 
-    result = await worker_module.process_job(
-        {"resource_id": str(job.resource_id), "job_id": str(job.id)}
+    result = asyncio.run(
+        worker_module.process_job(
+            {"resource_id": str(job.resource_id), "job_id": str(job.id)}
+        )
     )
 
     assert result is True
@@ -264,8 +285,7 @@ async def test_process_job_finalizes_reserved_ingestion_credits(monkeypatch):
     assert job.metrics["billing"]["status"] == "finalized"
 
 
-@pytest.mark.asyncio
-async def test_process_job_releases_reserved_ingestion_credits_on_failure(monkeypatch):
+def test_process_job_releases_reserved_ingestion_credits_on_failure(monkeypatch):
     monkeypatch.setattr(
         worker_module.settings, "INGESTION_WORKER_MAX_RETRIES", 1, raising=False
     )
@@ -336,8 +356,10 @@ async def test_process_job_releases_reserved_ingestion_credits_on_failure(monkey
     monkeypatch.setattr(worker_module, "IngestionPipeline", _Pipeline)
     monkeypatch.setattr(worker_module, "send_to_dlq", _fake_dlq)
 
-    result = await worker_module.process_job(
-        {"resource_id": str(job.resource_id), "job_id": str(job.id)}
+    result = asyncio.run(
+        worker_module.process_job(
+            {"resource_id": str(job.resource_id), "job_id": str(job.id)}
+        )
     )
 
     assert result is False
@@ -346,8 +368,7 @@ async def test_process_job_releases_reserved_ingestion_credits_on_failure(monkey
     assert dlq
 
 
-@pytest.mark.asyncio
-async def test_process_job_uses_async_byok_escrow_when_present(monkeypatch):
+def test_process_job_uses_async_byok_escrow_when_present(monkeypatch):
     job = SimpleNamespace(
         id=uuid.uuid4(),
         resource_id=uuid.uuid4(),
@@ -431,12 +452,14 @@ async def test_process_job_uses_async_byok_escrow_when_present(monkeypatch):
         _fake_continue_background_curriculum_preparation,
     )
 
-    result = await worker_module.process_job(
-        {
-            "resource_id": str(job.resource_id),
-            "job_id": str(job.id),
-            "escrow_id": job.metrics["async_byok"]["escrow_id"],
-        }
+    result = asyncio.run(
+        worker_module.process_job(
+            {
+                "resource_id": str(job.resource_id),
+                "job_id": str(job.id),
+                "escrow_id": job.metrics["async_byok"]["escrow_id"],
+            }
+        )
     )
 
     assert result is True
@@ -446,3 +469,26 @@ async def test_process_job_uses_async_byok_escrow_when_present(monkeypatch):
         (job.metrics["async_byok"]["escrow_id"], "ingestion_complete", True)
     ]
     assert job.metrics["async_byok"]["status"] == "consumed"
+
+
+
+def test_worker_loop_survives_redis_dequeue_failure(monkeypatch):
+    calls = {'count': 0}
+
+    async def _fake_dequeue(timeout=2):
+        del timeout
+        calls['count'] += 1
+        if calls['count'] == 1:
+            from redis.exceptions import ConnectionError
+            raise ConnectionError('queue unavailable')
+        worker_module._shutdown.set()
+        return None
+
+    monkeypatch.setattr(worker_module, 'dequeue_ingestion_job', _fake_dequeue)
+    monkeypatch.setattr(worker_module, 'reconcile_orphaned_jobs', lambda: asyncio.sleep(0))
+    monkeypatch.setattr(worker_module.settings, 'INGESTION_PREWARM_ENABLED', False, raising=False)
+    worker_module._shutdown = asyncio.Event()
+
+    asyncio.run(worker_module.worker_loop())
+
+    assert calls['count'] >= 2

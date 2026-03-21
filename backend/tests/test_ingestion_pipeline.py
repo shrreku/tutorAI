@@ -57,18 +57,34 @@ def test_ingestion_pipeline_run_completes_with_fixture_resource(monkeypatch):
             metadata={"embedding_strategy": "contextualized"},
         )
 
-    async def _run_embed_stage(self, chunks):
-        return [[0.1, 0.2], [0.3, 0.4]]
-
     async def _save_chunks(
         self,
         resource_id,
         chunks,
-        embeddings,
         enrichments,
-        conversion_metadata=None,
         chunking_metadata=None,
     ):
+        return {0: uuid.uuid4(), 1: uuid.uuid4()}
+
+    async def _save_sub_chunks(
+        self,
+        resource_id,
+        sub_chunks,
+        embeddings,
+        chunk_id_map,
+        enrichment_by_chunk_index,
+    ):
+        del resource_id, sub_chunks, embeddings, chunk_id_map, enrichment_by_chunk_index
+        return None
+
+    async def _load_chunk_checkpoint(self, resource_id):
+        del resource_id
+        return None
+
+    async def _upsert_chunk_checkpoint(
+        self, *, resource, sections, chunks, chunking_metadata, document_metrics
+    ):
+        del resource, sections, chunks, chunking_metadata, document_metrics
         return None
 
     async def _persist_core_artifacts(
@@ -88,10 +104,16 @@ def test_ingestion_pipeline_run_completes_with_fixture_resource(monkeypatch):
     monkeypatch.setattr(
         pipeline_module.IngestionPipeline, "_run_chunk_stage", _run_chunk_stage
     )
-    monkeypatch.setattr(
-        pipeline_module.IngestionPipeline, "_run_embed_stage", _run_embed_stage
-    )
     monkeypatch.setattr(pipeline_module.IngestionPipeline, "_save_chunks", _save_chunks)
+    monkeypatch.setattr(
+        pipeline_module.IngestionPipeline, "_save_sub_chunks", _save_sub_chunks
+    )
+    monkeypatch.setattr(
+        pipeline_module.IngestionPipeline, "_load_chunk_checkpoint", _load_chunk_checkpoint
+    )
+    monkeypatch.setattr(
+        pipeline_module.IngestionPipeline, "_upsert_chunk_checkpoint", _upsert_chunk_checkpoint
+    )
     monkeypatch.setattr(
         pipeline_module.IngestionPipeline,
         "_persist_core_artifacts",
@@ -101,6 +123,12 @@ def test_ingestion_pipeline_run_completes_with_fixture_resource(monkeypatch):
     pipeline = object.__new__(pipeline_module.IngestionPipeline)
     pipeline.db = object()
     pipeline.embedding = SimpleNamespace(model_id="test-embed")
+    pipeline.sub_chunker = SimpleNamespace(
+        sub_chunk=lambda chunks: SimpleNamespace(
+            sub_chunks=[],
+            metadata={"sub_chunks_created": 0},
+        )
+    )
 
     resource_id = uuid.uuid4()
     result = asyncio.run(pipeline.run(resource_id=resource_id))

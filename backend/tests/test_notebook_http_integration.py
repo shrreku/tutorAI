@@ -268,7 +268,7 @@ def test_http_notebook_session_creation_returns_preparation_summary(monkeypatch)
                 "session_brief_artifact_id": str(uuid4()),
             }
 
-    class _CurriculumPreparationService:
+    class _BatchedCurriculumPreparationService:
         def __init__(self, _db, **_kwargs):
             pass
 
@@ -337,7 +337,7 @@ def test_http_notebook_session_creation_returns_preparation_summary(monkeypatch)
         notebooks_module, "NotebookPreparationService", _PreparationService
     )
     monkeypatch.setattr(
-        notebooks_module, "CurriculumPreparationService", _CurriculumPreparationService
+        notebooks_module, "BatchedCurriculumPreparationService", _BatchedCurriculumPreparationService
     )
     monkeypatch.setattr(notebooks_module, "CreditMeter", _CreditMeter)
     monkeypatch.setattr(notebooks_module, "IngestionJobRepository", _IngestionRepo)
@@ -541,7 +541,7 @@ def test_http_notebook_session_creation_runs_curriculum_before_preparation(monke
                 "scope_resource_ids": [str(resource_id)],
             }
 
-    class _CurriculumPreparationService:
+    class _BatchedCurriculumPreparationService:
         def __init__(self, _db, **_kwargs):
             pass
 
@@ -606,7 +606,7 @@ def test_http_notebook_session_creation_runs_curriculum_before_preparation(monke
         notebooks_module, "NotebookPreparationService", _PreparationService
     )
     monkeypatch.setattr(
-        notebooks_module, "CurriculumPreparationService", _CurriculumPreparationService
+        notebooks_module, "BatchedCurriculumPreparationService", _BatchedCurriculumPreparationService
     )
     monkeypatch.setattr(notebooks_module, "CreditMeter", _CreditMeter)
     monkeypatch.setattr(notebooks_module, "IngestionJobRepository", _IngestionRepo)
@@ -714,7 +714,7 @@ def test_http_notebook_doubt_session_skips_curriculum_preparation(monkeypatch):
                 "scope_resource_ids": [str(resource_id)],
             }
 
-    class _CurriculumPreparationService:
+    class _BatchedCurriculumPreparationService:
         def __init__(self, _db, **_kwargs):
             pass
 
@@ -750,7 +750,7 @@ def test_http_notebook_doubt_session_skips_curriculum_preparation(monkeypatch):
         notebooks_module, "NotebookPreparationService", _PreparationService
     )
     monkeypatch.setattr(
-        notebooks_module, "CurriculumPreparationService", _CurriculumPreparationService
+        notebooks_module, "BatchedCurriculumPreparationService", _BatchedCurriculumPreparationService
     )
     monkeypatch.setattr(notebooks_module, "SessionService", _SessionService)
     monkeypatch.setattr(

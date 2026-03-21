@@ -16,7 +16,9 @@ export default {
     extend: {
       fontFamily: {
         display: ['"Instrument Serif"', 'Georgia', 'serif'],
+        reading: ['"Newsreader"', 'Georgia', 'serif'],
         body: ['"Instrument Sans"', 'system-ui', 'sans-serif'],
+        ui: ['"Sora"', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'monospace'],
       },
       colors: {

@@ -29,17 +29,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex bg-background relative overflow-hidden">
-      {/* Ambient glow */}
-      <div
-        className="pointer-events-none fixed inset-0 opacity-40"
-        style={{
-          backgroundImage:
-            'radial-gradient(ellipse 60% 50% at 30% 30%, rgba(212,160,60,0.1), transparent),' +
-            'radial-gradient(ellipse 50% 40% at 70% 70%, rgba(212,160,60,0.07), transparent)',
-        }}
-      />
-      <div className="pointer-events-none fixed inset-0 grain" />
+    <div className="min-h-screen flex bg-background">
 
       {/* Left decorative panel (hidden on small screens) */}
       <div className="hidden lg:flex flex-col justify-between w-[45%] relative z-10 px-12 py-10">
@@ -145,7 +135,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 rounded-lg bg-gold text-primary-foreground font-semibold text-sm py-3 shadow-md shadow-gold/20 hover:brightness-110 hover:shadow-lg hover:shadow-gold/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              className="w-full flex items-center justify-center gap-2 rounded-lg bg-gold text-primary-foreground font-semibold text-sm py-3 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
             >
               {loading ? (
                 <>

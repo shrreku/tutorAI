@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import {
   BarChart3, Loader2, Wand2, CheckCircle2, AlertTriangle,
-  BookOpen, Layers, ChevronDown, ChevronUp, Download, MessageSquare,
-  ChevronRight,
+  BookOpen, Layers, MessageSquare,
+  ChevronDown, ChevronRight, ChevronUp,
 } from 'lucide-react';
 import { useNotebookProgress, useNotebookArtifacts, useGenerateNotebookArtifact, useNotebookSessions } from '../../api/hooks';
-import type { NotebookArtifact } from '../../types/api';
+import { ArtifactViewerCard } from '../ui/ArtifactViewer';
 
 const ARTIFACT_TYPES = ['notes', 'flashcards', 'quiz', 'revision_plan'] as const;
 const ARTIFACT_META: Record<string, { icon: typeof BookOpen; label: string; color: string }> = {
@@ -14,181 +14,6 @@ const ARTIFACT_META: Record<string, { icon: typeof BookOpen; label: string; colo
   quiz:          { icon: CheckCircle2, label: 'Quiz',      color: 'text-orange-400' },
   revision_plan: { icon: BarChart3, label: 'Revision Plan', color: 'text-purple-400' },
 };
-
-function ArtifactContent({ artifact }: { artifact: NotebookArtifact }) {
-  const payload = artifact.payload_json;
-  if (!payload || Object.keys(payload).length === 0) return <p className="text-xs text-muted-foreground italic">Empty artifact.</p>;
-
-  const type = artifact.artifact_type;
-
-  if (type === 'notes' && Array.isArray(payload.sections)) {
-    return (
-      <div className="space-y-4">
-        {typeof payload.summary === 'string' && <p className="text-sm leading-relaxed text-foreground">{payload.summary}</p>}
-        {(payload.sections as Array<Record<string, unknown>>).map((section, index) => (
-          <div key={`${section.heading ?? index}`} className="rounded-xl border border-border/60 bg-background/60 p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <h4 className="text-sm font-semibold text-foreground">{String(section.heading ?? `Section ${index + 1}`)}</h4>
-              {Array.isArray(section.source_session_ids) && section.source_session_ids.length > 0 && (
-                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
-                  {section.source_session_ids.length} session sources
-                </span>
-              )}
-            </div>
-            {Array.isArray(section.bullets) && section.bullets.length > 0 && (
-              <ul className="mt-3 space-y-2 text-sm text-foreground">
-                {(section.bullets as string[]).map((bullet, bulletIndex) => (
-                  <li key={bulletIndex} className="flex gap-2">
-                    <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-gold shrink-0" />
-                    <span>{bullet}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {typeof section.key_takeaway === 'string' && (
-              <p className="mt-3 rounded-xl border border-gold/15 bg-gold/10 px-3 py-2 text-xs text-foreground">
-                Key takeaway: {section.key_takeaway}
-              </p>
-            )}
-          </div>
-        ))}
-        {Array.isArray(payload.next_actions) && payload.next_actions.length > 0 && (
-          <div>
-            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Next actions</p>
-            <div className="flex flex-wrap gap-2">
-              {(payload.next_actions as string[]).map((action) => (
-                <span key={action} className="rounded-full border border-border px-3 py-1.5 text-xs text-foreground">{action}</span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (type === 'flashcards') {
-    const cards = (payload.cards ?? payload.flashcards ?? (Array.isArray(payload) ? payload : [])) as Array<Record<string, string>>;
-    if (Array.isArray(cards) && cards.length > 0) {
-      return (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {cards.slice(0, 20).map((card, i) => (
-            <div key={i} className="rounded-xl border border-border/50 bg-background/40 p-4 space-y-2 hover:border-gold/15 transition-colors">
-              <p className="text-sm font-semibold text-foreground">{card.front ?? card.question ?? `Card ${i + 1}`}</p>
-              {card.study_hint && <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{card.study_hint}</p>}
-              <div className="h-px bg-border/30" />
-              <p className="text-sm text-muted-foreground">{card.back ?? card.answer ?? '—'}</p>
-            </div>
-          ))}
-        </div>
-      );
-    }
-  }
-
-  if (type === 'quiz') {
-    const questions = (payload.questions ?? (Array.isArray(payload) ? payload : [])) as Array<Record<string, unknown>>;
-    if (Array.isArray(questions) && questions.length > 0) {
-      return (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {questions.slice(0, 20).map((q, i) => (
-            <div key={i} className="rounded-xl border border-border/50 bg-background/40 p-4">
-              <p className="text-sm font-medium text-foreground mb-2">{i + 1}. {String(q.question ?? q.text ?? '')}</p>
-              {Array.isArray(q.options) && (
-                <ul className="space-y-1.5 mb-2">
-                  {(q.options as string[]).map((opt, j) => (
-                    <li key={j} className="text-sm text-muted-foreground flex items-start gap-2">
-                      <span className="w-5 h-5 rounded-full border border-border flex items-center justify-center text-[10px] shrink-0 mt-0.5">{String.fromCharCode(65 + j)}</span>
-                      {String(opt)}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {(q.correct_answer ?? q.answer) != null && <p className="text-xs text-emerald-400 mt-1.5">Answer: {String(q.correct_answer ?? q.answer)}</p>}
-              {q.explanation != null && <p className="text-xs text-muted-foreground mt-1">{String(q.explanation)}</p>}
-            </div>
-          ))}
-        </div>
-      );
-    }
-  }
-
-  if (type === 'revision_plan') {
-    const steps = (payload.days ?? payload.steps ?? payload.items ?? payload.plan ?? payload.schedule ?? (Array.isArray(payload) ? payload : [])) as Array<Record<string, unknown>>;
-    if (Array.isArray(steps) && steps.length > 0) {
-      return (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {steps.slice(0, 20).map((step, i) => (
-            <div key={i} className="flex gap-3 rounded-xl border border-border/50 bg-background/40 p-4">
-              <span className="w-7 h-7 rounded-full bg-gold/10 border border-gold/20 flex items-center justify-center text-xs text-gold font-semibold shrink-0">{i + 1}</span>
-              <div>
-                <div className="text-sm font-medium text-foreground">{String(step.day_label ?? step.title ?? step.topic ?? `Day ${i + 1}`)}</div>
-                <div className="mt-1 text-xs text-muted-foreground">{String(step.rationale ?? step.description ?? step.concept ?? '')}</div>
-                {Array.isArray(step.activities) && step.activities.length > 0 && (
-                  <ul className="mt-2 space-y-1 text-xs text-foreground">
-                    {(step.activities as string[]).map((activity) => <li key={activity}>• {activity}</li>)}
-                  </ul>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      );
-    }
-  }
-
-  if (type === 'notes') {
-    const text = typeof payload === 'string' ? payload : (payload.content ?? payload.summary ?? payload.text ?? payload.notes ?? null);
-    if (typeof text === 'string') {
-      return <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{text}</div>;
-    }
-  }
-
-  return <pre className="text-[11px] text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">{JSON.stringify(payload, null, 2)}</pre>;
-}
-
-function ArtifactCard({ artifact }: { artifact: NotebookArtifact }) {
-  const [expanded, setExpanded] = useState(false);
-  const meta = ARTIFACT_META[artifact.artifact_type] ?? ARTIFACT_META.notes;
-  const Icon = meta.icon;
-  const generation = (artifact.payload_json?.generation ?? {}) as Record<string, unknown>;
-  const sourceCounts = (artifact.payload_json?.source_counts ?? {}) as Record<string, unknown>;
-
-  const handleDownload = () => {
-    const blob = new Blob([JSON.stringify(artifact.payload_json, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${artifact.artifact_type}-${artifact.id.slice(0, 8)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden transition-all hover:border-gold/10">
-      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-muted/30 transition-colors">
-        <div className={`w-9 h-9 rounded-lg border border-border/50 flex items-center justify-center shrink-0 ${expanded ? 'bg-gold/10 border-gold/20' : ''}`}>
-          <Icon className={`w-4 h-4 ${expanded ? 'text-gold' : meta.color}`} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-foreground">{meta.label}</p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-            <span>{new Date(artifact.created_at).toLocaleString()}</span>
-            {typeof generation.strategy === 'string' && <span className="rounded-full border border-border px-2 py-0.5">{String(generation.strategy)}</span>}
-            {sourceCounts.sessions != null && <span className="rounded-full border border-border px-2 py-0.5">{String(sourceCounts.sessions)} sessions</span>}
-          </div>
-        </div>
-        <button onClick={(e) => { e.stopPropagation(); handleDownload(); }} className="text-muted-foreground hover:text-gold transition-colors p-1.5 rounded-md hover:bg-gold/10">
-          <Download className="w-3.5 h-3.5" />
-        </button>
-        {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-      </button>
-      {expanded && (
-        <div className="px-5 pb-5 pt-2 border-t border-border/30">
-          <ArtifactContent artifact={artifact} />
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function ProgressTab({ notebookId }: { notebookId: string }) {
   const { data: progress, isLoading: progressLoading } = useNotebookProgress(notebookId);
@@ -398,13 +223,26 @@ export default function ProgressTab({ notebookId }: { notebookId: string }) {
           <div className="flex items-center gap-2 text-sm text-muted-foreground p-4"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
         ) : artifactItems.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border/60 bg-card/30 py-10 text-center">
-            <Wand2 className="w-8 h-8 text-muted-foreground/20 mx-auto mb-2" />
+            <Wand2 className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
             <p className="text-sm text-muted-foreground">No artifacts yet. Generate study materials above.</p>
           </div>
         ) : (
-          artifactItems.map((a) => <ArtifactCard key={a.id} artifact={a} />)
+          artifactItems.map((a) => {
+            const meta = ARTIFACT_META[a.artifact_type] ?? ARTIFACT_META.notes;
+            return (
+              <ArtifactViewerCard
+                key={a.id}
+                type={a.artifact_type}
+                title={meta.label}
+                subtitle={new Date(a.created_at).toLocaleDateString()}
+                createdAt={a.created_at}
+                payload={a.payload_json}
+                downloadFileName={`${a.artifact_type}-${a.id.slice(0, 8)}.json`}
+              />
+            );
+          })
         )}
       </section>
     </div>
   );
-}
+ }

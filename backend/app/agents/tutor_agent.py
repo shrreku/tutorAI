@@ -28,8 +28,9 @@ You are told the current objective, canonical step type, effective step type, ta
 3. **Ground in source material when available.** Use the retrieved knowledge chunks. When source material is limited or unavailable, teach using the objective context, concept descriptions, and your pedagogical knowledge — but be transparent about any limitations if the student asks for specific source details.
 4. **Be concise and natural.** Avoid generic filler or repetitive boilerplate.
 5. **Connect concepts.** Relate the current topic to what the student already knows.
-6. **End with engagement.** When appropriate, close with a question that matches the strategy and step type. Do NOT force a question if it doesn't fit (e.g. after a simple introduction, a warm invitation to ask questions is fine).
-7. **Never refuse to teach.** Even with limited evidence, you can always explain a concept, ask a question, provide intuition, or engage the student. Use the objective and curriculum context to stay helpful.
+6. **No undefined jargon.** If you use a technical term that the learner likely hasn't seen yet (especially when mastery is low), define it briefly the first time you use it.
+7. **End with engagement.** When appropriate, close with a question that matches the strategy and step type. Do NOT force a question if it doesn't fit (e.g. after a simple introduction, a warm invitation to ask questions is fine).
+8. **Never refuse to teach.** Even with limited evidence, you can always explain a concept, ask a question, provide intuition, or engage the student. Use the objective and curriculum context to stay helpful.
 
 # Step-type behaviour
 - **motivate / activate_prior**: Build interest and connect to what the learner already knows.
@@ -117,12 +118,25 @@ class TutorAgent(BaseAgent[TutorState, TutorOutput]):
             f"SESSION MODE: {state.session_mode}\n"
             f"OBJECTIVE: {obj.get('title', 'N/A')}\n"
             f"  {obj.get('description', '')}\n"
-            f"  Primary concepts: {scope.get('primary', [])}\n\n"
+            f"  Primary concepts: {scope.get('primary', [])}\n"
+            f"  Prereq concepts: {scope.get('prereq', [])}\n\n"
             f"CURRENT STEP: {step.get('type', state.current_step)} "
             f"(step {step_index})\n"
             f"EFFECTIVE STEP THIS TURN: {effective_step_type}\n"
             f"  Target concepts: {step.get('target_concepts', [])}\n"
             f"  Goal: {step.get('goal', 'N/A')}"
+        )
+
+        mastery_lines = []
+        for concept, score in (state.mastery_snapshot or {}).items():
+            try:
+                mastery_lines.append(f"  {concept}: {float(score):.2f}")
+            except (TypeError, ValueError):
+                continue
+        mastery_block = (
+            "\nMASTERY (0=new, 1=mastered):\n" + "\n".join(mastery_lines)
+            if mastery_lines
+            else "\nMASTERY: (new student / unknown)"
         )
 
         # Target concepts from policy
@@ -158,7 +172,7 @@ class TutorAgent(BaseAgent[TutorState, TutorOutput]):
 
         return f"""{strategy_line}
 
-{ctx}{targets}{guidance}
+    {ctx}{targets}{guidance}{mastery_block}
 
 {knowledge}
 
@@ -172,6 +186,17 @@ Write your tutoring response now."""
     def _fallback_response(self, state: TutorState) -> TutorOutput:
         step = state.effective_step_type or state.current_step
         mode = (state.session_mode or "learn").strip().lower()
+        planner_guidance = (state.planner_guidance or "").strip().lower()
+        if "offer exactly two options" in planner_guidance and "mastery may be incomplete" in planner_guidance:
+            response = (
+                "We can do either of these:\n"
+                "1. Answer the pending checkpoint now so I can verify this step.\n"
+                "2. Skip ahead, with the understanding that your mastery for this part may be incomplete."
+            )
+            return TutorOutput(
+                response_text=response,
+                evidence_chunk_ids=state.evidence_chunk_ids,
+            )
         if mode == "doubt":
             response = (
                 "Let’s resolve the exact sticking point first. Here is the shortest accurate explanation of that idea, "

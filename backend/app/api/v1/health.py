@@ -118,3 +118,32 @@ async def liveness_check():
     return HealthResponse(
         status="alive", service="studyagent-api", timestamp=datetime.now(timezone.utc)
     )
+
+
+class VersionResponse(BaseModel):
+    version: str
+    service: str
+    environment: str
+    features: dict[str, bool]
+
+
+@router.get("/health/version", response_model=VersionResponse)
+async def version_info():
+    """Return build version and enabled feature flags for deploy verification."""
+    return VersionResponse(
+        version="0.2.0",
+        service="studyagent-api",
+        environment=settings.SENTRY_ENVIRONMENT,
+        features={
+            "notebooks": True,
+            "workspace_v2": settings.FF_WORKSPACE_V2_ENABLED,
+            "active_learning": settings.FF_ACTIVE_LEARNING_ENABLED,
+            "artifact_generation": settings.FF_ARTIFACT_GENERATION_ENABLED,
+            "credits": settings.CREDITS_ENABLED,
+            "byok": settings.BYOK_ENABLED,
+            "queue": settings.INGESTION_QUEUE_ENABLED,
+            "sentry": bool(settings.SENTRY_DSN),
+            "otel": settings.OTEL_ENABLED,
+            "posthog": settings.POSTHOG_ENABLED,
+        },
+    )

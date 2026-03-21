@@ -53,19 +53,10 @@ export default function RequestAccessPage() {
   };
 
   return (
-    <div className="min-h-screen flex bg-background relative overflow-hidden">
-      <div
-        className="pointer-events-none fixed inset-0 opacity-40"
-        style={{
-          backgroundImage:
-            'radial-gradient(ellipse 55% 45% at 70% 25%, rgba(212,160,60,0.1), transparent),' +
-            'radial-gradient(ellipse 50% 40% at 25% 75%, rgba(212,160,60,0.07), transparent)',
-        }}
-      />
-      <div className="pointer-events-none fixed inset-0 grain" />
+    <div className="min-h-screen flex bg-background">
 
       <div className="flex-1 flex items-center justify-center px-6 py-12 relative z-10">
-        <div className="w-full max-w-md rounded-2xl border border-border bg-card/70 p-8 backdrop-blur-sm">
+        <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8">
           <Link to="/landing" className="inline-flex items-center gap-2.5 mb-8 group">
             <div className="w-8 h-8 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center group-hover:bg-gold/20 transition-colors">
               <Sparkles className="w-4 h-4 text-gold" />
@@ -142,7 +133,7 @@ export default function RequestAccessPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 rounded-lg bg-gold text-primary-foreground font-semibold text-sm py-3 shadow-md shadow-gold/20 disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 rounded-lg bg-gold text-primary-foreground font-semibold text-sm py-3 hover:brightness-110 disabled:opacity-50 transition-all"
             >
               {loading ? <><Loader2 className="w-4 h-4 animate-spin" />Submitting…</> : 'Request access'}
             </button>

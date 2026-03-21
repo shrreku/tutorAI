@@ -29,6 +29,7 @@ def _build_result():
         focus_concepts=["limits"],
         awaiting_evaluation=False,
         session_summary=None,
+        study_map_snapshot=None,
         prompt_tokens=120,
         completion_tokens=45,
     )

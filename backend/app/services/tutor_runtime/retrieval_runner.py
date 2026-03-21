@@ -4,6 +4,10 @@ import logging
 from typing import Any, Protocol
 
 from app.services.retrieval.service import RetrievalResult, RetrievedChunk
+from app.services.tutor_runtime.runtime_contracts import (
+    build_retrieval_contract,
+    resolve_plan_scope,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +20,7 @@ class RetrieverProtocol(Protocol):
     async def retrieve(
         self,
         resource_id: Any,
+        resource_ids: list[Any] | None = None,
         query: str | None = None,
         target_concepts: list[str] | None = None,
         pedagogy_roles: list[str] | None = None,
@@ -40,7 +45,9 @@ def _roles_for_step(step_type: str | None) -> list[str]:
     if step in {"correct", "reflect", "summarize"}:
         return ["misconception", "summary", "explanation"]
     if step in {"motivate", "activate_prior"}:
-        return ["intuition", "example", "motivation", "explanation"]
+        # Even in a motivation step, brand-new learners often need a crisp
+        # definition of key terms to avoid undefined-jargon drift.
+        return ["motivation", "intuition", "definition", "example", "explanation"]
     return ["explanation"]
 
 
@@ -186,7 +193,7 @@ async def retrieve_knowledge(
     notebook_id: str | None = None,
     notebook_resource_ids: list[str] | None = None,
     lf: Any,
-) -> list[RetrievedChunk]:
+) -> tuple[list[RetrievedChunk], dict[str, Any]]:
     """Retrieve knowledge chunks driven by policy context, not raw student text.
 
     The retrieval query is built from policy directives, turn plan, step
@@ -194,11 +201,28 @@ async def retrieve_knowledge(
     as a supplementary signal when it contains meaningful content.
     """
     pedagogy_roles = _roles_for_step(step_type)
+    resolved_scope = resolve_plan_scope(
+        plan,
+        {
+            "notebook_id": notebook_id,
+            "resource_ids": notebook_resource_ids or [],
+        },
+    )
+    scope_resource_ids = resolved_scope.get("resource_ids") or [str(session.resource_id)]
     if notebook_id and notebook_resource_ids:
         session_resource_id = str(session.resource_id)
         if session_resource_id not in set(notebook_resource_ids):
             raise ValueError(
                 f"Session resource {session_resource_id} is outside notebook scope {notebook_id}"
+            )
+        out_of_scope = [
+            resource_id
+            for resource_id in scope_resource_ids
+            if resource_id not in set(notebook_resource_ids)
+        ]
+        if out_of_scope:
+            raise ValueError(
+                f"Session scope {out_of_scope} is outside notebook scope {notebook_id}"
             )
     recent_chunk_ids = [
         str(cid) for cid in (plan.get("recent_evidence_chunk_ids") or []) if cid
@@ -218,6 +242,8 @@ async def retrieve_knowledge(
         "target_concepts": target_concepts,
         "step_type": step_type,
         "pedagogy_roles": pedagogy_roles,
+        "scope_type": resolved_scope.get("scope_type"),
+        "scope_resource_ids": scope_resource_ids,
     }
     ret_span_ctx = None
     ret_span = None
@@ -232,22 +258,15 @@ async def retrieve_knowledge(
         ret_span = ret_span_ctx.__enter__()
 
     try:
-        try:
-            retrieved = await retriever.retrieve(
-                resource_id=session.resource_id,
-                query=query,
-                target_concepts=target_concepts,
-                pedagogy_roles=pedagogy_roles or None,
-                exclude_chunk_ids=recent_chunk_ids,
-                top_k=5,
-            )
-        except TypeError:
-            retrieved = await retriever.retrieve(
-                resource_id=session.resource_id,
-                query=query,
-                target_concepts=target_concepts,
-                top_k=5,
-            )
+        retrieved = await retriever.retrieve(
+            resource_id=session.resource_id,
+            resource_ids=scope_resource_ids,
+            query=query,
+            target_concepts=target_concepts,
+            pedagogy_roles=pedagogy_roles or None,
+            exclude_chunk_ids=recent_chunk_ids,
+            top_k=5,
+        )
         chunks = retrieved.chunks if hasattr(retrieved, "chunks") else []
     finally:
         if ret_span_ctx:
@@ -263,4 +282,23 @@ async def retrieve_knowledge(
                 )
             ret_span_ctx.__exit__(None, None, None)
 
-    return chunks
+    current_objective = None
+    objective_queue = plan.get("objective_queue") or []
+    current_index = int(plan.get("current_objective_index", 0) or 0)
+    if 0 <= current_index < len(objective_queue):
+        current_objective = objective_queue[current_index]
+
+    retrieval_contract = build_retrieval_contract(
+        query=query,
+        target_concepts=target_concepts,
+        pedagogy_roles=pedagogy_roles,
+        resource_ids=scope_resource_ids,
+        scope_type=resolved_scope.get("scope_type") or "single_resource",
+        notebook_id=resolved_scope.get("notebook_id"),
+        objective_id=(current_objective or {}).get("objective_id"),
+        objective_title=objective_title,
+        policy_output=policy_output,
+        retrieved_chunks=chunks,
+    )
+
+    return chunks, retrieval_contract

@@ -22,8 +22,8 @@ class DoclingChunker:
         self,
         embedding_model_id: Optional[str] = None,
         use_contextualized_text: bool = True,
-        max_tokens: int = 1200,
-        min_tokens: int = 200,
+        max_tokens: int = 1600,
+        min_tokens: int = 400,
     ) -> None:
         self.embedding_model_id = embedding_model_id or settings.EMBEDDING_MODEL_ID
         self.use_contextualized_text = use_contextualized_text
@@ -38,8 +38,11 @@ class DoclingChunker:
     ) -> DoclingChunkingResult:
         if docling_document is not None:
             try:
-                chunks = self._chunk_with_docling(docling_document)
+                chunks = self._enforce_chunk_token_limit(
+                    self._chunk_with_docling(docling_document)
+                )
                 if chunks:
+                    chunks = self._merge_small_chunks(chunks)
                     return DoclingChunkingResult(
                         chunks=chunks,
                         strategy="docling_hybrid",
@@ -58,7 +61,9 @@ class DoclingChunker:
                     exc,
                 )
 
-        fallback_chunks = self._chunk_sections_fallback(sections)
+        fallback_chunks = self._merge_small_chunks(
+            self._enforce_chunk_token_limit(self._chunk_sections_fallback(sections))
+        )
         return DoclingChunkingResult(
             chunks=fallback_chunks,
             strategy="section_fallback",
@@ -117,6 +122,229 @@ class DoclingChunker:
 
         return chunks
 
+    def _merge_small_chunks(self, chunks: list[ChunkData]) -> list[ChunkData]:
+        if not chunks:
+            return []
+
+        merged: list[ChunkData] = []
+        buffer: Optional[ChunkData] = None
+
+        for chunk in chunks:
+            chunk_tokens = token_len(chunk.text)
+            if buffer is None:
+                buffer = ChunkData(
+                    chunk_index=0,
+                    text=chunk.text,
+                    section_heading=chunk.section_heading,
+                    page_start=chunk.page_start,
+                    page_end=chunk.page_end,
+                    metadata=dict(chunk.metadata or {}),
+                )
+                continue
+
+            buffer_tokens = token_len(buffer.text)
+            compatible_heading = buffer.section_heading == chunk.section_heading
+            compatible_pages = (
+                buffer.page_end is None
+                or chunk.page_start is None
+                or chunk.page_start <= (buffer.page_end + 1)
+            )
+            within_capacity = (buffer_tokens + chunk_tokens) <= self.max_tokens
+            small_fragment = (
+                buffer_tokens < self.min_tokens or chunk_tokens < self.min_tokens
+            )
+            should_merge = compatible_pages and within_capacity and (
+                compatible_heading or small_fragment
+            )
+
+            if should_merge:
+                buffer.text = (buffer.text + "\n\n" + chunk.text).strip()
+                if buffer.page_start is None:
+                    buffer.page_start = chunk.page_start
+                if chunk.page_end is not None:
+                    buffer.page_end = chunk.page_end
+                merged_metadata = dict(buffer.metadata or {})
+                merged_metadata.update(chunk.metadata or {})
+                buffer.metadata = merged_metadata
+                continue
+
+            buffer.chunk_index = len(merged)
+            merged.append(buffer)
+            buffer = ChunkData(
+                chunk_index=0,
+                text=chunk.text,
+                section_heading=chunk.section_heading,
+                page_start=chunk.page_start,
+                page_end=chunk.page_end,
+                metadata=dict(chunk.metadata or {}),
+            )
+
+        if buffer is not None:
+            buffer.chunk_index = len(merged)
+            merged.append(buffer)
+
+        return merged
+
+    def _enforce_chunk_token_limit(self, chunks: list[ChunkData]) -> list[ChunkData]:
+        normalized: list[ChunkData] = []
+
+        for chunk in chunks:
+            if token_len(chunk.text) <= self.max_tokens:
+                normalized.append(
+                    ChunkData(
+                        chunk_index=0,
+                        text=chunk.text,
+                        section_heading=chunk.section_heading,
+                        page_start=chunk.page_start,
+                        page_end=chunk.page_end,
+                        metadata=dict(chunk.metadata or {}),
+                    )
+                )
+                continue
+
+            normalized.extend(self._split_oversized_chunk(chunk))
+
+        for index, chunk in enumerate(normalized):
+            chunk.chunk_index = index
+
+        return normalized
+
+    def _split_oversized_chunk(self, chunk: ChunkData) -> list[ChunkData]:
+        text = (chunk.text or "").strip()
+        if not text:
+            return []
+
+        spans = self._split_text_spans(text)
+        if not spans:
+            spans = self._hard_split_text(text)
+
+        pieces: list[ChunkData] = []
+        current_parts: list[str] = []
+        current_tokens = 0
+
+        def flush() -> None:
+            nonlocal current_parts, current_tokens
+            if not current_parts:
+                return
+            piece_text = "\n\n".join(current_parts).strip()
+            if piece_text:
+                pieces.append(
+                    ChunkData(
+                        chunk_index=0,
+                        text=piece_text,
+                        section_heading=chunk.section_heading,
+                        page_start=chunk.page_start,
+                        page_end=chunk.page_end,
+                        metadata=dict(chunk.metadata or {}),
+                    )
+                )
+            current_parts = []
+            current_tokens = 0
+
+        for span in spans:
+            span_tokens = token_len(span)
+            if span_tokens > self.max_tokens:
+                flush()
+                for hard_piece in self._hard_split_text(span):
+                    hard_text = hard_piece.strip()
+                    if not hard_text:
+                        continue
+                    pieces.append(
+                        ChunkData(
+                            chunk_index=0,
+                            text=hard_text,
+                            section_heading=chunk.section_heading,
+                            page_start=chunk.page_start,
+                            page_end=chunk.page_end,
+                            metadata=dict(chunk.metadata or {}),
+                        )
+                    )
+                continue
+
+            if current_parts and current_tokens + span_tokens > self.max_tokens:
+                flush()
+
+            current_parts.append(span)
+            current_tokens += span_tokens
+
+        flush()
+        return pieces
+
+    def _split_text_spans(self, text: str) -> list[str]:
+        paragraphs = [paragraph.strip() for paragraph in text.split("\n\n") if paragraph.strip()]
+        if len(paragraphs) > 1:
+            return paragraphs
+
+        sentences = self._split_sentences(text)
+        if len(sentences) > 1:
+            return sentences
+
+        return paragraphs or sentences
+
+    def _split_sentences(self, text: str) -> list[str]:
+        import re
+
+        return [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
+
+    def _hard_split_text(self, text: str) -> list[str]:
+        words = [word for word in text.split() if word]
+        if not words:
+            stripped = text.strip()
+            return [stripped] if stripped else []
+
+        pieces: list[str] = []
+        current_words: list[str] = []
+
+        for word in words:
+            candidate_words = current_words + [word]
+            candidate_text = " ".join(candidate_words)
+            if current_words and token_len(candidate_text) > self.max_tokens:
+                pieces.append(" ".join(current_words))
+                current_words = [word]
+                continue
+
+            if token_len(candidate_text) > self.max_tokens:
+                pieces.extend(self._bisect_oversized_word(word))
+                current_words = []
+                continue
+
+            current_words = candidate_words
+
+        if current_words:
+            pieces.append(" ".join(current_words))
+
+        return [piece.strip() for piece in pieces if piece and piece.strip()]
+
+    def _bisect_oversized_word(self, word: str) -> list[str]:
+        pieces: list[str] = []
+        remaining = word
+
+        while remaining:
+            if token_len(remaining) <= self.max_tokens:
+                pieces.append(remaining)
+                break
+
+            low = 1
+            high = len(remaining)
+            best = 1
+            while low <= high:
+                mid = (low + high) // 2
+                candidate = remaining[:mid]
+                if token_len(candidate) <= self.max_tokens:
+                    best = mid
+                    low = mid + 1
+                else:
+                    high = mid - 1
+
+            piece = remaining[:best].strip()
+            if not piece:
+                piece = remaining[:1]
+                best = 1
+            pieces.append(piece)
+            remaining = remaining[best:]
+
+        return [piece for piece in pieces if piece]
+
     def _serialize_chunk(self, *, chunker: Any, chunk: Any) -> str:
         if self.use_contextualized_text:
             contextualize = getattr(chunker, "contextualize", None)
@@ -141,7 +369,10 @@ class DoclingChunker:
                 )
 
                 encoding = tiktoken.encoding_for_model("gpt-4o")
-                return OpenAITokenizer(tokenizer=encoding, max_tokens=8192)
+                return OpenAITokenizer(
+                    tokenizer=encoding,
+                    max_tokens=max(int(self.max_tokens or 0), 1),
+                )
 
             from transformers import AutoTokenizer
             from docling_core.transforms.chunker.tokenizer.huggingface import (
@@ -149,7 +380,17 @@ class DoclingChunker:
             )
 
             hf_tokenizer = AutoTokenizer.from_pretrained(model_id)
-            return HuggingFaceTokenizer(tokenizer=hf_tokenizer)
+            configured_max_tokens = max(int(self.max_tokens or 0), 1)
+            current_model_max_length = getattr(hf_tokenizer, "model_max_length", None)
+            if (
+                isinstance(current_model_max_length, int)
+                and 0 < current_model_max_length < configured_max_tokens
+            ):
+                hf_tokenizer.model_max_length = configured_max_tokens
+            return HuggingFaceTokenizer(
+                tokenizer=hf_tokenizer,
+                max_tokens=configured_max_tokens,
+            )
         except Exception as exc:
             logger.warning(
                 "Docling tokenizer alignment unavailable for %s: %s", model_id, exc

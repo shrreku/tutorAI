@@ -153,7 +153,13 @@ def compute_direction(
     evidence,
     prereq_lookup: Optional[dict[tuple[str, str], int]] = None,
 ) -> tuple[float, float]:
-    """Compute directional prior between two concepts from document order + prereq hints."""
+    """Compute directional prior between two concepts from document order + prereq hints.
+
+    Notes:
+    - Document order can be adversarial (e.g., lectures uploaded in reverse).
+    - When prerequisite hints exist, they should dominate directionality, because
+      they are explicitly about dependency rather than surface ordering.
+    """
     c1_positions = [
         (item.position_index, item.weight * (item.quality_score or 0.5))
         for item in evidence
@@ -192,14 +198,21 @@ def compute_direction(
             dir_backward = 1.0 - dir_forward
 
     if prereq_lookup:
-        forward_support = prereq_lookup.get((c1, c2), 0)
-        backward_support = prereq_lookup.get((c2, c1), 0)
+        forward_support = int(prereq_lookup.get((c1, c2), 0) or 0)
+        backward_support = int(prereq_lookup.get((c2, c1), 0) or 0)
         total_support = forward_support + backward_support
 
         if total_support > 0:
-            bias = (forward_support - backward_support) / total_support
-            boost = min(0.2, 0.05 * total_support)
-            dir_forward = dir_forward + boost * bias
+            # Convert support counts into a smooth directional prior.
+            # Laplace smoothing avoids 0/1 extremes at low counts.
+            prereq_dir = (forward_support + 1.0) / (total_support + 2.0)
+            prereq_dir = min(0.95, max(0.05, prereq_dir))
+
+            # Blend doc-order direction with prereq-hint direction.
+            # As support increases, rely more on prereq hints.
+            # (support=1 → 0.25, support=3 → 0.75, support>=4 → 0.85)
+            weight = min(0.85, 0.25 * total_support)
+            dir_forward = (1.0 - weight) * dir_forward + weight * prereq_dir
             dir_forward = min(0.95, max(0.05, dir_forward))
             dir_backward = 1.0 - dir_forward
 

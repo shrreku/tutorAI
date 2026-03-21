@@ -1,5 +1,6 @@
 import pytest
 from pydantic import ValidationError
+from app.schemas.api import CitationData
 from app.schemas.concept import ConceptScope
 from app.schemas.objective import CurriculumStep, StepType
 from app.schemas.agent_output import (
@@ -200,4 +201,36 @@ class TestEvaluatorOutput:
                 correctness_label="partial",
                 multi_concept=False,
                 phase_feedback="legacy",
+            )
+
+
+class TestCitationData:
+    """Tests for CitationData schema."""
+
+    def test_accepts_char_offsets(self):
+        """CitationData should accept optional char_start/char_end offsets."""
+        citation = CitationData(
+            citation_id="c1",
+            chunk_id="chunk_1",
+            sub_chunk_id="sub_1",
+            char_start=10,
+            char_end=42,
+            page_start=1,
+            page_end=1,
+            section_heading="Intro",
+            snippet="example",
+            relevance_score=0.9,
+        )
+        assert citation.char_start == 10
+        assert citation.char_end == 42
+
+    def test_unknown_citation_field_rejected(self):
+        """Unknown citation fields should be rejected (strict API schema)."""
+        with pytest.raises(ValidationError):
+            CitationData(
+                citation_id="c1",
+                chunk_id="chunk_1",
+                snippet="example",
+                relevance_score=0.5,
+                unsupported_field="x",
             )

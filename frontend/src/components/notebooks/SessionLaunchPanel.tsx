@@ -12,8 +12,9 @@ import {
 import type { NotebookSessionCreateRequest } from '../../types/api';
 
 const MODES = ['learn', 'doubt', 'practice', 'revision'] as const;
+type SessionMode = (typeof MODES)[number];
 
-const MODE_META: Record<(typeof MODES)[number], { icon: typeof BookOpen; label: string; description: string; accent: string }> = {
+const MODE_META: Record<SessionMode, { icon: typeof BookOpen; label: string; description: string; accent: string }> = {
   learn: {
     icon: BookOpen,
     label: 'Learn',
@@ -37,6 +38,37 @@ const MODE_META: Record<(typeof MODES)[number], { icon: typeof BookOpen; label: 
     label: 'Revision',
     description: 'Target weak areas and lock in what still feels shaky.',
     accent: 'text-fuchsia-500',
+  },
+};
+
+const MODE_INPUT_META: Record<SessionMode, { label: string; helper: string; placeholder: string; preview: string; required: boolean }> = {
+  learn: {
+    label: 'Where should this session begin?',
+    helper: 'Optional. Point the tutor toward the chapter, concept, or depth you want first.',
+    placeholder: 'Optional: limits, Newton\'s laws, Mughal administration',
+    preview: 'The curriculum will foreground this topic first.',
+    required: false,
+  },
+  doubt: {
+    label: 'What exactly is confusing you?',
+    helper: 'Required in doubt mode. Describe the exact step, equation, citation, or concept that feels unclear.',
+    placeholder: 'Required: why is the electric field zero inside the shell?',
+    preview: 'The session will open by resolving this doubt directly.',
+    required: true,
+  },
+  practice: {
+    label: 'What do you want to practice?',
+    helper: 'Optional. Narrow practice to a chapter, concept cluster, or difficulty preference.',
+    placeholder: 'Optional: practice integration by parts, medium difficulty',
+    preview: 'Practice prompts will bias toward this target.',
+    required: false,
+  },
+  revision: {
+    label: 'What should this revision focus on?',
+    helper: 'Optional. Focus revision on an exam unit, chapter, or fast recap area.',
+    placeholder: 'Optional: recap cell biology unit 3',
+    preview: 'Revision will prioritize this review target.',
+    required: false,
   },
 };
 
@@ -70,7 +102,22 @@ type SessionLaunchPanelProps = {
   onLaunch: (request: NotebookSessionCreateRequest) => Promise<void> | void;
 };
 
-function parseTopicInput(value: string) {
+function parseTopicInput(value: string, mode: SessionMode) {
+  const normalized = value.trim();
+  if (!normalized) {
+    return {
+      topic: undefined,
+      selected_topics: undefined,
+    };
+  }
+
+  if (mode === 'doubt') {
+    return {
+      topic: normalized,
+      selected_topics: undefined,
+    };
+  }
+
   const topics = value
     .split(',')
     .map((item) => item.trim())
@@ -139,6 +186,18 @@ export default function SessionLaunchPanel({
   const includedResources = resources.filter((resource) => includedResourceIds.includes(resource.id));
   const blockedResources = includedResources.filter((resource) => !isResourceReadyForMode(resource, mode));
   const hasBlockedResources = blockedResources.length > 0;
+  const learnerInputMeta = MODE_INPUT_META[mode];
+  const parsedTopics = useMemo(() => parseTopicInput(topicInput, mode), [mode, topicInput]);
+  const hasLearnerInput = Boolean(parsedTopics.topic || (parsedTopics.selected_topics?.length ?? 0) > 0);
+  const requiresLearnerInput = learnerInputMeta.required;
+  const learnerInputSummary = parsedTopics.selected_topics?.length
+    ? parsedTopics.selected_topics.join(', ')
+    : parsedTopics.topic;
+  const launchDisabled = pending
+    || !anchorResourceId
+    || includedResourceIds.length === 0
+    || hasBlockedResources
+    || (requiresLearnerInput && !hasLearnerInput);
 
   const handleToggleResource = (resourceId: string) => {
     setSelectedResourceIds((current) => {
@@ -155,7 +214,8 @@ export default function SessionLaunchPanel({
   const handleLaunch = async () => {
     if (!anchorResourceId) return;
 
-    const parsedTopics = parseTopicInput(topicInput);
+    if (requiresLearnerInput && !hasLearnerInput) return;
+
     await onLaunch({
       resource_id: anchorResourceId,
       selected_resource_ids: scope === 'selected' ? includedResourceIds : [],
@@ -170,22 +230,22 @@ export default function SessionLaunchPanel({
   const layoutClass = compact ? 'space-y-4' : 'space-y-5';
 
   return (
-    <div className={`rounded-[1.5rem] border border-border bg-card/90 shadow-[0_20px_80px_-40px_rgba(15,23,42,0.35)] ${compact ? 'p-4' : 'p-5 md:p-6'} ${layoutClass}`}>
+    <div className={`surface-scholarly rounded-[28px] border border-border/70 ${compact ? 'p-4' : 'p-5 md:p-6'} ${layoutClass}`}>
       <div className="space-y-1">
-        <div className="inline-flex items-center gap-2 rounded-full border border-gold/20 bg-gold/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.24em] text-gold">
+        <div className="section-kicker inline-flex items-center gap-2 rounded-full border border-gold/20 bg-gold/10 px-3 py-1 text-[11px] font-medium text-gold">
           Session Builder
         </div>
-        <h3 className="font-display text-2xl text-foreground">{title}</h3>
-        <p className="max-w-2xl text-sm text-muted-foreground">{subtitle}</p>
+        <h3 className="editorial-title text-3xl text-foreground">{title}</h3>
+        <p className="max-w-2xl text-base text-muted-foreground reading-copy">{subtitle}</p>
       </div>
 
       {recommendedReason && (
-        <div className="rounded-2xl border border-gold/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.14),rgba(255,255,255,0.7))] px-4 py-3 text-sm text-foreground">
-          <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.22em] text-gold">
+        <div className="rounded-[24px] border border-gold/20 bg-gold/[0.04] px-4 py-3 text-sm text-foreground">
+          <div className="section-kicker mb-1 flex items-center gap-2 text-xs font-semibold text-gold">
             <Sparkles className="h-3.5 w-3.5" />
             Recommended next move
           </div>
-          <p>
+          <p className="reading-copy text-base text-foreground">
             <span className="font-medium capitalize">{MODE_META[recommendedMode].label}</span>
             {' '}
             session. {recommendedReason}
@@ -203,13 +263,13 @@ export default function SessionLaunchPanel({
               key={item}
               type="button"
               onClick={() => setMode(item)}
-              className={`rounded-2xl border p-4 text-left transition-all ${active ? 'border-gold/30 bg-gold/10 shadow-[0_16px_36px_-24px_rgba(245,158,11,0.65)]' : 'border-border hover:border-gold/20 hover:bg-muted/60'}`}
+              className={`rounded-[22px] border p-4 text-left transition-all ${active ? 'border-gold/30 bg-gold/[0.08] shadow-[0_18px_30px_-24px_hsl(155_28%_38%_/_0.6)]' : 'border-border/80 bg-card/70 hover:border-gold/20 hover:bg-muted/50'}`}
             >
               <div className="mb-3 flex items-center justify-between">
                 <Icon className={`h-5 w-5 ${active ? 'text-gold' : meta.accent}`} />
                 {active && <CheckCircle2 className="h-4 w-4 text-gold" />}
               </div>
-              <div className="text-sm font-semibold text-foreground">{meta.label}</div>
+              <div className="font-ui text-sm font-semibold text-foreground">{meta.label}</div>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{meta.description}</p>
             </button>
           );
@@ -217,9 +277,9 @@ export default function SessionLaunchPanel({
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <div className="space-y-4 rounded-2xl border border-border/70 bg-background/70 p-4">
+        <div className="space-y-4 rounded-[24px] border border-border/70 bg-background/70 p-4">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Scope</p>
+            <p className="section-kicker text-[11px] font-semibold text-muted-foreground">Scope</p>
             <div className="mt-2 grid gap-2 sm:grid-cols-3">
               {[
                 { value: 'focused', label: 'One resource', detail: 'Keep the session tightly anchored.' },
@@ -230,9 +290,9 @@ export default function SessionLaunchPanel({
                   key={option.value}
                   type="button"
                   onClick={() => setScope(option.value as ScopeType)}
-                  className={`rounded-2xl border px-4 py-3 text-left transition-all ${scope === option.value ? 'border-gold/30 bg-gold/10' : 'border-border hover:border-gold/20 hover:bg-muted/60'}`}
+                  className={`rounded-[20px] border px-4 py-3 text-left transition-all ${scope === option.value ? 'border-gold/30 bg-gold/10' : 'border-border hover:border-gold/20 hover:bg-muted/60'}`}
                 >
-                  <div className="text-sm font-medium text-foreground">{option.label}</div>
+                  <div className="font-ui text-sm font-medium text-foreground">{option.label}</div>
                   <p className="mt-1 text-xs text-muted-foreground">{option.detail}</p>
                 </button>
               ))}
@@ -241,11 +301,11 @@ export default function SessionLaunchPanel({
 
           <div className="grid gap-3 md:grid-cols-2">
             <label className="space-y-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Anchor resource</span>
+              <span className="section-kicker text-[11px] font-semibold text-muted-foreground">Anchor resource</span>
               <select
                 value={anchorResourceId}
                 onChange={(event) => setAnchorResourceId(event.target.value)}
-                className="w-full rounded-2xl border border-border bg-card px-3 py-3 text-sm text-foreground outline-none transition-colors focus:border-gold/30"
+                className="w-full rounded-[20px] border border-border bg-card px-3 py-3 text-sm text-foreground outline-none transition-colors focus:border-gold/30"
               >
                 {resources.map((resource) => (
                   <option key={resource.id} value={resource.id}>{resource.label}</option>
@@ -254,19 +314,29 @@ export default function SessionLaunchPanel({
             </label>
 
             <label className="space-y-2">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Topic focus</span>
+              <div className="flex items-center justify-between gap-3">
+                <span className="section-kicker text-[11px] font-semibold text-muted-foreground">{learnerInputMeta.label}</span>
+                {requiresLearnerInput && (
+                  <span className="data-chip rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[10px] font-semibold uppercase text-amber-600 dark:text-amber-300">
+                    Required
+                  </span>
+                )}
+              </div>
               <input
                 value={topicInput}
                 onChange={(event) => setTopicInput(event.target.value)}
-                placeholder="Optional: derivatives, Newton's laws, cardiac cycle"
-                className="w-full rounded-2xl border border-border bg-card px-3 py-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-gold/30"
+                placeholder={learnerInputMeta.placeholder}
+                className={`w-full rounded-[20px] border bg-card px-3 py-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-gold/30 ${requiresLearnerInput && !hasLearnerInput ? 'border-amber-500/40 bg-amber-500/[0.04]' : 'border-border'}`}
               />
+              <p className={`text-xs leading-relaxed ${requiresLearnerInput && !hasLearnerInput ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground'}`}>
+                {learnerInputMeta.helper}
+              </p>
             </label>
           </div>
 
           {scope === 'selected' && resources.length > 1 && (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+              <div className="section-kicker flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
                 <Layers3 className="h-3.5 w-3.5" />
                 Included resources
               </div>
@@ -278,7 +348,7 @@ export default function SessionLaunchPanel({
                       key={resource.id}
                       type="button"
                       onClick={() => handleToggleResource(resource.id)}
-                      className={`rounded-2xl border px-4 py-3 text-left transition-all ${active ? 'border-gold/30 bg-gold/10' : 'border-border hover:border-gold/20 hover:bg-muted/60'}`}
+                      className={`rounded-[20px] border px-4 py-3 text-left transition-all ${active ? 'border-gold/30 bg-gold/10' : 'border-border hover:border-gold/20 hover:bg-muted/60'}`}
                     >
                       <div className="flex items-start gap-3">
                         <span className={`mt-0.5 flex h-4 w-4 items-center justify-center rounded-full border ${active ? 'border-gold bg-gold text-primary-foreground' : 'border-border bg-card'}`}>
@@ -324,33 +394,45 @@ export default function SessionLaunchPanel({
           )}
         </div>
 
-        <div className="flex flex-col justify-between rounded-2xl border border-border/70 bg-[radial-gradient(circle_at_top,rgba(245,158,11,0.08),transparent_55%)] p-4">
+        <div className="flex flex-col justify-between rounded-[24px] border border-border bg-card/90 p-4">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Session preview</p>
-            <div className="mt-3 rounded-2xl border border-border/70 bg-card/80 p-4">
-              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <p className="section-kicker text-[11px] font-semibold text-muted-foreground">Session preview</p>
+            <div className="mt-3 rounded-[22px] border border-border/70 bg-card/80 p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground font-ui">
                 {(() => {
                   const Icon = MODE_META[mode].icon;
                   return <Icon className={`h-4 w-4 ${MODE_META[mode].accent}`} />;
                 })()}
                 <span>{MODE_META[mode].label} session</span>
               </div>
-              <p className="mt-2 text-sm text-muted-foreground">
+              <p className="mt-2 text-sm text-muted-foreground reading-copy">
                 {scope === 'focused' && 'Tight scope on one anchor resource.'}
                 {scope === 'selected' && `Cross-resource context from ${includedResources.length} selected resources.`}
                 {scope === 'notebook' && `Notebook-wide context across ${includedResources.length} active resources.`}
               </p>
+              <div className="mt-3 space-y-2 rounded-[18px] border border-border/60 bg-background/70 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="section-kicker text-[10px] font-semibold text-muted-foreground">Learner input</span>
+                  <span className={`data-chip rounded-full px-2 py-1 text-[10px] font-semibold uppercase ${hasLearnerInput ? 'border border-gold/20 bg-gold/10 text-gold' : requiresLearnerInput ? 'border border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-300' : 'border border-border bg-card text-muted-foreground'}`}>
+                    {hasLearnerInput ? 'Shaping session' : requiresLearnerInput ? 'Needed' : 'Optional'}
+                  </span>
+                </div>
+                <p className="text-sm text-foreground reading-copy">
+                  {learnerInputSummary || 'No learner input added yet.'}
+                </p>
+                <p className="text-xs text-muted-foreground">{learnerInputMeta.preview}</p>
+              </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 {includedResources.slice(0, 4).map((resource) => (
                   <span
                     key={resource.id}
-                    className={`rounded-full border px-2.5 py-1 text-[11px] ${!isResourceReadyForMode(resource, mode) ? 'border-amber-500/20 bg-amber-500/10 text-amber-300' : 'border-border bg-background text-foreground'}`}
+                    className={`data-chip rounded-full border px-2.5 py-1 text-[11px] ${!isResourceReadyForMode(resource, mode) ? 'border-amber-500/20 bg-amber-500/10 text-amber-300' : 'border-border bg-background text-foreground'}`}
                   >
                     {resource.label}
                   </span>
                 ))}
                 {includedResources.length > 4 && (
-                  <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-muted-foreground">
+                  <span className="data-chip rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-muted-foreground">
                     +{includedResources.length - 4} more
                   </span>
                 )}
@@ -358,8 +440,8 @@ export default function SessionLaunchPanel({
             </div>
 
             {hasBlockedResources && (
-              <div className="mt-3 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-300">
+              <div className="mt-3 rounded-[22px] border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+                <div className="section-kicker flex items-center gap-2 text-[11px] font-semibold text-amber-300">
                   <AlertCircle className="h-3.5 w-3.5" />
                   {mode === 'doubt' ? 'Core indexing required' : 'Curriculum readiness required'}
                 </div>
@@ -376,7 +458,7 @@ export default function SessionLaunchPanel({
           </div>
 
           <div className="mt-4 space-y-3">
-            <label className="flex items-start gap-3 rounded-2xl border border-border/70 bg-card/80 px-4 py-3 text-sm text-muted-foreground">
+            <label className="flex items-start gap-3 rounded-[20px] border border-border/70 bg-card/80 px-4 py-3 text-sm text-muted-foreground">
               <input
                 type="checkbox"
                 checked={resumeExisting}
@@ -390,13 +472,18 @@ export default function SessionLaunchPanel({
 
             <button
               type="button"
-              disabled={pending || !anchorResourceId || includedResourceIds.length === 0 || hasBlockedResources}
+              disabled={launchDisabled}
               onClick={() => void handleLaunch()}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gold px-4 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-60"
+              className="font-ui inline-flex w-full items-center justify-center gap-2 rounded-[20px] bg-gold px-4 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               {ctaLabel || `Start ${MODE_META[mode].label} session`}
             </button>
+            {requiresLearnerInput && !hasLearnerInput && !hasBlockedResources && (
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                Add the learner's doubt first so the session can be scoped correctly.
+              </p>
+            )}
           </div>
         </div>
       </div>

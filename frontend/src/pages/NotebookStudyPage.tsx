@@ -255,7 +255,7 @@ export default function NotebookStudyPage() {
           </div>
         )}
         {launchSummary && (
-          <div className="mt-3 rounded-2xl border border-gold/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.14),rgba(255,255,255,0.8))] px-4 py-3 text-sm text-foreground">
+          <div className="mt-3 rounded-xl border border-gold/20 bg-gold/[0.04] px-4 py-3 text-sm text-foreground">
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-2 rounded-full border border-gold/20 bg-card/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-gold">
                 <Layers3 className="h-3.5 w-3.5" /> Session context ready

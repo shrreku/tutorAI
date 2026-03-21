@@ -186,7 +186,7 @@ def apply_delegation_override(
     policy_output: PolicyOrchestratorOutput,
     decision: DelegationDecision,
 ) -> PolicyOrchestratorOutput:
-    """Map delegation reasons to specialist strategy while keeping guards authoritative."""
+    """Map delegation reasons to specialist strategy without overriding progression."""
     if not decision.delegated or not decision.reason:
         return policy_output
 
@@ -204,7 +204,6 @@ def apply_delegation_override(
     return policy_output.model_copy(
         update={
             "pedagogical_action": chosen_action,
-            "progression_decision": ProgressionDecision.CONTINUE_STEP,
             "planner_guidance": guidance,
             "ad_hoc_step_type": "probe"
             if decision.reason != "low_evidence_confidence"

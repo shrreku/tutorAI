@@ -52,18 +52,18 @@ You are the PRIMARY decision-maker for progression.
 - 5 (ADVANCE_OBJECTIVE): Move to the next objective (student has demonstrated sufficient understanding).
 - 6 (END_SESSION): The student has completed all objectives or explicitly wants to stop.
 
-# Decision Guidelines
+## Decision Guidelines
 - ADVANCE_STEP when you judge the current step goal is met based on the student's responses.
-- Use CONTINUE_STEP/INSERT_AD_HOC when the student needs more support — struggling, gave a partial answer, or you want to ask a Socratic follow-up. But be aware of ad-hoc budget — after the limit, you MUST advance.
+- Use CONTINUE_STEP/INSERT_AD_HOC when the student needs more support — struggling, gave a partial answer, or you want to ask a Socratic follow-up.
 - ADVANCE_OBJECTIVE when the student has shown solid understanding of the primary concepts. Use success criteria as a reference point (mastery ≥ 0.7 is a good signal), but trust your holistic assessment of the conversation.
 - If evaluation shows score ≥ 0.8 on an assess step, lean toward ADVANCE_STEP.
 - If evaluation shows score < 0.4, use CONTINUE_STEP (or INSERT_AD_HOC) and set action to hint or correct.
-- **Reconnection rule**: If ad_hoc_count is approaching max_ad_hoc_per_objective, you should ADVANCE_STEP to reconnect with the roadmap.
 - SKIP_TO_STEP is forward-only and must target a valid, skippable step window.
 - Always provide clear `reasoning` explaining your decision.
 - Set `target_concepts` to the 1-3 concepts the tutor should focus on this turn.
 - Set `planner_guidance` with a short instruction for the tutor (e.g., "Ask a Socratic question about finite additivity" or "Scaffold with a worked example before assessing").
 - Set `student_intent` to one of: engaged, confused, bored, move_on, asking_question, answer_attempt, off_topic, frustrated.
+- If a checkpoint is pending and the learner wants to move on, you may either advance now or stay and offer a concise binary choice: answer the checkpoint now, or skip ahead with a note that mastery may be incomplete.
 
 ## Session mode contract
 The session has a `session_mode` that must shape your decision-making:
@@ -240,6 +240,14 @@ class PolicyAgent(BaseAgent[PolicyState, PolicyOrchestratorOutput]):
                 f"  Misconceptions: {ev.get('misconceptions', [])}"
             )
 
+        pending_checkpoint_block = "PENDING CHECKPOINT: none"
+        if state.awaiting_evaluation:
+            pending_checkpoint_block = (
+                "PENDING CHECKPOINT:\n"
+                f"  Pending question: {(state.pending_tutor_question or 'N/A')[:240]}\n"
+                f"  Pending tutor response: {(state.pending_tutor_response or '')[:240]}"
+            )
+
         return f"""SESSION MODE: {state.session_mode}
 
     {journey_block}
@@ -252,6 +260,8 @@ class PolicyAgent(BaseAgent[PolicyState, PolicyOrchestratorOutput]):
 {mastery_block}
 
 {hist_block}
+
+{pending_checkpoint_block}
 
 {eval_block}
 
@@ -273,19 +283,11 @@ Based on all the above, decide the pedagogical_action and progression_decision f
         roadmap = obj.get("step_roadmap") or []
         roadmap = roadmap if isinstance(roadmap, list) else []
         step_idx = int(getattr(state, "current_step_index", 0) or 0)
-        ad_hoc_count = int(getattr(state, "ad_hoc_count", 0) or 0)
-        max_ad_hoc = int(getattr(state, "max_ad_hoc_per_objective", 4) or 4)
 
         decision = output.progression_decision
         reasoning_suffix: list[str] = []
 
-        # Guard 1: ad-hoc budget enforcement
-        if decision == ProgressionDecision.INSERT_AD_HOC and ad_hoc_count >= max_ad_hoc:
-            decision = ProgressionDecision.ADVANCE_STEP
-            output.ad_hoc_step_type = None
-            reasoning_suffix.append("guard:ad_hoc_budget_forced_advance")
-
-        # Guard 2: forward-only skip with can_skip validation
+        # Guard: forward-only skip with can_skip validation
         if decision == ProgressionDecision.SKIP_TO_STEP:
             target = output.skip_target_index
             valid_forward = isinstance(target, int) and target > step_idx
@@ -308,51 +310,6 @@ Based on all the above, decide the pedagogical_action and progression_decision f
         # Fill student_intent if missing (lightweight heuristic)
         if not output.student_intent:
             output.student_intent = self._infer_student_intent(state)
-
-        # Intent-aware progression adjustment for fluid tutoring behavior.
-        if output.student_intent == "move_on":
-            eval_score = None
-            if state.latest_evaluation and isinstance(state.latest_evaluation, dict):
-                raw_score = state.latest_evaluation.get("overall_score")
-                if isinstance(raw_score, (int, float)):
-                    eval_score = float(raw_score)
-            avg_mastery = 0.0
-            if state.mastery_snapshot and state.focus_concepts:
-                vals = [
-                    float(state.mastery_snapshot.get(c, 0.0) or 0.0)
-                    for c in state.focus_concepts
-                ]
-                avg_mastery = (sum(vals) / len(vals)) if vals else 0.0
-            turns_at_step = int(getattr(state, "turns_at_step", 0) or 0)
-            if (
-                output.progression_decision
-                in {
-                    ProgressionDecision.CONTINUE_STEP,
-                    ProgressionDecision.INSERT_AD_HOC,
-                }
-                and "guard:skip_rejected" not in reasoning_suffix
-            ):
-                has_eval_checkpoint = eval_score is not None and eval_score >= 0.6
-                has_mastery_checkpoint = avg_mastery >= 0.45
-                has_engagement_checkpoint = turns_at_step >= 1 and avg_mastery >= 0.35
-                is_ready = (
-                    eval_score is None
-                    or has_eval_checkpoint
-                    or has_mastery_checkpoint
-                    or has_engagement_checkpoint
-                )
-                if is_ready:
-                    at_last_step = bool(roadmap) and step_idx >= len(roadmap) - 1
-                    output.progression_decision = (
-                        ProgressionDecision.ADVANCE_OBJECTIVE
-                        if at_last_step
-                        else ProgressionDecision.ADVANCE_STEP
-                    )
-                    reasoning_suffix.append("guard:move_on_promoted_progression")
-                else:
-                    output.progression_decision = ProgressionDecision.CONTINUE_STEP
-                    output.recommended_strategy = "assessment"
-                    reasoning_suffix.append("guard:move_on_requires_checkpoint")
 
         # Always keep target concepts bounded and non-empty when possible
         if output.target_concepts:
@@ -426,6 +383,33 @@ Based on all the above, decide the pedagogical_action and progression_decision f
             f"avg_mastery={avg_mastery:.2f}",
             f"eval={eval_label}({eval_score:.1f})",
         ]
+
+        if state.awaiting_evaluation and any(
+            token in msg for token in ("move on", "next", "skip", "done")
+        ):
+            if eval_label == "correct" or eval_score >= 0.6 or avg_mastery >= 0.45:
+                decision = ProgressionDecision.ADVANCE_STEP
+                action = PedagogicalAction.SUMMARIZE
+                strategy = "direct"
+                reasoning_parts.append("pending_checkpoint_but_policy_advances")
+            else:
+                decision = ProgressionDecision.CONTINUE_STEP
+                action = PedagogicalAction.SUMMARIZE
+                strategy = "direct"
+                reasoning_parts.append("pending_checkpoint_offer_binary_choice")
+                return PolicyOrchestratorOutput(
+                    pedagogical_action=action,
+                    progression_decision=decision,
+                    confidence=0.5,
+                    reasoning=f"Fallback heuristic: {', '.join(reasoning_parts)}",
+                    intent="statement",
+                    student_intent="move_on",
+                    recommended_strategy=strategy,
+                    planner_guidance=(
+                        "Offer exactly two options: answer the pending checkpoint now, or skip ahead with a note that mastery may be incomplete. Keep it concise."
+                    ),
+                    target_concepts=state.focus_concepts[:3] if state.focus_concepts else None,
+                )
 
         if session_mode == "doubt":
             action = (

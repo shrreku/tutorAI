@@ -72,35 +72,21 @@ async def run_retrieval_stage(
     roadmap = stage_ctx.current_objective.get("step_roadmap") or []
     step_idx = int(stage_ctx.step_index or 0)
     current_step = roadmap[step_idx] if 0 <= step_idx < len(roadmap) else {}
-    try:
-        retrieved_chunks = await retrieve_knowledge(
-            retriever,
-            stage_ctx.session,
-            stage_ctx.plan,
-            stage_ctx.student_message,
-            target_concepts,
-            current_step.get("type") or stage_ctx.plan.get("effective_step_type"),
-            current_step.get("goal"),
-            objective_title=stage_ctx.current_objective.get("title"),
-            objective_description=stage_ctx.current_objective.get("description"),
-            policy_output=policy_output,
-            notebook_id=stage_ctx.notebook_id,
-            notebook_resource_ids=stage_ctx.notebook_resource_ids,
-            lf=lf,
-        )
-    except TypeError:
-        retrieved_chunks = await retrieve_knowledge(
-            retriever,
-            stage_ctx.session,
-            stage_ctx.student_message,
-            target_concepts,
-            current_step.get("type") or stage_ctx.plan.get("effective_step_type"),
-            current_step.get("goal"),
-            objective_title=stage_ctx.current_objective.get("title"),
-            objective_description=stage_ctx.current_objective.get("description"),
-            policy_output=policy_output,
-            lf=lf,
-        )
+    retrieved_chunks, retrieval_contract = await retrieve_knowledge(
+        retriever,
+        stage_ctx.session,
+        stage_ctx.plan,
+        stage_ctx.student_message,
+        target_concepts,
+        current_step.get("type") or stage_ctx.plan.get("effective_step_type"),
+        current_step.get("goal"),
+        objective_title=stage_ctx.current_objective.get("title"),
+        objective_description=stage_ctx.current_objective.get("description"),
+        policy_output=policy_output,
+        notebook_id=stage_ctx.notebook_id,
+        notebook_resource_ids=stage_ctx.notebook_resource_ids,
+        lf=lf,
+    )
     evidence_chunk_ids = [
         str(chunk.chunk_id)
         for chunk in retrieved_chunks
@@ -109,6 +95,7 @@ async def run_retrieval_stage(
     return RetrievalStageResult(
         retrieved_chunks=retrieved_chunks,
         evidence_chunk_ids=evidence_chunk_ids,
+        retrieval_contract=retrieval_contract,
     )
 
 

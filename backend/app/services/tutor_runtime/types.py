@@ -32,6 +32,14 @@ class TurnResult:
     delegation_reason: Optional[str] = None
     delegation_outcome: Optional[str] = None
     telemetry_contract: dict[str, Any] = field(default_factory=dict)
+    progression_contract: dict[str, Any] = field(default_factory=dict)
+    retrieval_contract: dict[str, Any] = field(default_factory=dict)
+    response_contract: dict[str, Any] = field(default_factory=dict)
+    study_map_delta: Optional[dict[str, Any]] = None
+    # Live study map snapshot (populated every turn)
+    study_map_snapshot: Optional[dict[str, Any]] = None
+    # Structured citations from retrieved chunks
+    citations: list[dict[str, Any]] = field(default_factory=list)
     # Session summary data (populated on session_complete)
     session_summary: Optional[dict[str, Any]] = None
     # Token usage tracking (CM-005)
@@ -54,6 +62,8 @@ class StageContext:
     mastery_snapshot: dict[str, float]
     notebook_id: Optional[str] = None
     notebook_resource_ids: list[str] = field(default_factory=list)
+    scope_type: Optional[str] = None
+    scope_resource_ids: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -72,6 +82,7 @@ class RetrievalStageResult:
 
     retrieved_chunks: list[Any]
     evidence_chunk_ids: list[str]
+    retrieval_contract: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

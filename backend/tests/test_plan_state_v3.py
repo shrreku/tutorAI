@@ -94,7 +94,7 @@ class _DbStub:
 
 class _CurriculumStub:
     async def generate_plan(
-        self, resource_id, topic=None, selected_topics=None, mode=None
+        self, resource_id, topic=None, selected_topics=None, mode=None, **kwargs
     ):
         return {
             "active_topic": topic,
@@ -106,11 +106,19 @@ class _CurriculumStub:
 class _CurriculumCountingStub:
     def __init__(self):
         self.calls = 0
+        self.last_kwargs = None
 
     async def generate_plan(
-        self, resource_id, topic=None, selected_topics=None, mode=None
+        self, resource_id, topic=None, selected_topics=None, mode=None, **kwargs
     ):
         self.calls += 1
+        self.last_kwargs = {
+            "resource_id": resource_id,
+            "topic": topic,
+            "selected_topics": selected_topics,
+            "mode": mode,
+            **kwargs,
+        }
         return {
             "active_topic": topic,
             "mode": mode,
@@ -141,7 +149,7 @@ def test_session_service_writes_new_sessions_as_v3(monkeypatch):
     async def _get_or_create_default_user(self):
         return SimpleNamespace(id=uuid.uuid4())
 
-    async def _get_active_session(self, user_id, resource_id):
+    async def _get_active_session(self, user_id, resource_id, **_kwargs):
         return None
 
     async def _get_concepts(self, resource_id):
@@ -180,7 +188,7 @@ def test_session_service_retires_legacy_active_session(monkeypatch):
     async def _get_or_create_default_user(self):
         return SimpleNamespace(id=uuid.uuid4())
 
-    async def _get_active_session(self, user_id, resource_id):
+    async def _get_active_session(self, user_id, resource_id, **_kwargs):
         return legacy_session
 
     async def _get_concepts(self, resource_id):
@@ -217,7 +225,7 @@ def test_session_service_can_force_new_session_without_resuming(monkeypatch):
     async def _get_or_create_default_user(self):
         return SimpleNamespace(id=uuid.uuid4())
 
-    async def _get_active_session(self, user_id, resource_id):
+    async def _get_active_session(self, user_id, resource_id, **_kwargs):
         return active_session
 
     async def _get_concepts(self, resource_id):
@@ -244,15 +252,36 @@ def test_session_service_can_force_new_session_without_resuming(monkeypatch):
 
 
 def test_get_active_session_uses_newest_when_duplicates_exist():
-    newest = SimpleNamespace(id=uuid.uuid4(), status="active")
-    older = SimpleNamespace(id=uuid.uuid4(), status="active")
+    resource_id = uuid.uuid4()
+    newest = SimpleNamespace(
+        id=uuid.uuid4(),
+        status="active",
+        plan_state={
+            "curriculum_scope": {
+                "scope_type": "single_resource",
+                "resource_ids": [],
+            }
+        },
+        resource_id=resource_id,
+    )
+    older = SimpleNamespace(
+        id=uuid.uuid4(),
+        status="active",
+        plan_state={
+            "curriculum_scope": {
+                "scope_type": "single_resource",
+                "resource_ids": [],
+            }
+        },
+        resource_id=uuid.uuid4(),
+    )
 
     class _DbExecuteStub:
         async def execute(self, _query):
             return _ExecuteResult([newest, older])
 
     service = SessionService(_DbExecuteStub(), _CurriculumStub())
-    session = asyncio.run(service._get_active_session(uuid.uuid4(), uuid.uuid4()))
+    session = asyncio.run(service._get_active_session(uuid.uuid4(), resource_id))
 
     assert session is newest
 
@@ -264,7 +293,7 @@ def test_session_service_bootstraps_first_step_from_mode_contract(monkeypatch):
     async def _get_or_create_default_user(self):
         return SimpleNamespace(id=uuid.uuid4())
 
-    async def _get_active_session(self, user_id, resource_id):
+    async def _get_active_session(self, user_id, resource_id, **_kwargs):
         return None
 
     async def _get_concepts(self, resource_id):
@@ -298,7 +327,7 @@ def test_session_service_fails_early_when_ready_resource_has_no_concepts(monkeyp
     async def _get_or_create_default_user(self):
         return SimpleNamespace(id=uuid.uuid4())
 
-    async def _get_active_session(self, user_id, resource_id):
+    async def _get_active_session(self, user_id, resource_id, **_kwargs):
         return None
 
     async def _get_concepts(self, resource_id):
@@ -327,7 +356,7 @@ def test_session_service_allows_doubt_mode_without_concepts(monkeypatch):
     async def _get_or_create_default_user(self):
         return SimpleNamespace(id=uuid.uuid4())
 
-    async def _get_active_session(self, user_id, resource_id):
+    async def _get_active_session(self, user_id, resource_id, **_kwargs):
         return None
 
     async def _get_concepts(self, resource_id):
@@ -352,3 +381,62 @@ def test_session_service_allows_doubt_mode_without_concepts(monkeypatch):
         session.plan_state["objective_queue"][0]["objective_id"] == "obj_doubt_clarify"
     )
     assert session.plan_state["current_step"] == "clarify"
+
+
+def test_session_service_uses_scoped_curriculum_source_and_seeds_rolling_planner(monkeypatch):
+    anchor_resource_id = uuid.uuid4()
+    second_resource_id = uuid.uuid4()
+
+    async def _get_resource(self, resource_id):
+        return SimpleNamespace(id=resource_id, topic="heat", status="ready")
+
+    async def _get_or_create_default_user(self):
+        return SimpleNamespace(id=uuid.uuid4())
+
+    async def _get_active_session(self, user_id, resource_id, **_kwargs):
+        return None
+
+    async def _get_scope_concepts(self, resource_ids):
+        assert resource_ids == [str(anchor_resource_id), str(second_resource_id)]
+        return [
+            "conduction",
+            "convection",
+            "radiation",
+            "heat_flux",
+            "thermal_equilibrium",
+            "boundary_layer",
+            "entropy",
+        ]
+
+    monkeypatch.setattr(SessionService, "_get_resource", _get_resource)
+    monkeypatch.setattr(
+        SessionService, "_get_or_create_default_user", _get_or_create_default_user
+    )
+    monkeypatch.setattr(SessionService, "_get_active_session", _get_active_session)
+    monkeypatch.setattr(SessionService, "_get_scope_concepts", _get_scope_concepts)
+
+    curriculum = _CurriculumCountingStub()
+    service = SessionService(_DbStub(), curriculum)
+    session = asyncio.run(
+        service.create_session(
+            resource_id=anchor_resource_id,
+            scope_type="selected_resources",
+            scope_resource_ids=[str(anchor_resource_id), str(second_resource_id)],
+            notebook_id=str(uuid.uuid4()),
+            mode="learn",
+        )
+    )
+
+    assert curriculum.calls == 1
+    assert curriculum.last_kwargs["scope_resource_ids"] == [
+        str(anchor_resource_id),
+        str(second_resource_id),
+    ]
+    assert curriculum.last_kwargs["scope_type"] == "selected_resources"
+    assert curriculum.last_kwargs["objective_limit"] == 3
+    assert session.plan_state["curriculum_scope"]["resource_ids"] == [
+        str(anchor_resource_id),
+        str(second_resource_id),
+    ]
+    assert session.plan_state["plan_horizon"]["strategy"] == "rolling"
+    assert session.plan_state["curriculum_planner"]["rolling_enabled"] is True

@@ -2,16 +2,22 @@ import uuid
 from types import SimpleNamespace
 
 from app.schemas.agent_output import (
+    InteractionType,
     PedagogicalAction,
     PolicyOrchestratorOutput,
     ProgressionDecision,
+    TurnPlan,
 )
 from app.services.policy_replay import (
     build_policy_replay_row,
     summarize_policy_replay,
 )
 from app.services.tutor_runtime.persistence import _serialize_policy_output
-from app.services.tutor_runtime.delegation import decide_adaptive_delegation
+from app.services.tutor_runtime.delegation import (
+    DelegationDecision,
+    apply_delegation_override,
+    decide_adaptive_delegation,
+)
 from app.services.tutor_runtime.policy_reranker import rerank_policy_output
 
 
@@ -105,6 +111,32 @@ def test_adaptive_delegation_triggers_on_repeated_confusion_and_is_bounded(monke
     assert second.outcome == "cooldown_active"
 
 
+def test_apply_delegation_override_preserves_progression_decision():
+    policy_output = PolicyOrchestratorOutput(
+        pedagogical_action=PedagogicalAction.EXPLAIN,
+        progression_decision=ProgressionDecision.ADVANCE_STEP,
+        confidence=0.8,
+        reasoning="advance after the learner asks to move on",
+        student_intent="move_on",
+        planner_guidance="Keep it concise.",
+    )
+
+    updated = apply_delegation_override(
+        policy_output,
+        DelegationDecision(
+            delegated=True,
+            reason="high_uncertainty",
+            outcome="specialist_path_selected",
+            signals={"high_uncertainty": True},
+        ),
+    )
+
+    assert updated.progression_decision == ProgressionDecision.ADVANCE_STEP
+    assert updated.pedagogical_action == PedagogicalAction.HINT
+    assert updated.ad_hoc_step_type == "probe"
+    assert "adaptive_delegation:high_uncertainty" in (updated.planner_guidance or "")
+
+
 def test_policy_replay_row_contains_track_d_fields():
     turn = SimpleNamespace(
         id=uuid.uuid4(),
@@ -157,3 +189,38 @@ def test_serialize_policy_output_persists_student_intent():
     )
 
     assert output["student_intent"] == "move_on"
+
+
+def test_serialize_policy_output_persists_planner_guidance_and_turn_plan():
+    output = _serialize_policy_output(
+        PolicyOrchestratorOutput(
+            pedagogical_action=PedagogicalAction.SUMMARIZE,
+            progression_decision=ProgressionDecision.INSERT_AD_HOC,
+            confidence=0.74,
+            reasoning="offer a binary choice before advancing",
+            student_intent="move_on",
+            recommended_strategy="direct",
+            ad_hoc_step_type="motivation_check",
+            planner_guidance=(
+                "Offer exactly two options: answer the pending checkpoint now, or skip ahead with a note that mastery may be incomplete."
+            ),
+            turn_plan=TurnPlan(
+                goal="Resolve the pending checkpoint state",
+                interaction_type=InteractionType.CHECK_UNDERSTANDING,
+                expected_student_action="answer",
+                tutor_question="Would you like a quick conceptual check or to jump ahead?",
+                constraints=["Keep it concise"],
+            ),
+        )
+    )
+
+    assert output["recommended_strategy"] == "direct"
+    assert output["ad_hoc_step_type"] == "motivation_check"
+    assert "Offer exactly two options" in output["planner_guidance"]
+    assert output["turn_plan"] == {
+        "goal": "Resolve the pending checkpoint state",
+        "interaction_type": "check_understanding",
+        "expected_student_action": "answer",
+        "tutor_question": "Would you like a quick conceptual check or to jump ahead?",
+        "constraints": ["Keep it concise"],
+    }

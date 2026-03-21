@@ -14,6 +14,7 @@ from app.services.ingestion.resource_profile import build_resource_profile
 from app.services.resource_readiness import (
     is_resource_doubt_ready,
     is_resource_study_ready,
+    is_resource_progressively_ready,
     normalized_resource_capabilities,
 )
 from app.services.topic_preparation import build_topic_preparation_artifact
@@ -106,12 +107,13 @@ class NotebookPreparationService:
 
             is_doubt_ready = is_resource_doubt_ready(resource)
             is_study_ready = is_resource_study_ready(resource)
+            is_progressively_ready = is_resource_progressively_ready(resource)
 
             if session_mode == "doubt":
                 is_ready_for_mode = is_doubt_ready
                 blocking_reason = "resource_not_doubt_ready"
             else:
-                is_ready_for_mode = is_study_ready
+                is_ready_for_mode = is_study_ready or is_progressively_ready
                 blocking_reason = "resource_not_study_ready"
 
             if not is_ready_for_mode:

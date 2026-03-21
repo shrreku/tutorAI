@@ -22,6 +22,7 @@ if TYPE_CHECKING:
         ResourceLearningObjective,
         ResourcePrereqHint,
     )
+    from app.models.processing_batch import ProcessingBatch
 
 
 def default_resource_capabilities() -> dict:
@@ -48,6 +49,12 @@ def default_resource_capabilities() -> dict:
         "curriculum_ready": False,
         "is_graph_synced": False,
         "neo4j_synced": False,
+        # Progressive batch readiness
+        "has_partial_curriculum": False,
+        "progressive_study_ready": False,
+        "supports_incremental_curriculum": False,
+        "ready_batch_count": 0,
+        "total_batch_count": 0,
     }
 
 
@@ -77,6 +84,36 @@ def study_ready_capabilities(
             "can_generate_basic_practice": has_concepts,
             "concepts_ready": has_concepts,
             "has_concepts": has_concepts,
+        }
+    )
+    return capabilities
+
+
+def progressive_ready_capabilities(
+    existing: Optional[dict] = None,
+    *,
+    ready_batch_count: int = 0,
+    total_batch_count: int = 0,
+    has_concepts: bool = False,
+) -> dict:
+    """Capabilities for a resource with at least one study-ready batch."""
+    capabilities = core_ready_capabilities(existing)
+    has_partial = ready_batch_count > 0
+    is_fully_ready = ready_batch_count >= total_batch_count and total_batch_count > 0
+    capabilities.update(
+        {
+            "has_partial_curriculum": has_partial,
+            "progressive_study_ready": has_partial,
+            "supports_incremental_curriculum": has_partial,
+            "ready_batch_count": ready_batch_count,
+            "total_batch_count": total_batch_count,
+            "study_ready": is_fully_ready or has_concepts,
+            "can_generate_basic_practice": has_partial,
+            "concepts_ready": has_concepts,
+            "has_concepts": has_concepts,
+            "can_start_learn_session": has_partial,
+            "can_start_practice_session": has_partial,
+            "can_start_revision_session": has_partial,
         }
     )
     return capabilities
@@ -187,4 +224,9 @@ class Resource(Base, UUIDMixin, TimestampMixin):
         "ResourceArtifactState",
         back_populates="resource",
         cascade="all, delete-orphan",
+    )
+    processing_batches: Mapped[List["ProcessingBatch"]] = relationship(
+        "ProcessingBatch",
+        cascade="all, delete-orphan",
+        order_by="ProcessingBatch.batch_index",
     )

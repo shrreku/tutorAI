@@ -8,7 +8,7 @@ StudyAgent is an agentic tutoring system for notebook-scoped study sessions over
 | --- | --- |
 | Backend | FastAPI, SQLAlchemy 2, Alembic |
 | Data | PostgreSQL + pgvector, optional Redis, optional Neo4j |
-| Frontend | React 18, TypeScript, Vite |
+| Frontend | React 18, TypeScript, Vite, react-resizable-panels |
 | ML | OpenAI-compatible LLMs, local sentence-transformer embeddings |
 
 ## Environment Contract
@@ -67,7 +67,14 @@ Canonical notebook tutoring flow:
 4. `POST /api/v1/notebooks/{notebook_id}/resources`
 5. `POST /api/v1/notebooks/{notebook_id}/sessions`
 6. `POST /api/v1/tutor/notebooks/{notebook_id}/turn`
-7. `POST /api/v1/sessions/{session_id}/end`
+7. `POST /api/v1/notebooks/{notebook_id}/sessions/{session_id}/end`
+
+Diagnostic / operational endpoints:
+
+- `GET /api/v1/health/live` — liveness
+- `GET /api/v1/health/ready` — readiness with dependency checks
+- `GET /api/v1/health/version` — build version and feature flag snapshot
+- `GET /api/v1/flags` — authenticated feature flags for the current user
 
 Deprecated legacy routes intentionally return `410 Gone`:
 
@@ -97,14 +104,16 @@ Before deployment:
 - backend tests must pass
 - frontend lint, tests, and build must pass
 - Docker images must build cleanly
-- deploy smoke tests must pass `/health/live`, `/health/ready`, and an authenticated flow in staging/production
+- deploy smoke tests must pass `/health/live`, `/health/ready`, `/health/version`, and an authenticated flow in staging/production
 
 ## Documentation
 
-- Release audit: `docs/RELEASE-READINESS-AUDIT-2026-03-08.md`
-- Remediation tracker: `tickets/TICKETS-RELEASE-READINESS-REMEDIATION.md`
-- Deploy webhook contract: `docs/DEPLOY-WEBHOOK-OPS.md`
-- Hosting rollout plan: `docs/HOSTING-ROLL-OUT-PLAN.md`
+- Docs index: `docs/README.md`
+- Production docs: `docs/production/README.md`
+- Production roadmap: `tickets/production/ROADMAP.md`
+- Research docs: `docs/research/README.md`
+- Research roadmap: `tickets/research/ROADMAP.md`
+- Research evals: `evals/README.md`
 
 ## License
 

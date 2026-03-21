@@ -83,6 +83,9 @@ class PolicyOrchestratorOutput(BaseModel):
     retrieval_directives: Optional[Dict[str, Any]] = None
     turn_plan: Optional[TurnPlan] = None
     planner_guidance: Optional[str] = None
+    replan_required: bool = False
+    replan_reason: Optional[str] = None
+    scope_shift_request: Optional[Dict[str, Any]] = None
 
 
 class TutorOutput(BaseModel):

@@ -197,7 +197,7 @@ export default function BillingPage() {
                 <span className="text-sm font-medium text-foreground">{monthlyUsagePct}%</span>
               </div>
               <div className="h-2 rounded-full bg-background overflow-hidden">
-                <div className="h-full rounded-full bg-gradient-to-r from-gold to-amber-400" style={{ width: `${monthlyUsagePct}%` }} />
+                <div className="h-full rounded-full bg-gold" style={{ width: `${monthlyUsagePct}%` }} />
               </div>
               <p className="text-xs text-muted-foreground mt-3">
                 Tutoring with platform credentials, uploads, and queued notebook preparation draw from the same shared credit pool.
@@ -242,7 +242,7 @@ export default function BillingPage() {
               {activeTab === 'ledger' && visibleEntries.length > 0 && (
                 <button
                   onClick={() => downloadCsv(visibleEntries)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/[0.04] transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
                 >
                   <Download className="w-3.5 h-3.5" />
                   Export CSV

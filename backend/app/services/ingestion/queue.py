@@ -15,6 +15,7 @@ import logging
 from typing import Optional
 
 import redis.asyncio as aioredis
+from redis.exceptions import RedisError
 
 from app.config import settings
 
@@ -24,6 +25,11 @@ QUEUE_KEY = "studyagent:ingestion:jobs"
 DLQ_KEY = "studyagent:ingestion:dlq"
 
 _redis_client: Optional[aioredis.Redis] = None
+
+
+def _reset_redis_client() -> None:
+    global _redis_client
+    _redis_client = None
 
 
 async def get_redis() -> aioredis.Redis:
@@ -69,8 +75,12 @@ async def queued_job_ids() -> set[str]:
 
 async def dequeue_ingestion_job(timeout: int = 5) -> Optional[dict]:
     """Block-pop the next job from the queue.  Returns ``None`` on timeout."""
-    r = await get_redis()
-    result = await r.blpop(QUEUE_KEY, timeout=timeout)
+    try:
+        r = await get_redis()
+        result = await r.blpop(QUEUE_KEY, timeout=timeout)
+    except RedisError:
+        _reset_redis_client()
+        raise
     if result is None:
         return None
     _, payload = result

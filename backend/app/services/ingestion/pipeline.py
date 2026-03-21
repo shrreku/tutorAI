@@ -15,13 +15,14 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.config import settings
 from app.models.ingestion import IngestionJob
 from app.models.resource import Resource
 from app.models.resource_artifact import ResourceArtifactState
 from app.models.chunk import Chunk, ChunkConcept
+from app.models.sub_chunk import SubChunk
 from app.db.repositories.resource_artifact_repo import ResourceArtifactRepository
 from app.services.llm.base import BaseLLMProvider
 from app.services.embedding.base import BaseEmbeddingProvider
@@ -31,7 +32,8 @@ from app.services.ingestion.docling_adapter import (
     DoclingConversionResult,
 )
 from app.services.ingestion.docling_chunker import DoclingChunker, DoclingChunkingResult
-from app.services.ingestion.ingestion_types import ChunkData, token_len
+from app.services.ingestion.sub_chunker import SubChunker
+from app.services.ingestion.ingestion_types import ChunkData, SectionData, token_len
 from app.services.ingestion.resource_profile import build_resource_profile
 from app.services.ingestion.pipeline_support import (
     compute_quality_metrics,
@@ -44,6 +46,8 @@ from langfuse import observe
 logger = logging.getLogger(__name__)
 
 PIPELINE_VERSION = "2.0.0"
+CORE_CHECKPOINT_ARTIFACT_KIND = "core_ingestion_checkpoint"
+CORE_CHECKPOINT_VERSION = "1.0"
 
 
 class IngestionStage(str, Enum):
@@ -73,7 +77,64 @@ class IngestionPipeline:
         self.docling_adapter = DoclingAdapter()
         self.docling_chunker = DoclingChunker(
             embedding_model_id=embedding_provider.model_id,
-            use_contextualized_text=True,
+            use_contextualized_text=settings.INGESTION_DOCLING_CONTEXTUALIZED_TEXT,
+        )
+        self.sub_chunker = SubChunker(
+            target_tokens=448,
+            min_tokens=128,
+            overlap_tokens=64,
+        )
+
+    @staticmethod
+    def _serialize_section(section) -> dict:
+        if isinstance(section, dict):
+            payload = dict(section)
+        else:
+            payload = {
+                "heading": getattr(section, "heading", None),
+                "page_start": getattr(section, "page_start", None),
+                "page_end": getattr(section, "page_end", None),
+                "text": getattr(section, "text", ""),
+                "metadata": getattr(section, "metadata", {}) or {},
+            }
+        return {
+            "heading": payload.get("heading") or payload.get("title"),
+            "page_start": payload.get("page_start"),
+            "page_end": payload.get("page_end"),
+            "text": payload.get("text") or "",
+            "metadata": payload.get("metadata") or {},
+        }
+
+    @staticmethod
+    def _serialize_chunk(chunk: ChunkData) -> dict:
+        return {
+            "chunk_index": chunk.chunk_index,
+            "text": chunk.text,
+            "section_heading": chunk.section_heading,
+            "page_start": chunk.page_start,
+            "page_end": chunk.page_end,
+            "metadata": chunk.metadata or {},
+        }
+
+    @staticmethod
+    def _deserialize_section(payload: dict) -> SectionData:
+        return SectionData(
+            heading=payload.get("heading"),
+            page_start=payload.get("page_start"),
+            page_end=payload.get("page_end"),
+            text=payload.get("text") or "",
+            metadata=payload.get("metadata") or {},
+        )
+
+    @staticmethod
+    def _deserialize_chunk(payload: dict) -> ChunkData:
+        return ChunkData(
+            chunk_index=int(payload.get("chunk_index") or 0),
+            text=payload.get("text") or "",
+            section_heading=payload.get("section_heading"),
+            page_start=payload.get("page_start"),
+            page_end=payload.get("page_end"),
+            metadata=payload.get("metadata") or {},
         )
 
     async def _update_job_stage(
@@ -124,6 +185,102 @@ class IngestionPipeline:
             **metrics,
         }
 
+    async def _upsert_chunk_checkpoint(
+        self,
+        *,
+        resource: Resource,
+        sections: list,
+        chunks: list[ChunkData],
+        chunking_metadata: Optional[dict],
+        document_metrics: dict,
+    ) -> None:
+        artifact_repo = ResourceArtifactRepository(self.db)
+        payload = {
+            "artifact_kind": CORE_CHECKPOINT_ARTIFACT_KIND,
+            "artifact_version": CORE_CHECKPOINT_VERSION,
+            "stage": "chunk_complete",
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+            "resource_id": str(resource.id),
+            "document_metrics": document_metrics,
+            "chunking_metadata": chunking_metadata or {},
+            "sections": [self._serialize_section(section) for section in sections],
+            "chunks": [self._serialize_chunk(chunk) for chunk in chunks],
+        }
+        existing = await artifact_repo.get_for_scope(
+            resource_id=resource.id,
+            scope_type="resource",
+            scope_key=str(resource.id),
+            artifact_kind=CORE_CHECKPOINT_ARTIFACT_KIND,
+        )
+        if existing:
+            existing.status = "ready"
+            existing.version = CORE_CHECKPOINT_VERSION
+            existing.payload_json = payload
+            existing.error_message = None
+        else:
+            self.db.add(
+                ResourceArtifactState(
+                    resource_id=resource.id,
+                    scope_type="resource",
+                    scope_key=str(resource.id),
+                    artifact_kind=CORE_CHECKPOINT_ARTIFACT_KIND,
+                    status="ready",
+                    version=CORE_CHECKPOINT_VERSION,
+                    payload_json=payload,
+                )
+            )
+        await self.db.flush()
+
+    async def _load_chunk_checkpoint(
+        self, resource_id: uuid.UUID
+    ) -> Optional[tuple[list[SectionData], list[ChunkData], dict, dict]]:
+        artifact_repo = ResourceArtifactRepository(self.db)
+        checkpoint = await artifact_repo.get_for_scope(
+            resource_id=resource_id,
+            scope_type="resource",
+            scope_key=str(resource_id),
+            artifact_kind=CORE_CHECKPOINT_ARTIFACT_KIND,
+        )
+        payload = checkpoint.payload_json if checkpoint is not None else None
+        if not isinstance(payload, dict):
+            return None
+        if payload.get("stage") != "chunk_complete":
+            return None
+        sections_payload = payload.get("sections")
+        chunks_payload = payload.get("chunks")
+        if not isinstance(sections_payload, list) or not isinstance(chunks_payload, list):
+            return None
+        sections = [
+            self._deserialize_section(item)
+            for item in sections_payload
+            if isinstance(item, dict)
+        ]
+        chunks = [
+            self._deserialize_chunk(item)
+            for item in chunks_payload
+            if isinstance(item, dict)
+        ]
+        document_metrics = payload.get("document_metrics")
+        chunking_metadata = payload.get("chunking_metadata")
+        return (
+            sections,
+            chunks,
+            document_metrics if isinstance(document_metrics, dict) else {},
+            chunking_metadata if isinstance(chunking_metadata, dict) else {},
+        )
+
+    async def _clear_partial_core_state(self, resource_id: uuid.UUID) -> None:
+        await self.db.execute(delete(SubChunk).where(SubChunk.resource_id == resource_id))
+        await self.db.execute(
+            delete(ChunkConcept).where(
+                ChunkConcept.chunk_id.in_(
+                    select(Chunk.id).where(Chunk.resource_id == resource_id)
+                )
+            )
+        )
+        await self.db.execute(delete(Chunk).where(Chunk.resource_id == resource_id))
+        await self.db.flush()
+
     @observe(name="ingestion-pipeline", capture_input=False)
     async def run(
         self,
@@ -158,38 +315,83 @@ class IngestionPipeline:
             if not resource.file_path_or_uri:
                 raise ValueError(f"Resource {resource_id} has no file path")
 
-            # Stage 1: Parse PDF
-            logger.info(f"Stage 1: Parsing PDF for resource {resource_id}")
-            parse_result = await self._run_parse_stage(resource)
-            sections = parse_result.sections
-            metrics["stages"]["parse"] = {
-                "sections": len(sections),
-                "status": parse_result.status,
-                "warnings": len(parse_result.warnings),
-                "errors": len(parse_result.errors),
-            }
-            if parse_result.warnings:
+            checkpoint_state = await self._load_chunk_checkpoint(resource_id)
+            chunking_metadata: dict = {}
+            if checkpoint_state:
+                sections, chunks, document_metrics, chunking_metadata = checkpoint_state
+                metrics["stages"]["parse"] = {
+                    "sections": len(sections),
+                    "status": "checkpoint_reused",
+                    "warnings": 0,
+                    "errors": 0,
+                }
+                metrics["stages"]["chunk"] = {
+                    "chunks": len(chunks),
+                    "strategy": "checkpoint_reused",
+                    "embedding_strategy": chunking_metadata.get("embedding_strategy"),
+                }
+                metrics["document"] = document_metrics
+                metrics["recovery"] = {
+                    "resumable": True,
+                    "resumed": True,
+                    "resume_from_stage": "chunk",
+                    "checkpoint_artifact_kind": CORE_CHECKPOINT_ARTIFACT_KIND,
+                }
                 logger.warning(
-                    "Docling parse warnings for resource %s: %s",
+                    "Resuming ingestion for resource %s from saved chunk checkpoint",
                     resource_id,
-                    "; ".join(parse_result.warnings),
                 )
+                await self._clear_partial_core_state(resource_id)
+                await self._update_job_stage(job_id, IngestionStage.EMBED, 55, metrics=metrics)
+            else:
+                # Stage 1: Parse PDF
+                logger.info(f"Stage 1: Parsing PDF for resource {resource_id}")
+                parse_result = await self._run_parse_stage(resource)
+                sections = parse_result.sections
+                metrics["stages"]["parse"] = {
+                    "sections": len(sections),
+                    "status": parse_result.status,
+                    "warnings": len(parse_result.warnings),
+                    "errors": len(parse_result.errors),
+                }
+                if parse_result.warnings:
+                    logger.warning(
+                        "Docling parse warnings for resource %s: %s",
+                        resource_id,
+                        "; ".join(parse_result.warnings),
+                    )
 
-            await self._update_job_stage(job_id, IngestionStage.CHUNK, 25)
+                await self._update_job_stage(job_id, IngestionStage.CHUNK, 25)
 
-            # Stage 2: Chunk text
-            logger.info(f"Stage 2: Chunking text for resource {resource_id}")
-            chunking_result = await self._run_chunk_stage(parse_result)
-            chunks = chunking_result.chunks
-            document_metrics = self._build_document_metrics(parse_result, chunks)
-            metrics["stages"]["chunk"] = {
-                "chunks": len(chunks),
-                "strategy": chunking_result.strategy,
-                "embedding_strategy": chunking_result.metadata.get(
-                    "embedding_strategy"
-                ),
-            }
-            metrics["document"] = document_metrics
+                logger.info(f"Stage 2: Chunking text for resource {resource_id}")
+                chunking_result = await self._run_chunk_stage(parse_result)
+                chunks = chunking_result.chunks
+                chunking_metadata = chunking_result.metadata or {}
+                document_metrics = self._build_document_metrics(parse_result, chunks)
+                metrics["stages"]["chunk"] = {
+                    "chunks": len(chunks),
+                    "strategy": chunking_result.strategy,
+                    "embedding_strategy": chunking_metadata.get(
+                        "embedding_strategy"
+                    ),
+                }
+                metrics["document"] = document_metrics
+                metrics["recovery"] = {
+                    "resumable": True,
+                    "resumed": False,
+                    "resume_from_stage": "chunk",
+                    "checkpoint_artifact_kind": CORE_CHECKPOINT_ARTIFACT_KIND,
+                }
+                await self._upsert_chunk_checkpoint(
+                    resource=resource,
+                    sections=sections,
+                    chunks=chunks,
+                    chunking_metadata=chunking_metadata,
+                    document_metrics=document_metrics,
+                )
+                commit = getattr(self.db, "commit", None)
+                if callable(commit):
+                    await commit()
 
             chunk_metrics = await self._merge_job_metrics(job_id, metrics)
             await self._update_job_stage(
@@ -199,40 +401,71 @@ class IngestionPipeline:
                 metrics=chunk_metrics,
             )
 
-            # Stage 3: Embed chunks
-            logger.info(f"Stage 3: Embedding chunks for resource {resource_id}")
-            embeddings = await self._run_embed_stage(chunks)
-            metrics["stages"]["embed"] = {"embeddings": len(embeddings)}
-
-            await self._update_job_stage(job_id, IngestionStage.PERSIST, 80)
-
             enrichments = self._build_lightweight_enrichments(chunks)
             metrics["stages"]["persist"] = {
                 "chunks": len(chunks),
                 "light_metadata": len(enrichments),
             }
 
-            # Save chunks to database
-            await self._save_chunks(
+            # Save parent chunks to database (no embeddings — sub-chunks hold embeddings)
+            chunk_id_map = await self._save_chunks(
                 resource_id,
                 chunks,
-                embeddings,
                 enrichments,
-                conversion_metadata=parse_result.metadata,
-                chunking_metadata=chunking_result.metadata,
+                chunking_metadata=chunking_metadata,
             )
+            enrichment_by_chunk_index = {
+                int(getattr(chunk, "chunk_index", index)): dict(enrichment)
+                for index, (chunk, enrichment) in enumerate(zip(chunks, enrichments))
+            }
+
+            # Stage 3: Sub-chunk for retrieval + embed
+            logger.info(f"Stage 3: Sub-chunking + embedding for resource {resource_id}")
+            sub_chunking_result = self.sub_chunker.sub_chunk(chunks)
+            sub_chunks = sub_chunking_result.sub_chunks
+            metrics["stages"]["sub_chunk"] = sub_chunking_result.metadata
+
+            if sub_chunks:
+                batch_size = max(1, int(settings.INGESTION_EMBED_BATCH_SIZE or 0))
+                metrics["stages"]["sub_chunk"]["embed_batch_size"] = batch_size
+                embedded_total = 0
+
+                for start in range(0, len(sub_chunks), batch_size):
+                    batch = sub_chunks[start : start + batch_size]
+                    sub_texts = [sc.text for sc in batch]
+                    sub_embeddings = await self.embedding.embed(sub_texts)
+                    if len(sub_embeddings) != len(batch):
+                        raise ValueError(
+                            "Embedding batch size mismatch for sub-chunks: "
+                            f"expected {len(batch)}, got {len(sub_embeddings)}"
+                        )
+                    await self._save_sub_chunks(
+                        resource_id,
+                        batch,
+                        sub_embeddings,
+                        chunk_id_map,
+                        enrichment_by_chunk_index,
+                    )
+                    embedded_total += len(sub_embeddings)
+
+                metrics["stages"]["sub_chunk"]["embedded"] = embedded_total
+            else:
+                logger.warning("No sub-chunks generated for resource %s", resource_id)
+
+            await self._update_job_stage(job_id, IngestionStage.PERSIST, 80)
+
             artifacts_created = await self._persist_core_artifacts(
                 resource=resource,
                 sections=sections,
                 chunks=chunks,
-                chunking_metadata=chunking_result.metadata,
+                chunking_metadata=chunking_metadata,
             )
             metrics["stages"]["persist"]["artifacts_created"] = artifacts_created
 
             metrics["quality"] = compute_quality_metrics(
                 resource_id=resource_id,
                 chunks=chunks,
-                embeddings=embeddings,
+                embeddings=[],  # Sub-chunks hold embeddings now
                 enrichments=enrichments,
                 kb_result={},
                 graph_result={},
@@ -410,12 +643,6 @@ class IngestionPipeline:
         )
         return chunking_result
 
-    async def _run_embed_stage(self, chunks: list[ChunkData]) -> list[list[float]]:
-        """Generate embeddings for chunks."""
-        texts = [chunk.text for chunk in chunks]
-        embeddings = await self.embedding.embed(texts)
-        return embeddings
-
     async def _run_graph_stage(self, resource_id: uuid.UUID) -> dict:
         """Compatibility helper for optional graph sync tests and future use."""
         build_result = await self.graph_builder.build(resource_id, force_rebuild=True)
@@ -486,22 +713,21 @@ class IngestionPipeline:
         self,
         resource_id: uuid.UUID,
         chunks: list[ChunkData],
-        embeddings: list[list[float]],
         enrichments: list[dict],
-        conversion_metadata: Optional[dict] = None,
         chunking_metadata: Optional[dict] = None,
-    ) -> None:
-        """Save chunks and their enrichments to database."""
+    ) -> dict[int, "uuid.UUID"]:
+        """Save parent chunks (no embedding). Returns chunk_index → chunk_id map."""
         from app.services.ingestion.docling_adapter import DoclingAdapter
 
-        for i, (chunk, embedding, enrichment) in enumerate(
-            zip(chunks, embeddings, enrichments)
+        chunk_id_map: dict[int, uuid.UUID] = {}
+
+        for i, (chunk, enrichment) in enumerate(
+            zip(chunks, enrichments)
         ):
             enrichment_payload = dict(enrichment)
             enrichment_payload["docling"] = {
                 "chunk_provenance": chunk.metadata,
                 "chunking": chunking_metadata or {},
-                "conversion": conversion_metadata or {},
             }
             # Ensure entire payload is JSON-serializable (defense-in-depth)
             enrichment_payload = DoclingAdapter._make_json_safe(enrichment_payload)
@@ -515,11 +741,12 @@ class IngestionPipeline:
                 page_end=chunk.page_end,
                 pedagogy_role=enrichment.get("pedagogy_role"),
                 difficulty=enrichment.get("difficulty"),
-                embedding=embedding,
+                embedding=None,  # Sub-chunks hold embeddings
                 enrichment_metadata=enrichment_payload,
-                embedding_model_id=self.embedding.model_id,
+                embedding_model_id=None,
             )
             self.db.add(db_chunk)
+            chunk_id_map[i] = db_chunk.id
 
             # Add chunk concepts
             for concept in enrichment.get("concepts_taught", []):
@@ -541,6 +768,51 @@ class IngestionPipeline:
                 )
 
         await self.db.flush()
+        return chunk_id_map
+
+    async def _save_sub_chunks(
+        self,
+        resource_id: uuid.UUID,
+        sub_chunks: list,
+        embeddings: list[list[float]],
+        chunk_id_map: dict[int, uuid.UUID],
+        enrichment_by_chunk_index: dict[int, dict],
+    ) -> None:
+        """Save sub-chunks with embeddings and parent chunk references."""
+        from app.models.sub_chunk import SubChunk
+
+        for sc, embedding in zip(sub_chunks, embeddings):
+            parent_chunk_id = chunk_id_map.get(sc.parent_chunk_index)
+            enrichment_payload = dict(
+                enrichment_by_chunk_index.get(sc.parent_chunk_index) or {}
+            )
+            if parent_chunk_id is None:
+                logger.warning(
+                    "Sub-chunk references unknown parent index %d, skipping",
+                    sc.parent_chunk_index,
+                )
+                continue
+
+            self.db.add(SubChunk(
+                id=uuid.uuid4(),
+                parent_chunk_id=parent_chunk_id,
+                resource_id=resource_id,
+                sub_index=sc.sub_index,
+                text=sc.text,
+                char_start=sc.char_start,
+                char_end=sc.char_end,
+                page_start=sc.page_start,
+                page_end=sc.page_end,
+                enrichment_metadata=enrichment_payload,
+                embedding=embedding,
+                embedding_model_id=self.embedding.model_id,
+            ))
+
+        await self.db.flush()
+        logger.info(
+            "[INGESTION] Saved %d sub-chunks for resource %s",
+            len(sub_chunks), resource_id,
+        )
 
     async def _persist_core_artifacts(
         self,

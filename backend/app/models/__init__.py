@@ -3,6 +3,7 @@ from app.models.base import Base, UUIDMixin, TimestampMixin
 from app.models.resource import Resource
 from app.models.resource_artifact import ResourceArtifactState
 from app.models.chunk import Chunk, ChunkConcept, Formula
+from app.models.sub_chunk import SubChunk
 from app.models.knowledge_base import (
     ResourceConceptStats,
     ResourceConceptEvidence,
@@ -36,6 +37,7 @@ from app.models.notebook import (
     NotebookProgress,
     NotebookArtifact,
 )
+from app.models.processing_batch import ProcessingBatch
 
 __all__ = [
     "Base",
@@ -75,4 +77,5 @@ __all__ = [
     "NotebookSession",
     "NotebookProgress",
     "NotebookArtifact",
+    "ProcessingBatch",
 ]

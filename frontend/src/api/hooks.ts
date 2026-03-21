@@ -1,8 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query';
 import { apiClient } from './client';
 import type {
   PaginatedResponse,
   Resource,
+  ResourceTopicsResponse,
   IngestionStatus,
   TutorTurnRequest,
   TutorTurnResponse,
@@ -49,6 +50,7 @@ export const queryKeys = {
     list: (params?: { status?: string; limit?: number; offset?: number }) =>
       [...queryKeys.resources.all, 'list', params] as const,
     detail: (id: string) => [...queryKeys.resources.all, 'detail', id] as const,
+    topics: (id: string) => [...queryKeys.resources.all, 'topics', id] as const,
     ingestionStatus: (jobId: string) => [...queryKeys.resources.all, 'ingestion', jobId] as const,
   },
   sessions: {
@@ -247,6 +249,16 @@ export function useSendNotebookMessage(notebookId: string) {
             tutor_question: data.tutor_question,
             pedagogical_action: data.step_transition,
             current_step: data.current_step,
+            current_step_index: data.current_step_index,
+            objective_id: data.objective_id,
+            objective_title: data.objective_title,
+            step_transition: data.step_transition,
+            focus_concepts: data.focus_concepts,
+            mastery_update: data.mastery_update,
+            session_summary: data.session_summary,
+            structured_content: data.structured_content,
+            study_map_snapshot: data.study_map_snapshot,
+            citations: data.citations || [],
             created_at: new Date().toISOString(),
           };
           return {
@@ -260,6 +272,22 @@ export function useSendNotebookMessage(notebookId: string) {
         queryKey: queryKeys.sessions.detail(variables.session_id),
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.progress(notebookId) });
+    },
+  });
+}
+
+export function useEndNotebookSession(notebookId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      apiClient.post<Record<string, unknown>>(
+        `/notebooks/${notebookId}/sessions/${sessionId}/end`,
+        {},
+      ),
+    onSuccess: (_data, sessionId) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.sessions(notebookId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notebooks.progress(notebookId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sessions.detail(sessionId) });
     },
   });
 }
@@ -316,11 +344,41 @@ export function useIngestionStatus(jobId: string) {
   });
 }
 
+export function useRetryIngestion() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (resourceId: string) =>
+      apiClient.post<IngestionStatus>(`/ingest/retry/${resourceId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.resources.all });
+    },
+  });
+}
+
 export function useResourceDetail(resourceId: string) {
   return useQuery({
     queryKey: queryKeys.resources.detail(resourceId),
     queryFn: () => apiClient.get<Resource>(`/resources/${resourceId}`),
     enabled: !!resourceId,
+  });
+}
+
+export function useResourceTopics(resourceId: string) {
+  return useQuery({
+    queryKey: queryKeys.resources.topics(resourceId),
+    queryFn: () => apiClient.get<ResourceTopicsResponse>(`/resources/${resourceId}/topics`),
+    enabled: !!resourceId,
+  });
+}
+
+export function useResourceTopicsBatch(resourceIds: string[]) {
+  return useQueries({
+    queries: resourceIds.map((resourceId) => ({
+      queryKey: queryKeys.resources.topics(resourceId),
+      queryFn: () => apiClient.get<ResourceTopicsResponse>(`/resources/${resourceId}/topics`),
+      enabled: !!resourceId,
+      staleTime: 60_000,
+    })),
   });
 }
 

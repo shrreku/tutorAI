@@ -8,7 +8,7 @@ from app.services.ingestion.docling_config import (
     _apply_override_options,
     _apply_profile_options,
 )
-from app.services.ingestion.ingestion_types import SectionData
+from app.services.ingestion.ingestion_types import SectionData, token_len
 
 
 class _FakeDoc:
@@ -114,3 +114,93 @@ def test_docling_profile_and_override_behavior(monkeypatch):
     assert pipeline_options.images_scale >= 2.0
     assert pipeline_options.ocr_options.lang == ["eng", "deu"]
     assert pipeline_options.ocr_options.kind == "rapidocr"
+
+
+def test_docling_chunker_merges_small_docling_chunks():
+    chunker = DoclingChunker(max_tokens=1600, min_tokens=400)
+    chunks = [
+        SimpleNamespace(
+            chunk_index=0,
+            text='A ' * 180,
+            section_heading='Intro',
+            page_start=1,
+            page_end=1,
+            metadata={'a': 1},
+        ),
+        SimpleNamespace(
+            chunk_index=1,
+            text='B ' * 180,
+            section_heading='Intro',
+            page_start=1,
+            page_end=1,
+            metadata={'b': 2},
+        ),
+    ]
+
+    merged = chunker._merge_small_chunks(chunks)
+
+    assert len(merged) == 1
+    assert merged[0].chunk_index == 0
+    assert 'A ' in merged[0].text
+    assert 'B ' in merged[0].text
+
+
+def test_docling_chunker_merges_tiny_boundary_chunks():
+    chunker = DoclingChunker(max_tokens=1600, min_tokens=400)
+    chunks = [
+        SimpleNamespace(
+            chunk_index=0,
+            text='A ' * 40,
+            section_heading='Heading A',
+            page_start=1,
+            page_end=1,
+            metadata={},
+        ),
+        SimpleNamespace(
+            chunk_index=1,
+            text='B ' * 300,
+            section_heading='Heading B',
+            page_start=1,
+            page_end=2,
+            metadata={},
+        ),
+    ]
+
+    merged = chunker._merge_small_chunks(chunks)
+
+    assert len(merged) == 1
+    assert merged[0].chunk_index == 0
+    assert 'Heading A' != merged[0].section_heading or merged[0].section_heading is not None
+
+
+def test_docling_chunker_builds_hf_tokenizer_with_chunk_budget(monkeypatch):
+    captured = {}
+
+    class _FakeAutoTokenizer:
+        model_max_length = 512
+
+    class _FakeHuggingFaceTokenizer:
+        def __init__(self, *, tokenizer, max_tokens):
+            captured["tokenizer"] = tokenizer
+            captured["max_tokens"] = max_tokens
+
+    chunker = DoclingChunker(
+        embedding_model_id="BAAI/bge-small-en-v1.5",
+        max_tokens=1600,
+        min_tokens=400,
+    )
+
+    monkeypatch.setattr(
+        "transformers.AutoTokenizer.from_pretrained",
+        lambda model_id: _FakeAutoTokenizer(),
+    )
+    monkeypatch.setattr(
+        "docling_core.transforms.chunker.tokenizer.huggingface.HuggingFaceTokenizer",
+        _FakeHuggingFaceTokenizer,
+    )
+
+    tokenizer = chunker._build_docling_tokenizer()
+
+    assert isinstance(tokenizer, _FakeHuggingFaceTokenizer)
+    assert captured["max_tokens"] == 1600
+    assert captured["tokenizer"].model_max_length == 1600

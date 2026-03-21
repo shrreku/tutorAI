@@ -4,17 +4,6 @@ import { Sparkles, BookOpen, MessageSquare, Brain, ArrowRight, Github } from 'lu
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
-      {/* ── Atmospheric background ─────────────────────────────── */}
-      <div
-        className="pointer-events-none fixed inset-0 opacity-50"
-        style={{
-          backgroundImage:
-            'radial-gradient(ellipse 70% 50% at 20% 20%, rgba(212,160,60,0.12), transparent),' +
-            'radial-gradient(ellipse 60% 40% at 80% 60%, rgba(212,160,60,0.08), transparent),' +
-            'radial-gradient(ellipse 50% 30% at 50% 90%, rgba(212,160,60,0.06), transparent)',
-        }}
-      />
-      <div className="pointer-events-none fixed inset-0 grain" />
 
       {/* ── Navigation bar ─────────────────────────────────────── */}
       <header className="relative z-20 flex items-center justify-between px-8 py-6 max-w-7xl mx-auto">
@@ -77,7 +66,7 @@ export default function LandingPage() {
         >
           <Link
             to="/request-access"
-            className="group flex items-center gap-2 px-7 py-3.5 rounded-xl bg-gold text-primary-foreground font-semibold text-sm shadow-lg shadow-gold/20 hover:shadow-xl hover:shadow-gold/30 hover:brightness-110 transition-all duration-300"
+            className="group flex items-center gap-2 px-7 py-3.5 rounded-xl bg-gold text-primary-foreground font-semibold text-sm hover:brightness-110 transition-all duration-300"
           >
             Start learning — free
             <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
@@ -116,10 +105,9 @@ export default function LandingPage() {
           ].map(({ icon: Icon, title, desc, delay }) => (
             <div
               key={title}
-              className="group relative overflow-hidden rounded-xl border border-border bg-card/60 backdrop-blur-sm p-7 transition-all duration-300 hover:border-gold/25 hover:shadow-lg hover:shadow-gold/5 animate-fade-up"
+              className="group relative overflow-hidden rounded-xl border border-border bg-card p-7 transition-all duration-300 hover:border-gold/25 animate-fade-up"
               style={{ animationDelay: delay }}
             >
-              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-gold/5 to-transparent rounded-bl-full opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
               <div className="relative">
                 <div className="w-11 h-11 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center mb-5 group-hover:bg-gold/15 transition-colors">
                   <Icon className="w-5 h-5 text-gold" />
@@ -164,7 +152,7 @@ export default function LandingPage() {
 
       {/* ── Research notice ────────────────────────────────────── */}
       <section className="relative z-10 max-w-3xl mx-auto px-8 pb-16">
-        <div className="rounded-xl border border-border bg-card/40 backdrop-blur-sm p-6 text-center">
+        <div className="rounded-xl border border-border bg-card p-6 text-center">
           <p className="text-xs uppercase tracking-[0.2em] text-gold/70 font-medium mb-2">
             Student Research Project
           </p>

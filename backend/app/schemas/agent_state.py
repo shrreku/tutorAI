@@ -49,6 +49,18 @@ class PolicyState(BaseModel):
         serialization_alias="max_ad_hoc_per_objective",
     )
     last_decision: Optional[str] = None
+    awaiting_evaluation: bool = Field(
+        default=False,
+        description="Whether the session is currently waiting on a pending checkpoint answer.",
+    )
+    pending_tutor_question: Optional[str] = Field(
+        default=None,
+        description="Most recent tutor checkpoint/question still pending evaluation.",
+    )
+    pending_tutor_response: Optional[str] = Field(
+        default=None,
+        description="Most recent tutor response associated with the pending checkpoint.",
+    )
 
 
 class TutorState(BaseModel):
@@ -78,6 +90,9 @@ class TutorState(BaseModel):
     curriculum_slice: Dict[str, Any] = Field(default_factory=dict)
     retrieved_chunks: List[Dict[str, Any]] = Field(default_factory=list)
     evidence_chunk_ids: Optional[List[str]] = None
+    mastery_snapshot: Dict[str, float] = Field(
+        default_factory=dict, description="Concept → mastery mapping (0-1)"
+    )
     ad_hoc_step_type: Optional[str] = Field(
         default=None,
         serialization_alias="ad_hoc_step_type",

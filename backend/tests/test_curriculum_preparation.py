@@ -27,9 +27,28 @@ class _FakeDb:
 
 
 class _FakeOntology:
-    semantic_relations = [
-        {"source_id": "heat", "target_id": "conduction", "relation_type": "RELATED_TO"}
+    window_count = 1
+    total_pages = 2
+    main_topics = [{"name": "Heat Transfer", "subtopics": ["Conduction"]}]
+    learning_objectives = [{"objective": "Explain conduction"}]
+    prerequisites = [{"concept": "temperature", "importance": "essential"}]
+    concept_taxonomy = [
+        {"name": "Conduction", "concept_type": "principle"},
+        {"name": "Heat", "concept_type": "phenomenon"},
     ]
+    terminology = [{"term": "conduction", "definition": "heat transfer through matter"}]
+    semantic_relations = [
+        {
+            "source_concept": "Heat",
+            "target_concept": "Conduction",
+            "relation_type": "RELATED_TO",
+        }
+    ]
+    topic_hierarchy = {"Heat Transfer": {"subtopics": ["Conduction"]}}
+    concept_to_topic = {"conduction": "Heat Transfer", "heat": "Heat Transfer"}
+    prereq_chain = ["temperature"]
+    content_summaries = ["Heat transfer overview"]
+    extraction_errors = []
 
     def get_enrichment_context(self, max_tokens=800):
         assert max_tokens == 800
@@ -149,13 +168,25 @@ def test_curriculum_preparation_marks_resource_ready(monkeypatch):
         return {"bundles_created": 3, "topic_bundles_created": 2}
 
     async def _upsert_curriculum_artifact(
-        _resource, kb_result, graph_result, bundle_result, source_chunk_ids
+        _resource,
+        kb_result,
+        graph_result,
+        bundle_result,
+        source_chunk_ids,
+        related_artifact_ids=None,
     ):
         assert _resource is resource
         assert kb_result["concepts_admitted"] == 3
         assert graph_result["edges_created"] == 2
         assert bundle_result["topic_bundles_created"] == 2
         assert source_chunk_ids == [chunks[0].id, chunks[1].id]
+        assert related_artifact_ids
+        return SimpleNamespace(id=uuid4())
+
+    async def _upsert_ontology_overview_artifact(*_args, **_kwargs):
+        return SimpleNamespace(id=uuid4())
+
+    async def _upsert_concept_catalog_artifact(*_args, **_kwargs):
         return SimpleNamespace(id=uuid4())
 
     async def _save_ontology_data(*_args, **_kwargs):
@@ -164,6 +195,16 @@ def test_curriculum_preparation_marks_resource_ready(monkeypatch):
     monkeypatch.setattr(service, "_get_chunks", _get_chunks)
     monkeypatch.setattr(service, "_persist_enrichments", _persist_enrichments)
     monkeypatch.setattr(service, "_build_bundles", _build_bundles)
+    monkeypatch.setattr(
+        service,
+        "_upsert_ontology_overview_artifact",
+        _upsert_ontology_overview_artifact,
+    )
+    monkeypatch.setattr(
+        service,
+        "_upsert_concept_catalog_artifact",
+        _upsert_concept_catalog_artifact,
+    )
     monkeypatch.setattr(
         service, "_upsert_curriculum_artifact", _upsert_curriculum_artifact
     )
@@ -246,8 +287,20 @@ def test_curriculum_preparation_reports_progress(monkeypatch):
         return {"bundles_created": 1, "topic_bundles_created": 1}
 
     async def _upsert_curriculum_artifact(
-        _resource, kb_result, graph_result, bundle_result, source_chunk_ids
+        _resource,
+        kb_result,
+        graph_result,
+        bundle_result,
+        source_chunk_ids,
+        related_artifact_ids=None,
     ):
+        assert related_artifact_ids
+        return SimpleNamespace(id=uuid4())
+
+    async def _upsert_ontology_overview_artifact(*_args, **_kwargs):
+        return SimpleNamespace(id=uuid4())
+
+    async def _upsert_concept_catalog_artifact(*_args, **_kwargs):
         return SimpleNamespace(id=uuid4())
 
     async def _save_ontology_data(*_args, **_kwargs):
@@ -259,6 +312,16 @@ def test_curriculum_preparation_reports_progress(monkeypatch):
     monkeypatch.setattr(service, "_get_chunks", _get_chunks)
     monkeypatch.setattr(service, "_persist_enrichments", _persist_enrichments)
     monkeypatch.setattr(service, "_build_bundles", _build_bundles)
+    monkeypatch.setattr(
+        service,
+        "_upsert_ontology_overview_artifact",
+        _upsert_ontology_overview_artifact,
+    )
+    monkeypatch.setattr(
+        service,
+        "_upsert_concept_catalog_artifact",
+        _upsert_concept_catalog_artifact,
+    )
     monkeypatch.setattr(
         service, "_upsert_curriculum_artifact", _upsert_curriculum_artifact
     )

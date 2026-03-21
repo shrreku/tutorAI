@@ -46,7 +46,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
   return (
     <aside className={cn(
-      'flex flex-col bg-sidebar border-r border-border/50 grain transition-all duration-300 ease-in-out shrink-0 overflow-hidden',
+      'flex flex-col bg-sidebar border-r border-border/50 transition-all duration-300 ease-in-out shrink-0 overflow-hidden',
       collapsed ? 'w-[72px]' : 'w-[260px]'
     )}>
       {/* Logo + toggle */}
@@ -69,7 +69,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         {!collapsed && (
           <button
             onClick={onToggle}
-            className="p-1.5 rounded-md text-sidebar-foreground/40 hover:text-foreground hover:bg-white/[0.06] transition-colors shrink-0"
+            className="p-1.5 rounded-md text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-white/[0.08] transition-colors shrink-0"
             title="Collapse sidebar"
           >
             <PanelLeftClose className="w-4 h-4" />
@@ -106,7 +106,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         <div className="px-2.5 mb-2">
           <button
             onClick={onToggle}
-            className="w-full flex items-center justify-center p-2 rounded-md text-sidebar-foreground/40 hover:text-foreground hover:bg-white/[0.06] transition-colors"
+            className="w-full flex items-center justify-center p-2 rounded-md text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-white/[0.08] transition-colors"
             title="Expand sidebar"
           >
             <PanelLeftOpen className="w-4 h-4" />
@@ -126,7 +126,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               collapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2.5',
               isActive(href)
                 ? 'bg-gold/10 text-gold border border-gold/15'
-                : 'text-sidebar-foreground hover:text-foreground hover:bg-white/[0.04] border border-transparent'
+                : 'text-sidebar-foreground hover:text-sidebar-foreground hover:bg-white/[0.06] border border-transparent'
             )}
           >
             <Icon className={cn('w-[18px] h-[18px] shrink-0', isActive(href) ? 'text-gold' : 'text-sidebar-foreground')} />
@@ -154,7 +154,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <button
                 onClick={handleLogout}
                 title="Sign out"
-                className="shrink-0 p-1.5 rounded-md text-sidebar-foreground/50 hover:text-foreground hover:bg-white/[0.06] transition-colors"
+                className="shrink-0 p-1.5 rounded-md text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-white/[0.08] transition-colors"
               >
                 <LogOut className="w-4 h-4" />
               </button>

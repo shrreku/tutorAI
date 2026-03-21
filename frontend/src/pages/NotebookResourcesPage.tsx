@@ -9,7 +9,7 @@ import { getApiErrorMessage } from '../api/client';
 import {
   useNotebook, useNotebookResources, useResources,
   useAttachNotebookResource, useDetachNotebookResource,
-  useUserSettings, useUploadResource, useIngestionStatus,
+  useUserSettings, useUploadResource, useIngestionStatus, useRetryIngestion,
   useIngestionEstimate,
 } from '../api/hooks';
 import { formatCredits } from '../lib/credits';
@@ -128,6 +128,12 @@ function IngestionTracker({ jobId, billing, asyncByok }: {
           <span>BYOK escrow active{liveAsyncByok.expires_at ? ` until ${new Date(liveAsyncByok.expires_at).toLocaleTimeString()}` : ''}</span>
         </div>
       )}
+      {status?.error_stage && (
+        <p className="text-[11px] text-muted-foreground">Failed at: {formatIngestionStage(status.error_stage)}</p>
+      )}
+      {status?.resume_hint && (
+        <p className="text-[11px] text-gold">{status.resume_hint}</p>
+      )}
       {status?.error_message && <p className="text-[11px] text-red-400 mt-1">{status.error_message}</p>}
     </div>
   );
@@ -148,6 +154,7 @@ export default function NotebookResourcesPage() {
   const attach = useAttachNotebookResource(notebookId);
   const detach = useDetachNotebookResource(notebookId);
   const uploadResource = useUploadResource();
+  const retryIngestion = useRetryIngestion();
   const estimateIngestion = useIngestionEstimate();
 
   const [selectedResourceId, setSelectedResourceId] = useState('');
@@ -273,6 +280,24 @@ export default function NotebookResourcesPage() {
   const handleDetach = async (resourceId: string) => {
     try { await detach.mutateAsync(resourceId); setConfirmDetach(null); setFeedbackMessage('Resource detached.'); }
     catch (error) { setErrorMessage(getApiErrorMessage(error, 'Failed to detach.')); }
+  };
+
+  const handleRetry = async (resourceId: string, filename: string) => {
+    setErrorMessage(null);
+    setFeedbackMessage(null);
+    try {
+      const retried = await retryIngestion.mutateAsync(resourceId);
+      setActiveJobId(retried.job_id);
+      setLastBilling(retried.billing ?? null);
+      setLastAsyncByok(retried.async_byok ?? null);
+      setFeedbackMessage(
+        retried.resumable
+          ? `Resumed ingestion for "${filename}" from the last safe checkpoint.`
+          : `Retried ingestion for "${filename}". Processing restarted from the beginning.`,
+      );
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, 'Failed to retry ingestion.'));
+    }
   };
 
   return (
@@ -442,7 +467,7 @@ export default function NotebookResourcesPage() {
                 const liveJob = getLiveIngestionJob(r);
                 const displayStatus = getResourceDisplayStatus(r);
                 return (
-                  <div key={entry.id} className="group rounded-xl border border-border bg-card p-4 transition-all hover:border-gold/15 hover:shadow-md hover:shadow-gold/5 animate-fade-up" style={{ animationDelay: `${0.12 + i * 0.03}s` }}>
+                  <div key={entry.id} className="group rounded-xl border border-border bg-card p-4 transition-all hover:border-gold/15 animate-fade-up" style={{ animationDelay: `${0.12 + i * 0.03}s` }}>
                     <div className="flex items-start gap-3">
                       <div className="mt-0.5 shrink-0"><FileText className={`w-5 h-5 ${r ? getFileExtColor(r.filename) : 'text-muted-foreground'}`} /></div>
                       <div className="flex-1 min-w-0">
@@ -454,10 +479,25 @@ export default function NotebookResourcesPage() {
                           {isResourceStudyReady(r) && <span className="text-[10px] text-emerald-400/70">study-ready</span>}
                           {!isResourceStudyReady(r) && isResourceDoubtReady(r) && <span className="text-[10px] text-sky-400/80">doubt-ready</span>}
                           {liveJob?.current_stage && <span className="text-[10px] text-muted-foreground/70">{formatIngestionStage(liveJob.current_stage)}</span>}
+                          {r?.latest_job?.status === 'failed' && r.latest_job.resumable && <span className="text-[10px] text-gold">resumable</span>}
                         </div>
+                        {r?.latest_job?.error_message && displayStatus === 'failed' && (
+                          <p className="mt-2 text-[11px] text-red-400 line-clamp-3">{r.latest_job.error_message}</p>
+                        )}
+                        {r?.latest_job?.resume_hint && displayStatus === 'failed' && (
+                          <p className="mt-1 text-[11px] text-gold line-clamp-2">{r.latest_job.resume_hint}</p>
+                        )}
                       </div>
                       <div className="shrink-0">
-                        {confirmDetach === entry.resource_id ? (
+                        {displayStatus === 'failed' ? (
+                          <button
+                            onClick={() => handleRetry(entry.resource_id, r?.filename ?? 'resource')}
+                            disabled={retryIngestion.isPending}
+                            className="text-[10px] px-2 py-1 rounded bg-gold/10 text-gold hover:bg-gold/20 transition-colors disabled:opacity-50"
+                          >
+                            {retryIngestion.isPending ? 'Retrying…' : (r?.latest_job?.resumable ? 'Resume' : 'Retry')}
+                          </button>
+                        ) : confirmDetach === entry.resource_id ? (
                           <div className="flex items-center gap-1">
                             <button onClick={() => handleDetach(entry.resource_id)} className="text-[10px] px-2 py-1 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors">Confirm</button>
                             <button onClick={() => setConfirmDetach(null)} className="text-[10px] px-2 py-1 rounded bg-muted text-muted-foreground hover:text-foreground transition-colors">Cancel</button>

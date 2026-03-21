@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 from urllib.parse import urlparse
+from redis.exceptions import RedisError
 
 # Ensure the package root is importable when running ``python worker.py``
 if __name__ == "__main__":
@@ -45,7 +46,7 @@ from app.services.async_byok_escrow import (
     AsyncByokEscrowService,
     async_byok_feature_available,
 )
-from app.services.curriculum_preparation import CurriculumPreparationService
+from app.services.batched_curriculum_preparation import BatchedCurriculumPreparationService
 from app.services.ingestion.enricher import ChunkEnricher
 from app.services.ingestion.ontology_extractor import OntologyExtractor
 from app.services.ingestion.pipeline import IngestionPipeline
@@ -249,7 +250,7 @@ async def _continue_background_curriculum_preparation(
         byok_api_key=byok_api_key,
         byok_api_base_url=byok_api_base_url,
     )
-    service = CurriculumPreparationService(
+    service = BatchedCurriculumPreparationService(
         db,
         ontology_extractor=OntologyExtractor(
             ontology_llm,
@@ -329,6 +330,9 @@ async def _continue_background_curriculum_preparation(
             "search_ready": True,
             "doubt_ready": True,
             "learn_ready": True,
+            "ready_batch_count": summary.get("batches_completed", 0),
+            "total_batch_count": summary.get("total_batches", 0),
+            "progressive_study_ready": summary.get("batches_completed", 0) > 0,
         },
         "curriculum_billing": {
             "estimated_credits_low": int(
@@ -366,7 +370,14 @@ async def reconcile_orphaned_jobs() -> dict[str, int]:
     performed partial writes before the worker died, so they are marked failed and
     must be retried explicitly.
     """
-    queued_ids = await queued_job_ids()
+    try:
+        queued_ids = await queued_job_ids()
+    except Exception as exc:
+        logger.warning(
+            "Skipping orphaned-ingestion reconciliation because queue inspection failed: %s",
+            exc,
+        )
+        return {"requeued_pending": 0, "failed_running": 0}
     requeued_pending = 0
     failed_running = 0
 
@@ -399,9 +410,24 @@ async def reconcile_orphaned_jobs() -> dict[str, int]:
 
             interruption_stage = job.current_stage or "worker_pickup"
             interruption_message = (
-                "Marked failed after worker restart while ingestion was in progress. "
-                "Retry the ingestion job to continue processing."
+                "Worker restarted while ingestion was in progress. "
+                "Retry to resume from the last safe checkpoint when available."
             )
+            current_metrics = dict(job.metrics or {})
+            recovery = current_metrics.get("recovery")
+            job.metrics = {
+                **current_metrics,
+                "recovery": {
+                    **(recovery if isinstance(recovery, dict) else {}),
+                    "interrupted_by_worker_restart": True,
+                    "resumable": bool(recovery.get("resumable"))
+                    if isinstance(recovery, dict)
+                    else False,
+                    "resume_from_stage": recovery.get("resume_from_stage")
+                    if isinstance(recovery, dict)
+                    else None,
+                },
+            }
             job.status = "failed"
             job.current_stage = "failed"
             job.error_stage = interruption_stage
@@ -421,7 +447,7 @@ async def reconcile_orphaned_jobs() -> dict[str, int]:
                 meter = CreditMeter(db)
                 await meter.release_ingestion(owner_user_id, job_id, reserved_credits)
                 job.metrics = {
-                    **(job.metrics or {}),
+                    **job.metrics,
                     "billing": {
                         **billing,
                         "status": "released",
@@ -442,7 +468,7 @@ async def reconcile_orphaned_jobs() -> dict[str, int]:
                     curriculum_billing=curriculum_billing,
                 )
                 job.metrics = {
-                    **(job.metrics or {}),
+                    **job.metrics,
                     "curriculum_billing": {
                         **curriculum_billing,
                         "status": "released",
@@ -459,7 +485,7 @@ async def reconcile_orphaned_jobs() -> dict[str, int]:
                     success=False,
                 )
                 job.metrics = {
-                    **(job.metrics or {}),
+                    **job.metrics,
                     "async_byok": {
                         **async_byok,
                         "status": "deleted",
@@ -864,8 +890,15 @@ async def worker_loop():
     """Main loop: continuously dequeue and process ingestion jobs."""
     concurrency = settings.INGESTION_WORKER_CONCURRENCY
     logger.info(
-        f"Ingestion worker started (concurrency={concurrency}, "
-        f"max_retries={settings.INGESTION_WORKER_MAX_RETRIES})"
+        "worker_startup concurrency=%d max_retries=%d prewarm=%s "
+        "embedding_model=%s queue_enabled=%s otel=%s sentry=%s",
+        concurrency,
+        settings.INGESTION_WORKER_MAX_RETRIES,
+        settings.INGESTION_PREWARM_ENABLED,
+        settings.EMBEDDING_MODEL_ID,
+        settings.INGESTION_QUEUE_ENABLED,
+        settings.OTEL_ENABLED,
+        bool(settings.SENTRY_DSN),
     )
 
     try:
@@ -889,9 +922,18 @@ async def worker_loop():
     tasks: set[asyncio.Task] = set()
 
     while not _shutdown.is_set():
-        payload = await dequeue_ingestion_job(timeout=2)
+        try:
+            payload = await dequeue_ingestion_job(timeout=2)
+        except RedisError as exc:
+            logger.warning(
+                "Queue read failed; worker will keep running and retry dequeue: %s",
+                exc,
+            )
+            await asyncio.sleep(2)
+            done = {t for t in tasks if t.done()}
+            tasks -= done
+            continue
         if payload is None:
-            # Clean up finished tasks while idle
             done = {t for t in tasks if t.done()}
             tasks -= done
             continue

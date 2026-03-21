@@ -43,6 +43,7 @@ def _serialize_policy_output(
     progression_applied: Optional[str] = None,
     guard_override_labels: Optional[list[str]] = None,
     policy_metadata: Optional[dict] = None,
+    step_transition: Optional[str] = None,
 ) -> dict:
     policy_metadata = policy_metadata or {}
     guard_labels = guard_override_labels or []
@@ -68,6 +69,7 @@ def _serialize_policy_output(
         "progression_applied": progression_applied,
         "decision_requested": policy_metadata.get("decision_requested"),
         "decision_applied": policy_metadata.get("decision_applied"),
+        "step_transition": step_transition,
         "objective_id": policy_metadata.get("objective_id"),
         "step_type": policy_metadata.get("step_type"),
         "reranker_enabled": policy_metadata.get("reranker_enabled", False),
@@ -78,13 +80,26 @@ def _serialize_policy_output(
         "reasoning": getattr(policy_output, "reasoning", None),
         "student_intent": policy_metadata.get("student_intent")
         or getattr(policy_output, "student_intent", None),
+        "recommended_strategy": getattr(policy_output, "recommended_strategy", None),
+        "ad_hoc_step_type": getattr(policy_output, "ad_hoc_step_type", None),
         "target_concepts": getattr(policy_output, "target_concepts", None),
+        "planner_guidance": getattr(policy_output, "planner_guidance", None),
+        "turn_plan": (
+            policy_output.turn_plan.model_dump()
+            if getattr(policy_output, "turn_plan", None) is not None
+            and hasattr(policy_output.turn_plan, "model_dump")
+            else getattr(policy_output, "turn_plan", None)
+        ),
         "guard_override_labels": guard_labels,
         "fallback_quality_flags": fallback_quality_flags,
         "delegated": bool(policy_metadata.get("delegated", False)),
         "delegation_reason": policy_metadata.get("delegation_reason"),
         "delegation_outcome": policy_metadata.get("delegation_outcome"),
         "evidence_chunk_ids": evidence_chunk_ids or None,
+        "progression_contract": policy_metadata.get("progression_contract") or {},
+        "retrieval_contract": policy_metadata.get("retrieval_contract") or {},
+        "response_contract": policy_metadata.get("response_contract") or {},
+        "study_map_delta": policy_metadata.get("study_map_delta"),
     }
 
 
@@ -130,6 +145,7 @@ async def persist_turn(
     latency_ms: Optional[int] = None,
     mastery_before: Optional[dict] = None,
     policy_metadata: Optional[dict] = None,
+    step_transition: Optional[str] = None,
 ) -> None:
     """Persist a tutor turn and flush it to the DB session."""
     plan = plan or session.plan_state or {}
@@ -174,6 +190,7 @@ async def persist_turn(
                         progression_applied=progression_applied,
                         guard_override_labels=guard_override_labels,
                         policy_metadata=policy_metadata,
+                        step_transition=step_transition,
                     ),
                     evaluator_output=_serialize_eval_output(evaluation_result),
                     retrieved_chunks=[
@@ -181,6 +198,10 @@ async def persist_turn(
                             "chunk_id": str(c.chunk_id),
                             "text": c.text[:300],
                             "is_cited_evidence": str(c.chunk_id) in cited_evidence,
+                            "resource_id": str(getattr(c, "resource_id", "") or "")
+                            or None,
+                            "sub_chunk_id": str(getattr(c, "sub_chunk_id", "") or "")
+                            or None,
                         }
                         for c in retrieved_chunks
                     ],

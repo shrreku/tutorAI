@@ -205,6 +205,7 @@ def test_retrieval_stage_handoff_passes_step_type_and_goal(monkeypatch):
     async def _stub_retrieve_knowledge(
         retriever,
         session,
+        plan,
         student_message,
         target_concepts,
         step_type,
@@ -213,15 +214,20 @@ def test_retrieval_stage_handoff_passes_step_type_and_goal(monkeypatch):
         objective_title=None,
         objective_description=None,
         policy_output=None,
+        notebook_id=None,
+        notebook_resource_ids=None,
         lf,
     ):
+        captured["plan"] = plan
         captured["step_type"] = step_type
         captured["step_goal"] = step_goal
         captured["target_concepts"] = target_concepts
         captured["objective_title"] = objective_title
         captured["objective_description"] = objective_description
         captured["policy_output"] = policy_output
-        return [SimpleNamespace(chunk_id="chunk-1", text="example")]
+        captured["notebook_id"] = notebook_id
+        captured["notebook_resource_ids"] = notebook_resource_ids
+        return [SimpleNamespace(chunk_id="chunk-1", text="example")], {"source": "test"}
 
     monkeypatch.setattr(stage_handoffs, "retrieve_knowledge", _stub_retrieve_knowledge)
 

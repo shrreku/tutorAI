@@ -21,6 +21,10 @@ from app.services.tutor_runtime.step_state import (
     get_step_roadmap,
     get_step_type,
 )
+from app.services.tutor_runtime.runtime_contracts import (
+    build_curriculum_scope,
+    sync_runtime_contract_views,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -255,6 +259,32 @@ def _ensure_opening_step(
     return [first_step, *roadmap]
 
 
+def _rolling_objective_limit(
+    mode: str,
+    *,
+    concept_count: int,
+    resource_count: int,
+) -> Optional[int]:
+    normalized = _normalize_session_mode(mode)
+    if concept_count <= 6 and resource_count <= 1:
+        return None
+    if normalized in {"doubt", "revision"}:
+        return 2
+    return 3
+
+
+def _build_objective_progress_seed(objective_queue: list[dict]) -> dict[str, dict[str, int]]:
+    return {
+        obj.get("objective_id", f"obj_{index}"): {
+            "attempts": 0,
+            "correct": 0,
+            "steps_completed": 0,
+            "steps_skipped": 0,
+        }
+        for index, obj in enumerate(objective_queue)
+    }
+
+
 class SessionService:
     """Manages tutoring session lifecycle."""
 
@@ -272,6 +302,9 @@ class SessionService:
         user_id: Optional[uuid.UUID] = None,
         topic: Optional[str] = None,
         selected_topics: Optional[list[str]] = None,
+        scope_type: Optional[str] = None,
+        scope_resource_ids: Optional[list[uuid.UUID | str]] = None,
+        notebook_id: Optional[uuid.UUID | str] = None,
         mode: Optional[str] = None,
         consent_training: bool = False,
         resume_existing: bool = True,
@@ -292,10 +325,21 @@ class SessionService:
         if not resource:
             raise ValueError(f"Resource {resource_id} not found")
 
-        if resource.status != "ready" and resource.status != "completed":
+        if resource.status not in ("ready", "completed", "processing"):
             raise ValueError(
                 f"Resource {resource_id} is not ready (status: {resource.status})"
             )
+        # Allow processing resources that have progressive batch readiness
+        if resource.status == "processing":
+            capabilities = resource.capabilities_json or {}
+            if not (
+                capabilities.get("progressive_study_ready")
+                or capabilities.get("has_partial_curriculum")
+                or int(capabilities.get("ready_batch_count", 0)) > 0
+            ):
+                raise ValueError(
+                    f"Resource {resource_id} is still processing and has no ready batches yet"
+                )
 
         # Get or create user
         if user_id:
@@ -305,11 +349,26 @@ class SessionService:
 
         session_mode = _normalize_session_mode(mode)
         mode_contract = _mode_session_contract(session_mode)
+        curriculum_scope = build_curriculum_scope(
+            anchor_resource_id=resource_id,
+            scope_type=scope_type,
+            scope_resource_ids=scope_resource_ids,
+            notebook_id=notebook_id,
+            topic=topic or resource.topic,
+            selected_topics=selected_topics,
+        )
+        planning_resource_ids = list(curriculum_scope.get("resource_ids") or [str(resource_id)])
 
         # Check for existing active session
         existing = None
         if resume_existing:
-            existing = await self._get_active_session(user.id, resource_id)
+            existing = await self._get_active_session(
+                user.id,
+                resource_id,
+                scope_type=scope_type,
+                scope_resource_ids=scope_resource_ids,
+                notebook_id=notebook_id,
+            )
         if existing:
             existing_version = (existing.plan_state or {}).get("version")
             existing_mode = _normalize_session_mode(
@@ -330,13 +389,35 @@ class SessionService:
                 existing_version,
             )
 
-        # Get concepts for resource
-        concepts = await self._get_concepts(resource_id)
+        if len(planning_resource_ids) > 1:
+            concepts = await self._get_scope_concepts(planning_resource_ids)
+        else:
+            concepts = await self._get_concepts(resource_id)
+        is_provisional = False
         if not concepts and session_mode != "doubt":
-            raise ValueError(
-                f"Resource {resource_id} is marked {resource.status} but has no admitted concepts yet. "
-                "Tutoring sessions cannot start until concept extraction/enrichment succeeds."
-            )
+            # Check if resource has progressive readiness — allow provisional session
+            capabilities = getattr(resource, "capabilities_json", None) or {}
+            if (
+                capabilities.get("progressive_study_ready")
+                or capabilities.get("has_partial_curriculum")
+                or int(capabilities.get("ready_batch_count", 0)) > 0
+            ):
+                is_provisional = True
+                logger.info(
+                    "Creating provisional session for resource %s (progressive readiness, no concepts yet)",
+                    resource_id,
+                )
+            else:
+                raise ValueError(
+                    f"Resource {resource_id} is marked {resource.status} but has no admitted concepts yet. "
+                    "Tutoring sessions cannot start until concept extraction/enrichment succeeds."
+                )
+
+        objective_limit = _rolling_objective_limit(
+            session_mode,
+            concept_count=len(concepts),
+            resource_count=len(planning_resource_ids),
+        )
 
         if concepts:
             plan_output = await self.curriculum.generate_plan(
@@ -344,6 +425,15 @@ class SessionService:
                 topic=topic or resource.topic,
                 selected_topics=selected_topics,
                 mode=session_mode,
+                scope_resource_ids=planning_resource_ids,
+                scope_type=curriculum_scope.get("scope_type"),
+                notebook_id=curriculum_scope.get("notebook_id"),
+                objective_limit=objective_limit,
+            )
+        elif is_provisional:
+            # Provisional: use doubt-style fallback until concepts arrive
+            plan_output = _build_doubt_fallback_plan(
+                topic_label=topic or resource.topic or "this document"
             )
         else:
             plan_output = _build_doubt_fallback_plan(
@@ -351,7 +441,7 @@ class SessionService:
             )
 
         # Build initial plan state
-        objective_queue = plan_output.get("objective_queue", [])
+        objective_queue = list(plan_output.get("objective_queue", []))
         for index, obj in enumerate(objective_queue):
             roadmap = obj.get("step_roadmap") or []
             aligned_roadmap = _align_roadmap_to_mode(session_mode, roadmap)
@@ -373,6 +463,34 @@ class SessionService:
         first_roadmap = get_step_roadmap(first_obj)
         first_step = first_roadmap[0] if first_roadmap else {}
         active_topic = plan_output.get("active_topic", topic or resource.topic)
+        curriculum_scope["topic"] = active_topic
+        plan_horizon = dict(plan_output.get("plan_horizon") or {})
+        curriculum_planner = dict(plan_output.get("curriculum_planner") or {})
+        if objective_limit and not plan_horizon:
+            plan_horizon = {
+                "version": 1,
+                "strategy": "rolling",
+                "visible_objectives": len(objective_queue),
+                "objective_limit": objective_limit,
+                "remaining_concepts_estimate": max(0, len(concepts) - len(objective_queue)),
+                "remaining_concepts_sample": [],
+            }
+        if objective_limit and not curriculum_planner:
+            curriculum_planner = {
+                "version": 1,
+                "scope_type": curriculum_scope.get("scope_type"),
+                "notebook_id": curriculum_scope.get("notebook_id"),
+                "resource_ids": list(curriculum_scope.get("resource_ids") or []),
+                "resource_count": len(planning_resource_ids),
+                "rolling_enabled": True,
+                "exhausted": False,
+                "objective_batch_size": objective_limit,
+                "extend_when_remaining": 1,
+                "extension_count": 0,
+                "remaining_concepts_estimate": max(0, len(concepts) - len(objective_queue)),
+                "total_concepts": len(concepts),
+                "last_planning_mode": "initial",
+            }
         session_overview = _mode_session_overview(
             session_mode, objective_queue, active_topic
         )
@@ -383,6 +501,7 @@ class SessionService:
             "mode_contract": mode_contract,
             "resource_id": str(resource_id),
             "active_topic": active_topic,
+            "curriculum_scope": curriculum_scope,
             "objective_queue": objective_queue,
             "current_objective_index": 0,
             "current_step_index": 0,
@@ -393,20 +512,16 @@ class SessionService:
             "max_ad_hoc_per_objective": mode_contract["max_ad_hoc_per_objective"],
             "last_decision": None,
             "last_ad_hoc_type": None,
-            "objective_progress": {
-                obj.get("objective_id", f"obj_{i}"): {
-                    "attempts": 0,
-                    "correct": 0,
-                    "steps_completed": 0,
-                    "steps_skipped": 0,
-                }
-                for i, obj in enumerate(objective_queue)
-            },
+            "plan_provisional": is_provisional,
+            "replan_required": is_provisional,
+            "objective_progress": _build_objective_progress_seed(objective_queue),
             "focus_concepts": (
                 first_obj.get("concept_scope", {}).get("primary", [])
                 + first_obj.get("concept_scope", {}).get("support", [])
             )[:5],
             "session_overview": session_overview,
+            "plan_horizon": plan_horizon,
+            "curriculum_planner": curriculum_planner,
         }
 
         # Initialize mastery (all discovered concepts at 0)
@@ -424,6 +539,11 @@ class SessionService:
 
         plan_state["student_concept_state"] = build_student_concept_state(
             initial_mastery
+        )
+
+        sync_runtime_contract_views(
+            plan_state,
+            mastery_snapshot=initial_mastery,
         )
 
         # Create session
@@ -528,6 +648,10 @@ class SessionService:
         self,
         user_id: uuid.UUID,
         resource_id: uuid.UUID,
+        *,
+        scope_type: Optional[str] = None,
+        scope_resource_ids: Optional[list[uuid.UUID | str]] = None,
+        notebook_id: Optional[uuid.UUID | str] = None,
     ) -> Optional[UserSession]:
         """Get existing active session for user and resource."""
         result = await self.db.execute(
@@ -550,7 +674,27 @@ class SessionService:
                 active_sessions[0].id,
             )
 
-        return active_sessions[0]
+        desired_scope = build_curriculum_scope(
+            anchor_resource_id=resource_id,
+            scope_type=scope_type,
+            scope_resource_ids=scope_resource_ids,
+            notebook_id=notebook_id,
+        )
+        for session in active_sessions:
+            session_plan = session.plan_state or {}
+            session_scope = session_plan.get("curriculum_scope") or {}
+            existing_scope = build_curriculum_scope(
+                anchor_resource_id=session_scope.get("anchor_resource_id")
+                or session_plan.get("resource_id")
+                or session.resource_id,
+                scope_type=session_scope.get("scope_type"),
+                scope_resource_ids=session_scope.get("resource_ids"),
+                notebook_id=session_scope.get("notebook_id"),
+            )
+            if existing_scope == desired_scope:
+                return session
+
+        return None
 
     async def _get_concepts(self, resource_id: uuid.UUID) -> list[str]:
         """Get admitted concepts for resource."""
@@ -560,3 +704,47 @@ class SessionService:
             )
         )
         return [row[0] for row in result.fetchall()]
+
+    async def _get_scope_concepts(
+        self,
+        resource_ids: list[uuid.UUID | str],
+    ) -> list[str]:
+        normalized_resource_ids = [uuid.UUID(str(resource_id)) for resource_id in resource_ids]
+        result = await self.db.execute(
+            select(ResourceConceptStats).where(
+                ResourceConceptStats.resource_id.in_(normalized_resource_ids)
+            )
+        )
+        rows = result.scalars().all()
+        concepts_by_id: dict[str, dict[str, float | int | None]] = {}
+        for row in rows:
+            record = concepts_by_id.setdefault(
+                row.concept_id,
+                {
+                    "teach_count": 0,
+                    "importance_score": 0.0,
+                    "topo_order": None,
+                },
+            )
+            record["teach_count"] = int(record["teach_count"] or 0) + int(row.teach_count or 0)
+            record["importance_score"] = max(
+                float(record["importance_score"] or 0.0),
+                float(row.importance_score or 0.0),
+            )
+            if row.topo_order is not None and (
+                record["topo_order"] is None
+                or int(row.topo_order) < int(record["topo_order"])
+            ):
+                record["topo_order"] = int(row.topo_order)
+
+        ordered = sorted(
+            concepts_by_id.items(),
+            key=lambda item: (
+                item[1]["topo_order"] is None,
+                item[1]["topo_order"] if item[1]["topo_order"] is not None else 10**9,
+                -int(item[1]["teach_count"] or 0),
+                -float(item[1]["importance_score"] or 0.0),
+                item[0],
+            ),
+        )
+        return [concept_id for concept_id, _meta in ordered]

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import List, Optional, Dict, Any, Generic, TypeVar
 from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 T = TypeVar("T")
@@ -61,7 +61,7 @@ class ResourceResponse(BaseModel):
     status: str
     lifecycle_status: Optional[str] = None
     processing_profile: Optional[str] = None
-    capabilities: Dict[str, bool] = Field(default_factory=dict)
+    capabilities: Dict[str, bool | int] = Field(default_factory=dict)
     uploaded_at: datetime
     processed_at: Optional[datetime]
     latest_job: Optional[IngestionStatusResponse] = None
@@ -150,6 +150,21 @@ class IngestionDocumentMetricsResponse(BaseModel):
     token_count_actual: int = 0
 
 
+class IngestionBatchProgressResponse(BaseModel):
+    """Per-batch processing progress for phased ingestion."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    batch_index: int = 0
+    status: str = "pending"
+    ontology_status: str = "pending"
+    enrichment_status: str = "pending"
+    kb_merge_status: str = "pending"
+    is_study_ready: bool = False
+    concepts_admitted: int = 0
+    graph_edges_created: int = 0
+
+
 class IngestionCapabilityProgressResponse(BaseModel):
     """Session capability readiness unlocked by staged ingestion."""
 
@@ -158,6 +173,11 @@ class IngestionCapabilityProgressResponse(BaseModel):
     search_ready: bool = False
     doubt_ready: bool = False
     learn_ready: bool = False
+    # Progressive batch readiness
+    ready_batch_count: int = 0
+    total_batch_count: int = 0
+    progressive_study_ready: bool = False
+    batches: List[IngestionBatchProgressResponse] = Field(default_factory=list)
 
 
 class IngestionStatusResponse(BaseModel):
@@ -175,6 +195,10 @@ class IngestionStatusResponse(BaseModel):
     current_stage: Optional[str]
     progress_percent: int
     error_message: Optional[str]
+    error_stage: Optional[str] = None
+    resumable: bool = False
+    resume_hint: Optional[str] = None
+    last_completed_stage: Optional[str] = None
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
     document_metrics: Optional[IngestionDocumentMetricsResponse] = None
@@ -391,6 +415,26 @@ class NotebookSessionCreateRequest(BaseModel):
         description="Resume the latest active session for this resource when available.",
     )
 
+    @model_validator(mode="after")
+    def validate_mode_specific_input(self) -> "NotebookSessionCreateRequest":
+        normalized_topic = (self.topic or "").strip() or None
+        normalized_selected_topics = [
+            item.strip()
+            for item in (self.selected_topics or [])
+            if isinstance(item, str) and item.strip()
+        ]
+
+        self.topic = normalized_topic
+        self.selected_topics = normalized_selected_topics or None
+        self.mode = (self.mode or "learn").strip().lower()
+
+        if self.mode == "doubt" and not (self.topic or self.selected_topics):
+            raise ValueError(
+                "Doubt mode requires learner input in topic or selected_topics"
+            )
+
+        return self
+
 
 class NotebookSessionResponse(BaseModel):
     """Notebook-session mapping response."""
@@ -548,6 +592,9 @@ class ObjectiveSummary(BaseModel):
     title: str
     description: Optional[str] = None
     primary_concepts: List[str] = Field(default_factory=list)
+    support_concepts: List[str] = Field(default_factory=list)
+    prereq_concepts: List[str] = Field(default_factory=list)
+    step_count: int = 0
     estimated_turns: int = 5
 
 
@@ -599,6 +646,24 @@ class TutorTurnRequest(BaseModel):
     message: str = Field(..., min_length=1)
 
 
+class CitationData(BaseModel):
+    """A structured citation linking tutor response to source material."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    citation_id: str
+    resource_id: Optional[str] = None
+    chunk_id: str
+    sub_chunk_id: Optional[str] = None
+    char_start: Optional[int] = None
+    char_end: Optional[int] = None
+    page_start: Optional[int] = None
+    page_end: Optional[int] = None
+    section_heading: Optional[str] = None
+    snippet: Optional[str] = None
+    relevance_score: Optional[float] = None
+
+
 class TutorTurnResponse(BaseModel):
     """Response from a tutoring turn."""
 
@@ -620,6 +685,18 @@ class TutorTurnResponse(BaseModel):
     session_summary: Optional[Dict[str, Any]] = Field(
         default=None,
         description="Session summary data when session_complete=True. Contains summary_text, concepts_strong/developing/to_revisit, objectives, mastery_snapshot.",
+    )
+    progression_contract: Dict[str, Any] = Field(default_factory=dict)
+    retrieval_contract: Dict[str, Any] = Field(default_factory=dict)
+    response_contract: Dict[str, Any] = Field(default_factory=dict)
+    study_map_delta: Optional[Dict[str, Any]] = None
+    study_map_snapshot: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Live study map state: objectives with step statuses, current position, ad-hoc count.",
+    )
+    citations: List[CitationData] = Field(
+        default_factory=list,
+        description="Structured citations linking response to source chunks with page/section references.",
     )
     # CM-015: Model routing transparency
     selected_model_id: Optional[str] = None

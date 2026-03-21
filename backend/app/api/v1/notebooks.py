@@ -52,13 +52,15 @@ from app.schemas.api import (
     NotebookArtifactResponse,
     PaginatedResponse,
     SessionResponse,
+    SessionSummaryResponse,
     CurriculumOverview,
     ObjectiveSummary,
     ResourceResponse,
 )
+from app.services.tutor_runtime.persistence import clear_transient_runtime_flags
 from app.services.llm.factory import create_llm_provider
 from app.services.embedding.factory import create_embedding_provider
-from app.services.curriculum_preparation import CurriculumPreparationService
+from app.services.batched_curriculum_preparation import BatchedCurriculumPreparationService
 from app.services.ingestion.enricher import ChunkEnricher
 from app.services.ingestion.ontology_extractor import OntologyExtractor
 from app.services.notebook_artifacts import NotebookArtifactService
@@ -93,6 +95,9 @@ def _build_curriculum_overview(plan_state: dict) -> Optional[CurriculumOverview]
                 title=obj.get("title", ""),
                 description=obj.get("description"),
                 primary_concepts=obj.get("concept_scope", {}).get("primary", []),
+                support_concepts=obj.get("concept_scope", {}).get("support", []),
+                prereq_concepts=obj.get("concept_scope", {}).get("prereq", []),
+                step_count=len(obj.get("step_roadmap") or []),
                 estimated_turns=obj.get("estimated_turns", 5),
             )
             for obj in objectives
@@ -636,7 +641,7 @@ async def create_notebook_session(
                 byok_api_key=byok.get("api_key"),
                 byok_api_base_url=byok.get("api_base_url"),
             )
-            curriculum_preparation = CurriculumPreparationService(
+            curriculum_preparation = BatchedCurriculumPreparationService(
                 db,
                 ontology_extractor=OntologyExtractor(
                     ontology_llm,
@@ -798,6 +803,9 @@ async def create_notebook_session(
             user_id=user.id,
             topic=request.topic,
             selected_topics=request.selected_topics,
+            scope_type=preparation_summary.get("scope_type"),
+            scope_resource_ids=preparation_summary.get("scope_resource_ids"),
+            notebook_id=str(notebook_id),
             mode=request.mode,
             consent_training=effective_consent,
             resume_existing=request.resume_existing,
@@ -940,6 +948,140 @@ async def get_notebook_session(
     return NotebookSessionDetailResponse(
         notebook_session=_to_notebook_session_response(link),
         session=_to_session_response(session),
+    )
+
+
+@router.post(
+    "/{notebook_id}/sessions/{session_id}/end",
+    response_model=SessionSummaryResponse,
+)
+async def end_notebook_session(
+    notebook_id: UUID,
+    session_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(require_auth),
+):
+    """End a notebook session and return summary (PROD-002)."""
+    from datetime import datetime, timezone
+    from sqlalchemy import update
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.agents.summary_agent import SummaryAgent, SummaryState
+
+    await verify_notebook_owner(notebook_id, user, db)
+    notebook_session_repo = NotebookSessionRepository(db)
+    session_repo = SessionRepository(db)
+
+    link = await notebook_session_repo.get_by_pair(notebook_id, session_id)
+    if not link:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notebook session not found",
+        )
+
+    session = await session_repo.get_with_turns(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session {session_id} not found",
+        )
+    if session.user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+        )
+    if session.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Session is not active (status: {session.status})",
+        )
+
+    plan = session.plan_state or {}
+    clear_transient_runtime_flags(plan)
+    mastery = dict(session.mastery) if session.mastery else {}
+    objective_queue = plan.get("objective_queue", [])
+    objective_progress = plan.get("objective_progress", {})
+    turns = getattr(session, "turns", None)
+    turn_count = len(turns) if turns is not None else plan.get("turn_count", 0)
+    plan["turn_count"] = turn_count
+
+    try:
+        llm = create_llm_provider(settings, task="tutoring")
+        summary_agent = SummaryAgent(llm)
+        summary_state = SummaryState(
+            objectives=objective_queue,
+            objective_progress=objective_progress,
+            mastery=mastery,
+            initial_mastery={c: 0.0 for c in mastery},
+            turn_count=turn_count,
+            topic=plan.get("active_topic"),
+        )
+        summary_output = await summary_agent.run(summary_state)
+        summary_data = {
+            "summary_text": summary_output.summary_text,
+            "concepts_strong": summary_output.concepts_strong,
+            "concepts_developing": summary_output.concepts_developing,
+            "concepts_to_revisit": summary_output.concepts_to_revisit,
+            "objectives": [
+                {
+                    "objective_id": obj.get("objective_id", ""),
+                    "title": obj.get("title", ""),
+                    "primary_concepts": obj.get("concept_scope", {}).get("primary", []),
+                    "progress": objective_progress.get(obj.get("objective_id", ""), {}),
+                }
+                for obj in objective_queue
+            ],
+            "mastery_snapshot": mastery,
+            "turn_count": turn_count,
+            "topic": plan.get("active_topic"),
+        }
+    except Exception as e:
+        logger.warning("Summary generation failed on end_notebook_session: %s", e)
+        summary_data = {
+            "summary_text": "Session ended. Check the report card for your progress details.",
+            "concepts_strong": [c for c, v in mastery.items() if v >= 0.5],
+            "concepts_developing": [c for c, v in mastery.items() if 0.15 <= v < 0.5],
+            "concepts_to_revisit": [c for c, v in mastery.items() if 0 < v < 0.15],
+            "objectives": [],
+            "mastery_snapshot": mastery,
+            "turn_count": turn_count,
+            "topic": plan.get("active_topic"),
+        }
+
+    now = datetime.now(timezone.utc)
+    plan["session_summary"] = summary_data
+    session.plan_state = plan
+    session.status = "completed"
+    session.ended_at = now
+    flag_modified(session, "plan_state")
+    await db.execute(
+        update(NotebookSession)
+        .where(NotebookSession.session_id == session.id)
+        .values(ended_at=now)
+    )
+    await db.commit()
+    await db.refresh(session)
+
+    emit_notebook_event(
+        "notebook.session.ended",
+        user_id=str(user.id),
+        notebook_id=str(notebook_id),
+        metadata={
+            "session_id": str(session.id),
+            "turn_count": turn_count,
+            "mastery_keys": len(mastery),
+        },
+    )
+
+    return SessionSummaryResponse(
+        session_id=session.id,
+        status=session.status,
+        topic=plan.get("active_topic"),
+        turn_count=summary_data.get("turn_count", 0),
+        summary_text=summary_data.get("summary_text"),
+        concepts_strong=summary_data.get("concepts_strong", []),
+        concepts_developing=summary_data.get("concepts_developing", []),
+        concepts_to_revisit=summary_data.get("concepts_to_revisit", []),
+        objectives=summary_data.get("objectives", []),
+        mastery_snapshot=summary_data.get("mastery_snapshot", {}),
     )
 
 

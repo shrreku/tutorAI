@@ -69,7 +69,7 @@ export default function NotebooksPage() {
             <button
               key={notebook.id}
               onClick={() => navigate(`/notebooks/${notebook.id}`)}
-              className="group rounded-xl border border-border bg-card p-5 text-left transition-all duration-200 hover:border-gold/20 hover:shadow-lg hover:shadow-gold/5 animate-fade-up"
+              className="group rounded-xl border border-border bg-card p-5 text-left transition-all duration-200 hover:border-gold/20 animate-fade-up"
               style={{ animationDelay: `${0.05 + i * 0.03}s` }}
             >
               <div className="flex items-start justify-between gap-3 mb-3">

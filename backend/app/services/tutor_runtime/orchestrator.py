@@ -10,12 +10,13 @@ import os
 import time as _time
 import uuid
 from datetime import datetime, timezone
+from copy import deepcopy
 
 from langfuse import propagate_attributes
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
-
+from app.agents.curriculum_agent import CurriculumAgent
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.policy_agent import PolicyAgent
 from app.agents.safety_critic import SafetyCritic
@@ -81,6 +82,14 @@ from app.services.tutor_runtime.step_state import (
     obj_meta as _obj_meta,
     step_meta as _step_meta,
 )
+from app.services.tutor_runtime.runtime_contracts import (
+    build_policy_progression_intent,
+    build_response_contract,
+    build_study_map_delta,
+    build_transition_contract,
+    resolve_plan_scope,
+    sync_runtime_contract_views,
+)
 from app.services.tutor_runtime.types import (
     StageContext,
     TurnResult,
@@ -101,6 +110,7 @@ class TurnPipeline:
         evaluator_agent: EvaluatorAgent,
         safety_critic: SafetyCritic,
         retrieval_service: RetrievalService,
+        curriculum_agent: CurriculumAgent | None = None,
     ):
         self.db = db_session
         self.policy = policy_agent
@@ -108,6 +118,7 @@ class TurnPipeline:
         self.evaluator = evaluator_agent
         self.critic = safety_critic
         self.retriever = retrieval_service
+        self.curriculum = curriculum_agent
 
     @staticmethod
     def _open_optional_span(
@@ -286,6 +297,114 @@ class TurnPipeline:
         plan["recent_evidence_chunk_ids"] = list(reversed(deduped_recent))[-max_items:]
 
     @staticmethod
+    def _collect_completed_concepts(plan: dict) -> list[str]:
+        objective_queue = plan.get("objective_queue") or []
+        current_index = int(plan.get("current_objective_index", 0) or 0)
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for objective in objective_queue[:current_index]:
+            scope = objective.get("concept_scope", {}) or {}
+            for concept in (
+                list(scope.get("primary", []) or [])
+                + list(scope.get("support", []) or [])
+                + list(scope.get("prereq", []) or [])
+            ):
+                if concept in seen:
+                    continue
+                seen.add(concept)
+                ordered.append(concept)
+        return ordered
+
+    @staticmethod
+    def _seed_objective_progress_entries(plan: dict, objectives: list[dict]) -> None:
+        progress_map = plan.setdefault("objective_progress", {})
+        for index, objective in enumerate(objectives):
+            objective_id = objective.get("objective_id", f"obj_ext_{index}")
+            progress_map.setdefault(
+                objective_id,
+                {
+                    "attempts": 0,
+                    "correct": 0,
+                    "steps_completed": 0,
+                    "steps_skipped": 0,
+                },
+            )
+
+    async def _extend_curriculum_horizon_if_needed(
+        self,
+        *,
+        session: UserSession,
+        plan: dict,
+    ) -> None:
+        planner_state = dict(plan.get("curriculum_planner") or {})
+        if not self.curriculum or not planner_state.get("rolling_enabled"):
+            return
+        if planner_state.get("exhausted"):
+            return
+
+        objective_queue = list(plan.get("objective_queue") or [])
+        current_index = int(plan.get("current_objective_index", 0) or 0)
+        remaining_after_current = max(0, len(objective_queue) - current_index - 1)
+        extend_when_remaining = int(planner_state.get("extend_when_remaining", 1) or 1)
+        if remaining_after_current > extend_when_remaining:
+            return
+
+        resolved_scope = resolve_plan_scope(plan)
+        existing_objective_ids = [
+            obj.get("objective_id")
+            for obj in objective_queue
+            if obj.get("objective_id")
+        ]
+        new_objectives = await self.curriculum.extend_plan(
+            resource_id=session.resource_id,
+            current_objectives=objective_queue,
+            completed_concepts=self._collect_completed_concepts(plan),
+            scope_resource_ids=list(resolved_scope.get("resource_ids") or []),
+            topic=resolved_scope.get("topic") or plan.get("active_topic"),
+            selected_topics=list(resolved_scope.get("selected_topics") or []),
+            mode=plan.get("mode") or "learn",
+            max_new_objectives=int(planner_state.get("objective_batch_size", 2) or 2),
+            existing_objective_ids=existing_objective_ids,
+        )
+
+        planner_state["last_planning_mode"] = "extend"
+        planner_state["last_extend_from_objective_index"] = current_index
+        if not new_objectives:
+            planner_state["exhausted"] = True
+            planner_state["remaining_concepts_estimate"] = 0
+            plan["curriculum_planner"] = planner_state
+            plan["replan_required"] = False
+            plan["last_replan_request"] = {
+                "reason": "rolling_horizon_exhausted",
+                "from_objective_index": current_index,
+                "added_objective_count": 0,
+            }
+            return
+
+        plan["objective_queue"] = objective_queue + new_objectives
+        self._seed_objective_progress_entries(plan, new_objectives)
+        planner_state["extension_count"] = int(planner_state.get("extension_count", 0) or 0) + 1
+        planner_state["remaining_concepts_estimate"] = max(
+            0,
+            int(planner_state.get("remaining_concepts_estimate", 0) or 0)
+            - len(self._collect_completed_concepts({"objective_queue": new_objectives, "current_objective_index": len(new_objectives)})),
+        )
+        plan_horizon = dict(plan.get("plan_horizon") or {})
+        plan_horizon["version"] = int(plan_horizon.get("version", 1) or 1)
+        plan_horizon["strategy"] = "rolling"
+        plan_horizon["visible_objectives"] = len(plan["objective_queue"])
+        plan_horizon["last_extension_size"] = len(new_objectives)
+        plan["plan_horizon"] = plan_horizon
+        plan["curriculum_planner"] = planner_state
+        plan["replan_required"] = False
+        plan["last_replan_request"] = {
+            "reason": "rolling_horizon_extended",
+            "from_objective_index": current_index,
+            "added_objective_count": len(new_objectives),
+            "objective_ids": [obj.get("objective_id") for obj in new_objectives],
+        }
+
+    @staticmethod
     def _compute_uncertainty_after(
         plan: dict,
         focus_concepts: list[str],
@@ -320,6 +439,103 @@ class TurnPipeline:
         )
 
     @staticmethod
+    def _build_study_map_snapshot(plan: dict, session_complete: bool) -> dict:
+        """Build a compact study map snapshot for the frontend.
+
+        Includes all objectives with their step statuses and current position.
+        """
+        objective_queue = plan.get("objective_queue", [])
+        current_obj_idx = plan.get("current_objective_index", 0)
+        current_step_idx = _get_step_index(plan)
+        step_status = plan.get("step_status", {})
+        objective_progress = plan.get("objective_progress", {})
+        ad_hoc_count = plan.get("ad_hoc_count", 0)
+        max_ad_hoc = plan.get("max_ad_hoc_per_objective", 4)
+        last_decision = plan.get("last_decision")
+        last_transition = plan.get("last_transition")
+        last_ad_hoc_type = plan.get("last_ad_hoc_type")
+
+        objectives_snapshot = []
+        for idx, obj in enumerate(objective_queue):
+            obj_id = obj.get("objective_id", "")
+            scope = obj.get("concept_scope", {})
+            roadmap = obj.get("step_roadmap") or []
+            progress = objective_progress.get(obj_id, {})
+
+            if session_complete or idx < current_obj_idx:
+                status = "completed"
+            elif idx == current_obj_idx:
+                status = "active"
+            else:
+                status = "pending"
+
+            # Build step-level snapshot for the current objective
+            steps_snapshot = []
+            for s_idx, step in enumerate(roadmap):
+                if idx == current_obj_idx:
+                    s_status = step_status.get(str(s_idx), "upcoming")
+                elif idx < current_obj_idx:
+                    s_status = "completed"
+                else:
+                    s_status = "upcoming"
+                steps_snapshot.append({
+                    "type": step.get("type", "explain"),
+                    "goal": step.get("goal", ""),
+                    "status": s_status,
+                })
+
+            objectives_snapshot.append({
+                "objective_id": obj_id,
+                "title": obj.get("title", ""),
+                "status": status,
+                "primary_concepts": scope.get("primary", []),
+                "support_concepts": scope.get("support", []),
+                "prereq_concepts": scope.get("prereq", []),
+                "steps": steps_snapshot,
+                "progress": progress,
+            })
+
+        return {
+            "current_objective_index": current_obj_idx,
+            "current_step_index": current_step_idx,
+            "total_objectives": len(objective_queue),
+            "ad_hoc_count": ad_hoc_count,
+            "max_ad_hoc": max_ad_hoc,
+            "last_decision": last_decision,
+            "last_transition": last_transition,
+            "last_ad_hoc_type": last_ad_hoc_type,
+            "session_complete": session_complete,
+            "objectives": objectives_snapshot,
+        }
+
+    @staticmethod
+    def _build_citations(retrieved_chunks) -> list[dict]:
+        """Build structured citation objects from retrieved chunks."""
+        citations = []
+        for i, chunk in enumerate(retrieved_chunks):
+            citation = {
+                "citation_id": f"cite-{i+1}",
+                "chunk_id": str(chunk.chunk_id),
+                "page_start": chunk.page_start,
+                "page_end": chunk.page_end,
+                "section_heading": chunk.section_heading,
+                "snippet": getattr(chunk, "snippet", None) or chunk.text[:200],
+                "relevance_score": round(chunk.relevance_score, 3),
+            }
+            # Add resource_id if available
+            resource_id = getattr(chunk, "resource_id", None)
+            if resource_id:
+                citation["resource_id"] = str(resource_id)
+            # Add sub-chunk citation data if available
+            sub_chunk_id = getattr(chunk, "sub_chunk_id", None)
+            if sub_chunk_id:
+                citation["sub_chunk_id"] = str(sub_chunk_id)
+                citation["char_start"] = getattr(chunk, "char_start", None)
+                citation["char_end"] = getattr(chunk, "char_end", None)
+            citations.append(citation)
+        return citations
+
+    @staticmethod
     def _build_turn_result(
         *,
         turn_id: str,
@@ -338,6 +554,10 @@ class TurnPipeline:
         policy_metadata: dict,
         telemetry_contract: dict,
         session_complete: bool,
+        progression_contract: dict,
+        retrieval_contract: dict,
+        response_contract: dict,
+        study_map_delta: dict | None,
         session_summary: dict | None = None,
     ) -> TurnResult:
         result_focus_concepts = plan.get("focus_concepts") or []
@@ -373,6 +593,12 @@ class TurnPipeline:
             delegation_reason=policy_metadata.get("delegation_reason"),
             delegation_outcome=policy_metadata.get("delegation_outcome"),
             telemetry_contract=telemetry_contract,
+            progression_contract=progression_contract,
+            retrieval_contract=retrieval_contract,
+            response_contract=response_contract,
+            study_map_delta=study_map_delta,
+            study_map_snapshot=TurnPipeline._build_study_map_snapshot(plan, session_complete),
+            citations=TurnPipeline._build_citations(retrieved_chunks),
             session_summary=session_summary,
         )
 
@@ -523,6 +749,22 @@ class TurnPipeline:
                 "notebook_id": notebook_context.get("notebook_id"),
                 "resource_ids": notebook_resource_ids,
             }
+        resolved_scope = resolve_plan_scope(
+            plan,
+            {
+                "notebook_id": (notebook_context or {}).get("notebook_id"),
+                "resource_ids": notebook_resource_ids,
+            },
+        )
+        plan["curriculum_scope"] = resolved_scope
+        await self._extend_curriculum_horizon_if_needed(
+            session=session,
+            plan=plan,
+        )
+        sync_runtime_contract_views(
+            plan,
+            mastery_snapshot=dict(session.mastery) if session.mastery else {},
+        )
         obj_idx = plan.get("current_objective_index", 0)
         objective_queue = plan.get("objective_queue", [])
 
@@ -592,6 +834,9 @@ class TurnPipeline:
         notebook_context: dict | None,
         lf,
     ) -> TurnResult:
+        if lf is None:
+            lf = get_langfuse_client() if is_detailed_tracing_enabled() else None
+
         roadmap = _get_step_roadmap(current_obj)
         current_step_data = roadmap[step_idx] if step_idx < len(roadmap) else {}
         step_type = _get_step_type(current_step_data) or plan.get(
@@ -599,6 +844,23 @@ class TurnPipeline:
         )
         plan["effective_step_type"] = step_type
         objective_queue = plan.get("objective_queue", [])
+        resolved_scope = resolve_plan_scope(
+            plan,
+            {
+                "notebook_id": (notebook_context or {}).get("notebook_id"),
+                "resource_ids": [
+                    str(resource_id)
+                    for resource_id in (
+                        (notebook_context or {}).get("resource_ids") or []
+                    )
+                    if resource_id
+                ],
+            },
+        )
+        progression_contract: dict = {}
+        retrieval_contract: dict = {}
+        response_contract: dict = {}
+        study_map_delta: dict | None = None
         student_concept_state_before = plan.get("student_concept_state") or {}
         uncertainty_before = {
             concept: float(
@@ -665,6 +927,8 @@ class TurnPipeline:
                     )
                     if resource_id
                 ],
+                scope_type=resolved_scope.get("scope_type"),
+                scope_resource_ids=list(resolved_scope.get("resource_ids") or []),
             )
 
             policy_stage = await _run_policy_stage_handoff(
@@ -690,6 +954,7 @@ class TurnPipeline:
             )
             retrieved_chunks = retrieval_stage.retrieved_chunks
             evidence_chunk_ids = retrieval_stage.evidence_chunk_ids
+            retrieval_contract = dict(retrieval_stage.retrieval_contract or {})
 
             delegation_decision = _decide_adaptive_delegation(
                 plan=plan,
@@ -748,6 +1013,7 @@ class TurnPipeline:
                 plan["last_tutor_question"] = detected_question
                 plan["last_tutor_response"] = tutor_output.response_text[:1000]
 
+            pre_progress_plan = deepcopy(plan)
             session_complete, plan, transition = _apply_progression(
                 session,
                 plan,
@@ -768,6 +1034,11 @@ class TurnPipeline:
                 lf=lf,
                 max_ad_hoc_default=self.MAX_AD_HOC_STEPS,
             )
+            policy_metadata["decision_applied"] = plan.get("last_decision") or (
+                policy_output.progression_decision.name
+                if hasattr(policy_output.progression_decision, "name")
+                else str(policy_output.progression_decision)
+            )
 
             if not session_complete:
                 self._sync_active_step_after_progression(
@@ -784,38 +1055,43 @@ class TurnPipeline:
             )
             self._update_recent_evidence_chunk_ids(plan, evidence_chunk_ids)
             plan["focus_concepts"] = result_focus_concepts
+            plan["last_transition"] = transition
+            sync_runtime_contract_views(
+                plan,
+                mastery_snapshot=dict(session.mastery) if session.mastery else {},
+            )
+            progression_contract = build_policy_progression_intent(
+                policy_output,
+                pre_progress_plan,
+            )
+            progression_contract.update(
+                build_transition_contract(
+                    requested_decision=policy_metadata.get("decision_requested"),
+                    applied_decision=policy_metadata.get("decision_applied"),
+                    transition=transition,
+                    guard_events=plan.get("__trace_events", []),
+                    session_complete=session_complete,
+                    plan=plan,
+                )
+            )
+            response_contract = build_response_contract(
+                policy_output=policy_output,
+                tutor_output=tutor_output,
+                evidence_chunk_ids=evidence_chunk_ids,
+            )
+            study_map_delta = build_study_map_delta(
+                pre_progress_plan,
+                plan,
+                transition=transition,
+                transition_contract=progression_contract,
+            )
+            policy_metadata["progression_contract"] = progression_contract
+            policy_metadata["retrieval_contract"] = retrieval_contract
+            policy_metadata["response_contract"] = response_contract
+            policy_metadata["study_map_delta"] = study_map_delta
 
         finally:
             self._close_optional_span(step_span_ctx)
-
-        latency_ms = round((_time.time() - turn_start) * 1000)
-        persist_span_ctx, _ = self._open_optional_span(
-            lf,
-            name="turn.persist",
-            metadata={
-                "phase": "persist",
-                "decision_applied": policy_metadata.get("decision_applied"),
-                "step_type": plan.get("current_step", "unknown"),
-            },
-        )
-        try:
-            await _persist_turn(
-                db=self.db,
-                turn_id=turn_id,
-                session=session,
-                student_message=student_message,
-                tutor_output=tutor_output,
-                policy_output=policy_output,
-                evaluation_result=evaluation_result,
-                retrieved_chunks=retrieved_chunks,
-                evidence_chunk_ids=evidence_chunk_ids,
-                plan=plan,
-                latency_ms=latency_ms,
-                mastery_before=mastery_before,
-                policy_metadata=policy_metadata,
-            )
-        finally:
-            self._close_optional_span(persist_span_ctx)
 
         uncertainty_after = self._compute_uncertainty_after(
             plan,
@@ -833,6 +1109,23 @@ class TurnPipeline:
             uncertainty_before=uncertainty_before,
             uncertainty_after=uncertainty_after,
             forgetting_supported=False,
+        )
+        latency_ms = round((_time.time() - turn_start) * 1000)
+        await _persist_turn(
+            self.db,
+            turn_id,
+            session,
+            student_message,
+            tutor_output,
+            policy_output,
+            evaluation_result,
+            retrieved_chunks,
+            evidence_chunk_ids=evidence_chunk_ids,
+            plan=plan,
+            latency_ms=latency_ms,
+            mastery_before=mastery_before,
+            policy_metadata=policy_metadata,
+            step_transition=transition,
         )
         trace_events = _consume_trace_events(plan)
 
@@ -919,5 +1212,9 @@ class TurnPipeline:
             policy_metadata=policy_metadata,
             telemetry_contract=telemetry_contract,
             session_complete=session_complete,
+            progression_contract=progression_contract,
+            retrieval_contract=retrieval_contract,
+            response_contract=response_contract,
+            study_map_delta=study_map_delta,
             session_summary=session_summary_data,
         )

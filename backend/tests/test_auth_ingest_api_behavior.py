@@ -424,9 +424,14 @@ def test_get_ingestion_status_returns_billing_state(monkeypatch):
                 current_stage="failed",
                 progress_percent=100,
                 error_message="worker died",
+                error_stage="embed",
                 started_at=datetime.utcnow(),
                 completed_at=datetime.utcnow(),
                 metrics={
+                    "recovery": {
+                        "resumable": True,
+                        "resume_from_stage": "chunk",
+                    },
                     "billing": {
                         "uses_platform_credits": True,
                         "estimated_credits": 900,
@@ -452,6 +457,9 @@ def test_get_ingestion_status_returns_billing_state(monkeypatch):
     assert response.billing is not None
     assert response.billing.status == "released"
     assert response.billing.release_reason == "worker_failure"
+    assert response.error_stage == "embed"
+    assert response.resumable is True
+    assert "last saved chunk checkpoint" in (response.resume_hint or "")
 
 
 def test_admin_monthly_grant_skips_users_already_granted_for_period(monkeypatch):

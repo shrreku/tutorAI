@@ -11,6 +11,7 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
+from sqlalchemy.orm import selectinload
 
 from app.models.chunk import Chunk
 from app.models.knowledge_base import (
@@ -37,6 +38,12 @@ class RetrievedChunk:
     relevance_score: float
     retrieval_reason: str
     concepts: list[str] = field(default_factory=list)
+    # Citation fields (populated when sub-chunk search is used)
+    resource_id: Optional[uuid.UUID] = None
+    sub_chunk_id: Optional[uuid.UUID] = None
+    char_start: Optional[int] = None
+    char_end: Optional[int] = None
+    snippet: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -51,6 +58,11 @@ class RetrievedChunk:
             "relevance_score": self.relevance_score,
             "retrieval_reason": self.retrieval_reason,
             "concepts": self.concepts,
+            "resource_id": str(self.resource_id) if self.resource_id else None,
+            "sub_chunk_id": str(self.sub_chunk_id) if self.sub_chunk_id else None,
+            "char_start": self.char_start,
+            "char_end": self.char_end,
+            "snippet": self.snippet,
         }
 
 
@@ -62,6 +74,7 @@ class RetrievalResult:
     concepts_used: list[str]
     query_embedding_used: bool
     total_candidates: int
+    sub_chunk_search_used: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -69,7 +82,14 @@ class RetrievalResult:
             "concepts_used": self.concepts_used,
             "query_embedding_used": self.query_embedding_used,
             "total_candidates": self.total_candidates,
+            "sub_chunk_search_used": self.sub_chunk_search_used,
         }
+
+
+# Minimum cosine similarity to include a result
+MIN_SIMILARITY = 0.25
+# Score drop ratio: if score drops below this fraction of best score, stop
+SCORE_CUTOFF_RATIO = 0.35
 
 
 class RetrievalService:
@@ -86,6 +106,7 @@ class RetrievalService:
     async def retrieve(
         self,
         resource_id: uuid.UUID,
+        resource_ids: Optional[list[uuid.UUID | str]] = None,
         query: Optional[str] = None,
         target_concepts: Optional[list[str]] = None,
         pedagogy_roles: Optional[list[str]] = None,
@@ -104,6 +125,7 @@ class RetrievalService:
 
         Args:
             resource_id: UUID of the resource
+            resource_ids: Optional list of resource IDs for scoped retrieval
             query: Optional text query for semantic search
             target_concepts: Optional list of target concept IDs
             pedagogy_roles: Optional filter for pedagogy roles
@@ -116,34 +138,53 @@ class RetrievalService:
         candidates: dict[uuid.UUID, RetrievedChunk] = {}
         concepts_used = []
         query_embedding_used = False
+        scoped_resource_ids = [resource_id]
+        if resource_ids:
+            scoped_resource_ids = []
+            seen_resource_ids: set[uuid.UUID] = set()
+            for value in resource_ids:
+                try:
+                    normalized_value = value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+                except (TypeError, ValueError):
+                    continue
+                if normalized_value in seen_resource_ids:
+                    continue
+                seen_resource_ids.add(normalized_value)
+                scoped_resource_ids.append(normalized_value)
+            if not scoped_resource_ids:
+                scoped_resource_ids = [resource_id]
 
         # Strategy 1: Bundle-based retrieval for target concepts
         if target_concepts:
             concepts_used = target_concepts.copy()
-            bundle_chunks = await self._retrieve_by_concepts(
-                resource_id, target_concepts, top_k * 2
-            )
-            for chunk in bundle_chunks:
-                if chunk.chunk_id not in candidates:
-                    candidates[chunk.chunk_id] = chunk
+            for scoped_resource_id in scoped_resource_ids:
+                bundle_chunks = await self._retrieve_by_concepts(
+                    scoped_resource_id, target_concepts, top_k * 2
+                )
+                for chunk in bundle_chunks:
+                    if chunk.chunk_id not in candidates:
+                        candidates[chunk.chunk_id] = chunk
 
-        # Strategy 2: Vector similarity search
+        # Strategy 2: Vector similarity search (prefer sub-chunk index)
+        sub_chunk_used = False
         if query:
             query_embedding_used = True
-            vector_chunks = await self._retrieve_by_vector(
-                resource_id, query, top_k * 2
-            )
-            for chunk in vector_chunks:
-                if chunk.chunk_id in candidates:
-                    # Boost score if found by both methods
-                    candidates[chunk.chunk_id].relevance_score = min(
-                        1.0,
-                        candidates[chunk.chunk_id].relevance_score
-                        + chunk.relevance_score * 0.5,
-                    )
-                    candidates[chunk.chunk_id].retrieval_reason += " + vector"
-                else:
-                    candidates[chunk.chunk_id] = chunk
+            for scoped_resource_id in scoped_resource_ids:
+                vector_chunks, used_sub = await self._retrieve_by_vector(
+                    scoped_resource_id, query, top_k * 2
+                )
+                sub_chunk_used = sub_chunk_used or used_sub
+                for chunk in vector_chunks:
+                    if chunk.chunk_id in candidates:
+                        # Boost score if found by both methods
+                        candidates[chunk.chunk_id].relevance_score = min(
+                            1.0,
+                            candidates[chunk.chunk_id].relevance_score
+                            + chunk.relevance_score * 0.5,
+                        )
+                        candidates[chunk.chunk_id].retrieval_reason += " + vector"
+                    else:
+                        candidates[chunk.chunk_id] = chunk
 
         # Apply pedagogy role as soft preference (boost matching, keep all)
         if pedagogy_roles:
@@ -164,10 +205,19 @@ class RetrievalService:
         else:
             sorted_chunks = sorted_candidates[:top_k]
 
+        # Dynamic score cutoff: drop chunks scoring much lower than the best
+        if sorted_chunks:
+            best_score = sorted_chunks[0].relevance_score
+            cutoff = best_score * SCORE_CUTOFF_RATIO
+            sorted_chunks = [
+                c for c in sorted_chunks if c.relevance_score >= cutoff
+            ]
+
         # Optionally include neighbors
         if include_neighbors and sorted_chunks:
             sorted_chunks = await self._expand_with_neighbors(
-                resource_id, sorted_chunks, max_neighbors=1
+                sorted_chunks,
+                max_neighbors=1,
             )
 
         return RetrievalResult(
@@ -175,6 +225,7 @@ class RetrievalService:
             concepts_used=concepts_used,
             query_embedding_used=query_embedding_used,
             total_candidates=len(candidates),
+            sub_chunk_search_used=sub_chunk_used,
         )
 
     async def retrieve_for_concept_teaching(
@@ -336,16 +387,94 @@ class RetrievalService:
         resource_id: uuid.UUID,
         query: str,
         limit: int = 10,
-    ) -> list[RetrievedChunk]:
-        """Retrieve chunks by vector similarity."""
-        # Get query embedding
+    ) -> tuple[list[RetrievedChunk], bool]:
+        """Retrieve chunks by vector similarity.
+
+        Prefers searching sub_chunk embeddings (512 tokens, better for retrieval).
+        Falls back to parent chunk embeddings if no sub-chunks exist.
+        Returns (chunks, used_sub_chunks).
+        """
         embeddings = await self.embedding.embed([query])
         query_embedding = embeddings[0]
 
-        # Vector similarity search using pgvector
+        # Try sub-chunk search first
+        sub_result = await self.db.execute(
+            text("""
+                SELECT
+                    sc.id AS sub_chunk_id,
+                    sc.parent_chunk_id,
+                    sc.text AS sub_text,
+                    sc.char_start,
+                    sc.char_end,
+                    sc.page_start AS sub_page_start,
+                    sc.page_end AS sub_page_end,
+                    c.id AS chunk_id,
+                    c.text AS chunk_text,
+                    c.section_heading,
+                    c.chunk_index,
+                    c.page_start,
+                    c.page_end,
+                    c.pedagogy_role,
+                    c.difficulty,
+                    1 - (sc.embedding <=> :query_embedding) AS similarity
+                FROM sub_chunk sc
+                JOIN chunk c ON c.id = sc.parent_chunk_id
+                WHERE sc.resource_id = :resource_id
+                    AND sc.embedding IS NOT NULL
+                ORDER BY sc.embedding <=> :query_embedding
+                LIMIT :limit
+            """),
+            {
+                "resource_id": str(resource_id),
+                "query_embedding": str(query_embedding),
+                "limit": limit,
+            },
+        )
+        sub_rows = sub_result.all()
+
+        if sub_rows:
+            # Deduplicate by parent chunk (keep best sub-chunk match per parent)
+            seen_parents: dict[uuid.UUID, RetrievedChunk] = {}
+            for row in sub_rows:
+                sim = float(row.similarity) if row.similarity else 0.0
+                if sim < MIN_SIMILARITY:
+                    continue
+                parent_id = row.chunk_id
+                if parent_id in seen_parents:
+                    # Keep better score, but update citation if this sub is better
+                    if sim > seen_parents[parent_id].relevance_score:
+                        seen_parents[parent_id].relevance_score = sim
+                        seen_parents[parent_id].sub_chunk_id = row.sub_chunk_id
+                        seen_parents[parent_id].char_start = row.char_start
+                        seen_parents[parent_id].char_end = row.char_end
+                        seen_parents[parent_id].snippet = row.sub_text[:200]
+                    continue
+
+                seen_parents[parent_id] = RetrievedChunk(
+                    chunk_id=parent_id,
+                    text=row.chunk_text,
+                    section_heading=row.section_heading,
+                    chunk_index=row.chunk_index,
+                    page_start=row.page_start,
+                    page_end=row.page_end,
+                    pedagogy_role=row.pedagogy_role,
+                    difficulty=row.difficulty,
+                    relevance_score=sim,
+                    retrieval_reason="sub_chunk vector",
+                    resource_id=resource_id,
+                    sub_chunk_id=row.sub_chunk_id,
+                    char_start=row.char_start,
+                    char_end=row.char_end,
+                    snippet=row.sub_text[:200],
+                )
+
+            if seen_parents:
+                return list(seen_parents.values()), True
+
+        # Fallback: search parent chunk embeddings
         result = await self.db.execute(
             text("""
-                SELECT 
+                SELECT
                     id,
                     text,
                     section_heading,
@@ -370,6 +499,9 @@ class RetrievalService:
 
         chunks = []
         for row in result.all():
+            sim = float(row.similarity) if row.similarity else 0.0
+            if sim < MIN_SIMILARITY:
+                continue
             chunks.append(
                 RetrievedChunk(
                     chunk_id=row.id,
@@ -380,12 +512,14 @@ class RetrievalService:
                     page_end=row.page_end,
                     pedagogy_role=row.pedagogy_role,
                     difficulty=row.difficulty,
-                    relevance_score=float(row.similarity) if row.similarity else 0.0,
+                    relevance_score=sim,
                     retrieval_reason="vector similarity",
+                    resource_id=resource_id,
+                    snippet=row.text[:200],
                 )
             )
 
-        return chunks
+        return chunks, False
 
     async def _get_chunk_by_id(self, chunk_id: uuid.UUID) -> Optional[RetrievedChunk]:
         """Get a chunk by ID."""
@@ -408,13 +542,14 @@ class RetrievalService:
         )
         chunks_by_id = {chunk.id: chunk for chunk in result.scalars().all()}
 
-        ordered_chunks: list[RetrievedChunk] = []
+        ordered: list[RetrievedChunk] = []
         for chunk_id in unique_chunk_ids:
             chunk = chunks_by_id.get(chunk_id)
             if chunk is None:
                 continue
-            ordered_chunks.append(self._chunk_to_retrieved_chunk(chunk))
-        return ordered_chunks
+            ordered.append(self._chunk_to_retrieved_chunk(chunk))
+
+        return ordered
 
     def _chunk_to_retrieved_chunk(self, chunk: Chunk) -> RetrievedChunk:
         """Convert DB chunk model into retrieval payload."""
@@ -435,6 +570,7 @@ class RetrievalService:
             relevance_score=0.0,
             retrieval_reason="",
             concepts=concepts,
+            resource_id=chunk.resource_id,
         )
 
     async def _get_bundle(
@@ -463,52 +599,62 @@ class RetrievalService:
 
     async def _expand_with_neighbors(
         self,
-        resource_id: uuid.UUID,
         chunks: list[RetrievedChunk],
         max_neighbors: int = 1,
     ) -> list[RetrievedChunk]:
         """Expand retrieved chunks with neighboring chunks."""
-        chunk_indices = {c.chunk_index for c in chunks}
-        neighbor_indices = set()
-
-        for idx in chunk_indices:
-            for offset in range(-max_neighbors, max_neighbors + 1):
-                if offset != 0:
-                    neighbor_indices.add(idx + offset)
-
-        # Remove already-retrieved indices
-        neighbor_indices -= chunk_indices
-
-        if not neighbor_indices:
-            return chunks
-
-        # Get neighbor chunks
-        result = await self.db.execute(
-            select(Chunk)
-            .where(Chunk.resource_id == resource_id)
-            .where(Chunk.chunk_index.in_(list(neighbor_indices)))
-        )
-
-        neighbor_by_index = {
-            chunk.chunk_index: RetrievedChunk(
-                chunk_id=chunk.id,
-                text=chunk.text,
-                section_heading=chunk.section_heading,
-                chunk_index=chunk.chunk_index,
-                page_start=chunk.page_start,
-                page_end=chunk.page_end,
-                pedagogy_role=chunk.pedagogy_role,
-                difficulty=chunk.difficulty,
-                relevance_score=0.3,
-                retrieval_reason="neighbor expansion",
-            )
-            for chunk in result.scalars().all()
-        }
-
         ordered: list[RetrievedChunk] = []
         seen_ids: set[uuid.UUID] = set()
+        resource_neighbor_maps: dict[uuid.UUID, dict[int, RetrievedChunk]] = {}
+        resource_neighbor_indices: dict[uuid.UUID, set[int]] = {}
+        resource_chunk_indices: dict[uuid.UUID, set[int]] = {}
+
+        for chunk in chunks:
+            if not chunk.resource_id:
+                continue
+            resource_neighbor_indices.setdefault(chunk.resource_id, set())
+            resource_chunk_indices.setdefault(chunk.resource_id, set()).add(
+                chunk.chunk_index
+            )
+            for offset in range(-max_neighbors, max_neighbors + 1):
+                if offset != 0:
+                    resource_neighbor_indices[chunk.resource_id].add(
+                        chunk.chunk_index + offset
+                    )
+
+        for scoped_resource_id, neighbor_indices in resource_neighbor_indices.items():
+            neighbor_indices -= resource_chunk_indices.get(scoped_resource_id, set())
+            if not neighbor_indices:
+                resource_neighbor_maps[scoped_resource_id] = {}
+                continue
+            result = await self.db.execute(
+                select(Chunk)
+                .where(Chunk.resource_id == scoped_resource_id)
+                .where(Chunk.chunk_index.in_(list(neighbor_indices)))
+            )
+            resource_neighbor_maps[scoped_resource_id] = {
+                chunk.chunk_index: RetrievedChunk(
+                    chunk_id=chunk.id,
+                    text=chunk.text,
+                    section_heading=chunk.section_heading,
+                    chunk_index=chunk.chunk_index,
+                    page_start=chunk.page_start,
+                    page_end=chunk.page_end,
+                    pedagogy_role=chunk.pedagogy_role,
+                    difficulty=chunk.difficulty,
+                    relevance_score=0.3,
+                    retrieval_reason="neighbor expansion",
+                    resource_id=chunk.resource_id,
+                )
+                for chunk in result.scalars().all()
+            }
 
         for anchor in chunks:
+            neighbor_by_index = (
+                resource_neighbor_maps.get(anchor.resource_id, {})
+                if anchor.resource_id is not None
+                else {}
+            )
             for offset in range(-max_neighbors, max_neighbors + 1):
                 neighbor_index = anchor.chunk_index + offset
                 if offset != 0 and neighbor_index in neighbor_by_index:

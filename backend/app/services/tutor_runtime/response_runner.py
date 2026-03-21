@@ -12,6 +12,7 @@ from app.services.tutor_runtime.guardrails import (
 )
 
 from app.services.tutor_runtime.step_state import build_curriculum_slice, get_step_index
+from app.services.student_state import mastery_snapshot_from_student_state
 
 
 class TutorAgentProtocol(Protocol):
@@ -32,6 +33,58 @@ def _augment_guidance(
             "knowledge. Stay on-topic and be helpful.]"
         ).strip()
     return guidance or None
+
+
+def _should_offer_learn_session_recommendation(
+    plan: dict[str, Any],
+    policy_output: PolicyOrchestratorOutput,
+    current_obj: dict[str, Any],
+) -> bool:
+    if str(plan.get("mode") or "learn").strip().lower() != "doubt":
+        return False
+
+    target_concepts = [
+        str(concept).strip()
+        for concept in (getattr(policy_output, "target_concepts", None) or [])
+        if str(concept).strip()
+    ]
+    retrieval_directives = getattr(policy_output, "retrieval_directives", None) or {}
+    if not isinstance(retrieval_directives, dict):
+        retrieval_directives = {}
+
+    scope = (current_obj.get("concept_scope") or {}) if isinstance(current_obj, dict) else {}
+    objective_concepts = {
+        str(concept).strip()
+        for concept in (
+            (scope.get("primary") or [])
+            + (scope.get("support") or [])
+            + (scope.get("prereq") or [])
+        )
+        if str(concept).strip()
+    }
+    adjacent_concepts = [
+        concept for concept in target_concepts if concept not in objective_concepts
+    ]
+    ad_hoc_step_type = str(getattr(policy_output, "ad_hoc_step_type", "") or "").strip().lower()
+    retrieval_focus = str(retrieval_directives.get("focus") or "").strip().lower()
+    prerequisite_signal = (
+        retrieval_focus == "prereq"
+        or "prereq" in ad_hoc_step_type
+        or ad_hoc_step_type == "clarification_of_domain"
+    )
+    mostly_adjacent = bool(target_concepts) and len(adjacent_concepts) >= max(
+        1, (len(target_concepts) + 1) // 2
+    )
+    return prerequisite_signal or mostly_adjacent
+
+
+def _append_learn_session_recommendation(response_text: str) -> str:
+    if "learn session" in response_text.lower():
+        return response_text
+    return (
+        response_text.rstrip()
+        + "\n\nIf you want a fuller step-by-step walkthrough of this background idea, start a learn session and I can teach it from first principles."
+    )
 
 
 async def generate_response(
@@ -92,6 +145,21 @@ async def generate_response(
         gen_span_ctx.__enter__()
 
     try:
+        mastery_snapshot = mastery_snapshot_from_student_state(
+            plan.get("student_concept_state") or {}
+        )
+        # Keep the tutor prompt compact: only include mastery for likely-relevant concepts.
+        relevant_concepts = list(
+            dict.fromkeys(
+                (getattr(policy_output, "target_concepts", None) or [])
+                + (current_obj.get("concept_scope", {}).get("primary", []) or [])
+                + (current_obj.get("concept_scope", {}).get("prereq", []) or [])
+            )
+        )
+        mastery_compact = {
+            c: float(mastery_snapshot.get(c, 0.0)) for c in relevant_concepts[:10]
+        }
+
         tutor_state = TutorState(
             student_message=student_message,
             session_mode=str(plan.get("mode") or "learn"),
@@ -118,6 +186,7 @@ async def generate_response(
                 for c in retrieved_chunks
             ],
             evidence_chunk_ids=evidence_chunk_ids,
+            mastery_snapshot=mastery_compact,
             planner_guidance=_augment_guidance(
                 getattr(policy_output, "planner_guidance", None),
                 low_evidence,
@@ -148,6 +217,32 @@ async def generate_response(
             tutor_output.evidence_chunk_ids = filtered_cited_ids or None
         else:
             tutor_output.evidence_chunk_ids = evidence_chunk_ids or None
+
+        if _should_offer_learn_session_recommendation(
+            plan,
+            policy_output,
+            current_obj,
+        ):
+            updated_text = _append_learn_session_recommendation(
+                tutor_output.response_text
+            )
+            if updated_text != tutor_output.response_text:
+                tutor_output.response_text = updated_text
+                append_trace_event(
+                    plan,
+                    "guard_override",
+                    build_guard_override_metadata(
+                        guard_name="doubt_learn_session_recommendation",
+                        decision_requested="compact_doubt_answer_only",
+                        decision_applied="compact_doubt_answer_plus_learn_session_recommendation",
+                        reason="doubt_question_is_prerequisite_or_adjacent",
+                        details={
+                            "objective_id": current_obj.get("objective_id"),
+                            "target_concepts": getattr(policy_output, "target_concepts", None)
+                            or [],
+                        },
+                    ),
+                )
     finally:
         if gen_span_ctx:
             gen_span_ctx.__exit__(None, None, None)
