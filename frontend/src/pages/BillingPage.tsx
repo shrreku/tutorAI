@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { useBillingBalance, useBillingUsage, useOperationHistory } from '../api/hooks';
-import { formatBilledUsd, formatCredits, formatRawUsd, usesMinimumChargeFloor } from '../lib/credits';
+import { formatCredits } from '../lib/credits';
 import type { CreditLedgerEntry } from '../types/api';
 
 function entryTypeLabel(t: string) {
@@ -79,8 +79,8 @@ export default function BillingPage() {
     (balance?.monthly_limit ?? 0) * (balance?.soft_limit_pct ?? 0.8);
   const isLowBalance =
     creditsEnabled && (balance?.balance ?? 0) < softThreshold * 0.2; // warn at 20% of soft
-  const monthlyUsagePct = balance?.monthly_limit
-    ? Math.min(100, Math.round(((balance.lifetime_used || 0) / balance.monthly_limit) * 100))
+  const balanceReferencePct = balance?.monthly_limit
+    ? Math.min(100, Math.round(((balance.balance || 0) / balance.monthly_limit) * 100))
     : 0;
 
   return (
@@ -193,14 +193,14 @@ export default function BillingPage() {
 
             <div className="rounded-xl border border-border bg-card p-5">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-xs uppercase tracking-wider text-muted-foreground">Usage against monthly cap</span>
-                <span className="text-sm font-medium text-foreground">{monthlyUsagePct}%</span>
+                <span className="text-xs uppercase tracking-wider text-muted-foreground">Balance against monthly cap</span>
+                <span className="text-sm font-medium text-foreground">{balanceReferencePct}%</span>
               </div>
               <div className="h-2 rounded-full bg-background overflow-hidden">
-                <div className="h-full rounded-full bg-gold" style={{ width: `${monthlyUsagePct}%` }} />
+                <div className="h-full rounded-full bg-gold" style={{ width: `${balanceReferencePct}%` }} />
               </div>
               <p className="text-xs text-muted-foreground mt-3">
-                Tutoring with platform credentials, uploads, and queued notebook preparation draw from the same shared credit pool.
+                This is a reference view of your remaining balance against the configured monthly ceiling for platform-managed usage.
               </p>
             </div>
           </div>
@@ -225,7 +225,7 @@ export default function BillingPage() {
           </div>
 
           <div className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">
-            Billing display: balances are shown in credits while the ledger stores 100 internal units per credit. Small operations may bill at the model-tier minimum, so billed credits can be higher than raw provider cost.
+            Billing display: balances and completed operations are shown in credits. Uploads and queued notebook preparation always use platform credits unless a supported BYOK path is explicitly active.
           </div>
 
           {/* Usage history with tabs */}
@@ -317,14 +317,8 @@ export default function BillingPage() {
                       <p className="text-sm font-medium text-foreground">
                         {op.final_credits != null ? formatCredits(op.final_credits) : op.reserved_credits != null ? `~${formatCredits(op.reserved_credits)}` : '—'} cr
                       </p>
-                      {op.final_credits != null && (
-                        <p className="text-xs text-muted-foreground">billed {formatBilledUsd(op.final_credits)}</p>
-                      )}
-                      {op.final_usd != null && (
-                        <p className="text-xs text-muted-foreground">raw {formatRawUsd(op.final_usd)}</p>
-                      )}
-                      {op.final_credits != null && usesMinimumChargeFloor(op.final_credits, op.final_usd) && (
-                        <p className="text-[11px] text-amber-300">minimum applied</p>
+                      {op.final_credits == null && op.reserved_credits != null && (
+                        <p className="text-xs text-muted-foreground">estimated reservation</p>
                       )}
                     </div>
                   </div>

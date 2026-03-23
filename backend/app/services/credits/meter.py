@@ -50,6 +50,11 @@ class CreditMeter:
     def default_signup_grant_memo(now: datetime | None = None) -> str:
         return f"Initial research grant at signup ({CreditMeter.current_grant_period_key(now)})"
 
+    @staticmethod
+    def default_access_code_grant_memo(now: datetime | None = None) -> str:
+        del now
+        return "Access-code welcome grant"
+
     async def ensure_account(self, user_id: uuid.UUID) -> None:
         """Lazily create a credit account and issue the default monthly grant
         if the user doesn't have one yet."""
@@ -78,6 +83,29 @@ class CreditMeter:
         logger.info(
             "Issued signup grant of %d to user %s",
             settings.CREDITS_SIGNUP_GRANT,
+            user_id,
+        )
+        return True
+
+    async def issue_access_code_grant_if_missing(self, user_id: uuid.UUID) -> bool:
+        """Create the user's one-time access-code grant exactly once."""
+        if not settings.CREDITS_ENABLED or settings.CREDITS_ACCESS_CODE_GRANT <= 0:
+            return False
+
+        memo = self.default_access_code_grant_memo()
+        if await self.repo.has_grant(user_id, source="access_code_grant"):
+            return False
+
+        await self.repo.issue_grant(
+            user_id,
+            amount=settings.CREDITS_ACCESS_CODE_GRANT,
+            source="access_code_grant",
+            memo=memo,
+            metadata={"grant_period": self.current_grant_period_key()},
+        )
+        logger.info(
+            "Issued access-code grant of %d to user %s",
+            settings.CREDITS_ACCESS_CODE_GRANT,
             user_id,
         )
         return True
@@ -210,6 +238,7 @@ class CreditMeter:
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
             },
+            lifetime_used_delta=actual,
         )
         return actual
 

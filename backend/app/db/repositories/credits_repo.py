@@ -69,6 +69,8 @@ class CreditAccountRepository:
         reference_type: Optional[str] = None,
         reference_id: Optional[str] = None,
         metadata: Optional[dict] = None,
+        lifetime_granted_delta: int = 0,
+        lifetime_used_delta: int = 0,
     ) -> CreditLedgerEntry:
         """Append an entry to the ledger and update cached balance."""
         # Idempotency guard
@@ -97,10 +99,10 @@ class CreditAccountRepository:
             metadata_=metadata,
         )
         account.balance = new_balance
-        if delta > 0:
-            account.lifetime_granted += delta
-        elif delta < 0:
-            account.lifetime_used += abs(delta)
+        if lifetime_granted_delta > 0:
+            account.lifetime_granted += lifetime_granted_delta
+        if lifetime_used_delta > 0:
+            account.lifetime_used += lifetime_used_delta
 
         self.db.add(entry)
         self.db.add(account)
@@ -142,6 +144,7 @@ class CreditAccountRepository:
             reference_type="grant",
             reference_id=str(grant.id),
             metadata={"source": source, "memo": memo, **(metadata or {})},
+            lifetime_granted_delta=amount,
         )
         return grant
 
@@ -254,6 +257,7 @@ class CreditAccountRepository:
                 "actual": actual_credits,
                 "model_info": None,
             },
+            lifetime_used_delta=actual_credits,
         )
 
     async def release_reservation(
@@ -316,6 +320,39 @@ class CreditAccountRepository:
         self.db.add(account)
         await self.db.flush()
         return computed
+
+    async def reconcile_account_projection(self, user_id: uuid.UUID) -> Optional[CreditAccount]:
+        """Recompute cached balance and lifetime counters from ledger history."""
+        account = await self.get_account(user_id)
+        if not account:
+            return None
+
+        result = await self.db.execute(
+            select(CreditLedgerEntry).where(CreditLedgerEntry.account_id == account.id)
+        )
+        entries = list(result.scalars().all())
+
+        balance = 0
+        lifetime_granted = 0
+        lifetime_used = 0
+        for entry in entries:
+            balance += int(entry.delta or 0)
+            if entry.entry_type == "grant" and entry.delta > 0:
+                lifetime_granted += int(entry.delta)
+            elif entry.entry_type == "debit":
+                metadata = entry.metadata_ or {}
+                actual = metadata.get("actual") if isinstance(metadata, dict) else None
+                if entry.delta == 0 and actual is not None:
+                    lifetime_used += int(actual)
+                elif entry.delta < 0 and actual is None:
+                    lifetime_used += abs(int(entry.delta))
+
+        account.balance = balance
+        account.lifetime_granted = lifetime_granted
+        account.lifetime_used = lifetime_used
+        self.db.add(account)
+        await self.db.flush()
+        return account
 
     # ------------------------------------------------------------------
     # Model multiplier lookup

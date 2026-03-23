@@ -34,6 +34,15 @@ class UserProfile(Base, UUIDMixin, TimestampMixin):
     global_mastery: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     preferences: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     model_preferences: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    parse_page_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=800, server_default="800"
+    )
+    parse_page_used: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    parse_page_reserved: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
     # Relationships
     sessions: Mapped[List["UserSession"]] = relationship(
@@ -131,10 +140,10 @@ class TutorTurn(Base, UUIDMixin, TimestampMixin):
     # RL fields
     rl_reward: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     rl_state_embedding: Mapped[Optional[list]] = mapped_column(
-        Vector(384), nullable=True
+        Vector(1536), nullable=True
     )
     rl_action_embedding: Mapped[Optional[list]] = mapped_column(
-        Vector(384), nullable=True
+        Vector(1536), nullable=True
     )
 
     # Performance tracking

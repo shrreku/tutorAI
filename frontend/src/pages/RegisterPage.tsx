@@ -13,8 +13,8 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [consentTraining, setConsentTraining] = useState(false);
-  const [promoCode, setPromoCode] = useState(searchParams.get('promo') ?? '');
-  const [inviteToken, setInviteToken] = useState(searchParams.get('invite') ?? '');
+  const [accessCode, setAccessCode] = useState(searchParams.get('access') ?? searchParams.get('promo') ?? '');
+  const inviteToken = searchParams.get('invite') ?? '';
   const [alphaEnabled, setAlphaEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -55,7 +55,7 @@ export default function RegisterPage() {
         display_name: displayName,
         consent_training: consentTraining,
         invite_token: inviteToken.trim() || undefined,
-        promo_code: promoCode.trim() || undefined,
+        access_code: accessCode.trim() || undefined,
       });
       navigate('/', { replace: true });
     } catch (err: any) {
@@ -125,7 +125,9 @@ export default function RegisterPage() {
           </h1>
           <p className="text-sm text-muted-foreground mb-8">
             {alphaEnabled
-              ? 'Create your approved alpha account with your invite token or promo code.'
+              ? inviteToken
+                ? 'Create your account with the invite already attached to this link.'
+                : 'Create your account with your access code.'
               : 'Set up your learning studio in a few seconds.'}
           </p>
 
@@ -200,39 +202,20 @@ export default function RegisterPage() {
               <p className="mt-1 text-xs text-muted-foreground/60">At least 8 characters</p>
             </div>
 
-            {alphaEnabled && (
-              <>
-                <div>
-                  <label htmlFor="promoCode" className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
-                    Promo code (optional)
-                  </label>
-                  <input
-                    id="promoCode"
-                    type="text"
-                    value={promoCode}
-                    onChange={e => setPromoCode(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-card/60 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50"
-                    placeholder="EARLYACCESS2026"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="inviteToken" className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
-                    Invite token (optional)
-                  </label>
-                  <input
-                    id="inviteToken"
-                    type="text"
-                    value={inviteToken}
-                    onChange={e => setInviteToken(e.target.value)}
-                    className="w-full rounded-lg border border-border bg-card/60 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50"
-                    placeholder="Paste the invite token from your approval email"
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground/60">
-                    No invite yet? <Link to="/request-access" className="text-gold hover:underline">Request access</Link>
-                  </p>
-                </div>
-              </>
+            {alphaEnabled && !inviteToken && (
+              <div>
+                <label htmlFor="accessCode" className="block text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
+                  Access code
+                </label>
+                <input
+                  id="accessCode"
+                  type="text"
+                  value={accessCode}
+                  onChange={e => setAccessCode(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-card/60 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50"
+                  placeholder="Enter your access code"
+                />
+              </div>
             )}
 
             {/* ── Research Consent Opt-in ──────────────────────── */}
@@ -288,11 +271,6 @@ export default function RegisterPage() {
               Sign in
             </Link>
           </p>
-          {alphaEnabled && (
-            <p className="mt-3 text-center text-sm text-muted-foreground">
-              Need approval first? <Link to="/request-access" className="text-gold hover:underline font-medium">Request access</Link>
-            </p>
-          )}
         </div>
       </div>
     </div>

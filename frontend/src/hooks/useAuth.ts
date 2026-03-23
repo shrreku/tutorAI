@@ -24,6 +24,7 @@ interface RegisterPayload {
   display_name: string;
   consent_training: boolean;
   invite_token?: string;
+  access_code?: string;
   promo_code?: string;
 }
 

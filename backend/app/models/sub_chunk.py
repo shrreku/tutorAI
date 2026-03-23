@@ -44,7 +44,7 @@ class SubChunk(Base, UUIDMixin, TimestampMixin):
     page_start: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     page_end: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     enrichment_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    embedding: Mapped[Optional[list]] = mapped_column(Vector(384), nullable=True)
+    embedding: Mapped[Optional[list]] = mapped_column(Vector(1536), nullable=True)
     embedding_model_id: Mapped[Optional[str]] = mapped_column(
         String(128), nullable=True
     )

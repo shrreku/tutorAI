@@ -20,6 +20,7 @@ from app.services.async_byok_escrow import (
     AsyncByokEscrowService,
     async_byok_feature_available,
 )
+from app.services.ingestion.page_allowance import PageAllowanceService
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,8 @@ async def get_my_settings(
 ):
     """Fetch current user-level settings."""
     user_repo = UserProfileRepository(db)
+    page_allowance = PageAllowanceService(db)
+    user = await page_allowance.ensure_user_defaults(user)
     (
         consent_training_global,
         consent_preference_set,
@@ -48,6 +51,10 @@ async def get_my_settings(
         async_byok_escrow_ttl_minutes=settings.ASYNC_BYOK_ESCROW_TTL_MINUTES
         if async_byok_feature_available()
         else 0,
+        parse_page_limit=int(user.parse_page_limit or 0),
+        parse_page_used=int(user.parse_page_used or 0),
+        parse_page_reserved=int(user.parse_page_reserved or 0),
+        parse_page_remaining=page_allowance.remaining_pages_for(user),
     )
 
 
@@ -59,10 +66,12 @@ async def update_my_settings(
 ):
     """Update mutable user-level settings."""
     user_repo = UserProfileRepository(db)
+    page_allowance = PageAllowanceService(db)
     updated = await user_repo.update_settings(
         user,
         consent_training_global=request.consent_training_global,
     )
+    updated = await page_allowance.ensure_user_defaults(updated)
     (
         consent_training_global,
         consent_preference_set,
@@ -78,6 +87,10 @@ async def update_my_settings(
         async_byok_escrow_ttl_minutes=settings.ASYNC_BYOK_ESCROW_TTL_MINUTES
         if async_byok_feature_available()
         else 0,
+        parse_page_limit=int(updated.parse_page_limit or 0),
+        parse_page_used=int(updated.parse_page_used or 0),
+        parse_page_reserved=int(updated.parse_page_reserved or 0),
+        parse_page_remaining=page_allowance.remaining_pages_for(updated),
     )
 
 

@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { BookOpen, Upload, ArrowRight, Sparkles, Wallet, AlertTriangle } from 'lucide-react'
 import { useBillingBalance, useNotebooks, useResources, useUserSettings, useUpdateUserSettings } from '../api/hooks'
+import { formatCredits } from '../lib/credits'
 
 export default function HomePage() {
   const navigate = useNavigate()
@@ -128,7 +129,7 @@ export default function HomePage() {
                   <p className="font-ui text-sm font-medium text-foreground">Platform credit status</p>
                 </div>
                 <p className="text-sm text-muted-foreground max-w-2xl">
-                  Balance: {balance.balance.toLocaleString()} credits. Live tutoring with BYOK bypasses platform billing, but uploads and queued preparation always use platform credits.
+                  Balance: {formatCredits(balance.balance)} credits. Live tutoring with BYOK bypasses platform billing, but uploads and queued preparation always use platform credits.
                 </p>
               </div>
               <button

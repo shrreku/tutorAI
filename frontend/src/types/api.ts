@@ -363,6 +363,10 @@ export interface UserSettings {
   async_byok_escrow_enabled: boolean;
   async_byok_escrow_backend?: string | null;
   async_byok_escrow_ttl_minutes: number;
+  parse_page_limit: number;
+  parse_page_used: number;
+  parse_page_reserved: number;
+  parse_page_remaining: number;
   byok_api_key_set?: boolean;
   byok_api_base_url?: string;
 }
@@ -381,6 +385,10 @@ export interface AdminUserSummary {
   lifetime_granted: number;
   lifetime_used: number;
   is_admin: boolean;
+  parse_page_limit: number;
+  parse_page_used: number;
+  parse_page_reserved: number;
+  parse_page_remaining: number;
 }
 
 export interface AsyncByokEscrow {
@@ -404,6 +412,7 @@ export interface AdminBillingOverview {
   configured_admin_external_id: string | null;
   credits_enabled: boolean;
   default_monthly_grant: number;
+  default_page_allowance: number;
   current_grant_period: string;
   users: AdminUserSummary[];
 }
@@ -420,6 +429,19 @@ export interface AdminGrantResponse {
   user_id: string;
   amount: number;
   new_balance: number;
+}
+
+export interface AdminPageAllowanceGrantRequest {
+  user_id: string;
+  amount: number;
+  memo: string;
+}
+
+export interface AdminPageAllowanceGrantResponse {
+  user_id: string;
+  amount: number;
+  new_limit: number;
+  remaining_pages: number;
 }
 
 export interface CreditBalance {

@@ -39,11 +39,19 @@ class Settings(BaseSettings):
     ENRICHMENT_MAX_CHUNKS_PER_BATCH: int = 8
 
     # Embedding Configuration
-    EMBEDDING_MODEL_ID: str = "BAAI/bge-small-en-v1.5"
-    EMBEDDING_DIMENSION: int = 384
-    EMBEDDING_API_BASE_URL: Optional[str] = None
+    EMBEDDING_PROVIDER: str = "openrouter"  # gemini | openrouter | mock
+    EMBEDDING_MODEL_ID: str = "google/gemini-embedding-001"
+    EMBEDDING_DIMENSION: int = 1536
+    EMBEDDING_API_BASE_URL: Optional[str] = "https://openrouter.ai/api/v1"
     EMBEDDING_API_KEY: Optional[str] = None
     EMBEDDING_PREWARM_ENABLED: bool = True
+
+    LLAMAPARSE_API_KEY: Optional[str] = None
+    LLAMAPARSE_API_BASE_URL: str = "https://api.cloud.llamaindex.ai"
+    LLAMAPARSE_TIER: str = "agentic_plus"
+    LLAMAPARSE_VERSION: str = "latest"
+    LLAMAPARSE_POLL_INTERVAL_S: float = 2.0
+    LLAMAPARSE_POLL_TIMEOUT_S: int = 900
 
     # Ingestion: Docling configuration
     INGESTION_DOCLING_PROFILE: str = "balanced"  # balanced | fast | high_fidelity
@@ -143,9 +151,14 @@ class Settings(BaseSettings):
 
     # Upload quotas & abuse controls
     UPLOAD_MAX_FILE_SIZE_MB: int = 50
-    UPLOAD_ALLOWED_EXTENSIONS: str = ".pdf,.docx,.pptx,.md,.html,.txt,.csv"
+    UPLOAD_ALLOWED_EXTENSIONS: str = (
+        ".pdf,.doc,.docx,.ppt,.pptx,.txt,.md,.html,.htm,.csv,.tsv,.xlsx,.xls,"
+        ".jpg,.jpeg,.png,.gif,.bmp,.webp,.tif,.tiff,.svg,.xml,.epub,.rtf"
+    )
     UPLOAD_MAX_FILES_PER_USER_PER_DAY: int = 10
     INGESTION_MAX_CONCURRENT_JOBS: int = 3
+    INGESTION_DEFAULT_PAGE_ALLOWANCE: int = 800
+    ADMIN_PAGE_ALLOWANCE_GRANT_MAX: int = 20000
 
     # Durable ingestion queue (requires REDIS_URL)
     INGESTION_QUEUE_ENABLED: bool = True
@@ -175,6 +188,7 @@ class Settings(BaseSettings):
     # Credits system (student research defaults)
     CREDITS_ENABLED: bool = True
     CREDITS_SIGNUP_GRANT: int = 0  # credits issued at account creation
+    CREDITS_ACCESS_CODE_GRANT: int = 50000  # one-time grant for access-code users
     CREDITS_DEFAULT_MONTHLY_GRANT: int = 0  # monthly top-up grant
     CREDITS_INPUT_TOKEN_MULTIPLIER: float = 1.0
     CREDITS_OUTPUT_TOKEN_MULTIPLIER: float = 1.5

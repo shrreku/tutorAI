@@ -41,6 +41,18 @@ def _verify_password(pw: str, hashed: str) -> bool:
     return bcrypt.checkpw(pw.encode("utf-8"), hashed.encode("utf-8"))
 
 
+def _valid_alpha_access_codes() -> set[str]:
+    return {c.strip() for c in settings.ALPHA_PROMO_CODES.split(",") if c.strip()}
+
+
+def _resolve_access_code(*codes: Optional[str]) -> Optional[str]:
+    for code in codes:
+        normalized = (code or "").strip()
+        if normalized:
+            return normalized
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Request / Response schemas
 # ---------------------------------------------------------------------------
@@ -57,6 +69,10 @@ class RegisterRequest(BaseModel):
     invite_token: Optional[str] = Field(
         default=None,
         description="One-time invite token received via email (required when alpha access is enabled)",
+    )
+    access_code: Optional[str] = Field(
+        default=None,
+        description="Access code for gated registration",
     )
     promo_code: Optional[str] = Field(
         default=None,
@@ -198,6 +214,8 @@ async def register(
     # Alpha access gate
     # ---------------------------------------------------------------------------
     alpha_request: Optional[AlphaAccessRequest] = None
+    access_code = _resolve_access_code(body.access_code, body.promo_code)
+    access_code_accepted = False
 
     if settings.ALPHA_ACCESS_ENABLED:
         if body.invite_token:
@@ -220,19 +238,18 @@ async def register(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="This invite token was issued for a different email address",
                 )
-        elif body.promo_code:
-            valid_promos = {
-                c.strip() for c in settings.ALPHA_PROMO_CODES.split(",") if c.strip()
-            }
-            if body.promo_code not in valid_promos:
+        elif access_code:
+            valid_promos = _valid_alpha_access_codes()
+            if access_code not in valid_promos:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Invalid promo code",
+                    detail="Invalid access code",
                 )
+            access_code_accepted = True
         else:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Registration requires an invite token or promo code during alpha access",
+                detail="Registration requires an invite token or access code during alpha access",
             )
 
     # ---------------------------------------------------------------------------
@@ -257,6 +274,7 @@ async def register(
         preferences={
             "consent_training_global": body.consent_training,
             "consent_preference_set": True,
+            "access_code_grant_eligible": access_code_accepted,
         },
     )
     user = await repo.create(user)
@@ -268,6 +286,8 @@ async def register(
 
     meter = CreditMeter(db)
     await meter.issue_signup_grant_if_missing(user.id)
+    if access_code_accepted and hasattr(meter, "issue_access_code_grant_if_missing"):
+        await meter.issue_access_code_grant_if_missing(user.id)
 
     token = create_access_token(user.external_id or str(user.id))
 
@@ -305,9 +325,13 @@ async def login(
             detail="Invalid email or password",
         )
 
-    token = create_access_token(user.external_id or str(user.id))
-
     consent = (user.preferences or {}).get("consent_training_global", False)
+    if (user.preferences or {}).get("access_code_grant_eligible"):
+        meter = CreditMeter(db)
+        if hasattr(meter, "issue_access_code_grant_if_missing"):
+            await meter.issue_access_code_grant_if_missing(user.id)
+
+    token = create_access_token(user.external_id or str(user.id))
 
     return AuthResponse(
         access_token=token,

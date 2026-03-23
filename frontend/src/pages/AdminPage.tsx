@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { Coins, Loader2, Search, Shield, UserRound, Wallet, Cpu, Activity } from 'lucide-react';
+import { Coins, Loader2, Search, Shield, UserRound, Wallet, Cpu, Activity, FileText } from 'lucide-react';
 import { ApiError } from '../api/client';
-import { useAdminBillingOverview, useAdminGrant, useAdminMonthlyGrant, useAdminModelPricing, useAdminTaskAssignments, useAdminModelHealth, useAdminHealthAction } from '../api/hooks';
+import { useAdminBillingOverview, useAdminGrant, useAdminMonthlyGrant, useAdminModelPricing, useAdminTaskAssignments, useAdminModelHealth, useAdminHealthAction, useAdminPageAllowanceGrant } from '../api/hooks';
 import { formatCredits } from '../lib/credits';
 
 export default function AdminPage() {
@@ -9,6 +9,7 @@ export default function AdminPage() {
   const deferredSearch = useDeferredValue(search.trim());
   const { data, isLoading, error } = useAdminBillingOverview(deferredSearch || undefined);
   const adminGrant = useAdminGrant();
+  const adminPageAllowanceGrant = useAdminPageAllowanceGrant();
   const adminMonthlyGrant = useAdminMonthlyGrant();
   const { data: modelPricing } = useAdminModelPricing();
   const { data: taskAssignments } = useAdminTaskAssignments();
@@ -27,6 +28,9 @@ export default function AdminPage() {
   const [memo, setMemo] = useState('Manual admin grant for support/testing');
   const [source, setSource] = useState('admin_topup');
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [pageAmount, setPageAmount] = useState('200');
+  const [pageMemo, setPageMemo] = useState('Manual parse page allowance increase');
+  const [pageFeedback, setPageFeedback] = useState<string | null>(null);
   const [monthlyGrantFeedback, setMonthlyGrantFeedback] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,6 +62,25 @@ export default function AdminPage() {
     }
   };
 
+  const handlePageGrant = async () => {
+    if (!selectedUser) {
+      return;
+    }
+
+    setPageFeedback(null);
+    try {
+      const response = await adminPageAllowanceGrant.mutateAsync({
+        user_id: selectedUser.id,
+        amount: Math.round(Number(pageAmount)),
+        memo: pageMemo,
+      });
+      setPageFeedback(`Granted ${response.amount} pages. New limit: ${response.new_limit}. Remaining pages: ${response.remaining_pages}.`);
+    } catch (grantError) {
+      const message = grantError instanceof ApiError ? grantError.message : 'Failed to grant parse pages.';
+      setPageFeedback(message);
+    }
+  };
+
   const loadError = error instanceof ApiError ? error.message : null;
 
   const handleMonthlyGrant = async () => {
@@ -86,7 +109,7 @@ export default function AdminPage() {
           Credit <span className="italic text-gold">operations</span>
         </h1>
         <p className="text-muted-foreground max-w-3xl">
-          Only one configured admin identity can access this panel. Use it to audit balances and issue explicit, memo-backed credit grants.
+          Only one configured admin identity can access this panel. Use it to audit balances, parse page allowance, and issue explicit memo-backed grants.
         </p>
       </div>
 
@@ -164,6 +187,24 @@ export default function AdminPage() {
                         </div>
                       </div>
                     </div>
+                    <div className="mt-3 grid grid-cols-4 gap-3 text-right min-w-[260px]">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Pages left</p>
+                        <p className="text-sm font-semibold text-foreground">{user.parse_page_remaining}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Limit</p>
+                        <p className="text-sm font-semibold text-foreground">{user.parse_page_limit}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Used</p>
+                        <p className="text-sm font-semibold text-red-300">{user.parse_page_used}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Reserved</p>
+                        <p className="text-sm font-semibold text-gold">{user.parse_page_reserved}</p>
+                      </div>
+                    </div>
                   </button>
                 );
               })}
@@ -175,7 +216,10 @@ export default function AdminPage() {
           <div className="rounded-lg border border-border/70 bg-background/40 p-4 mb-4">
             <p className="text-sm font-medium text-foreground">Default grant policy</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Signup grant: {formatCredits(data?.default_monthly_grant ?? 0)} credits. Monthly operator refresh period: {data?.current_grant_period ?? 'current'}.
+              Monthly refresh amount: {formatCredits(data?.default_monthly_grant ?? 0)} credits. Monthly operator refresh period: {data?.current_grant_period ?? 'current'}.
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Default parse allowance for new users: {data?.default_page_allowance ?? 0} pages.
             </p>
             <button
               type="button"
@@ -204,6 +248,12 @@ export default function AdminPage() {
                 <p className="text-xs text-muted-foreground mt-1">{selectedUser.email || selectedUser.external_id || selectedUser.id}</p>
                 <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
                   <Wallet className="w-3.5 h-3.5" /> Current balance: {formatCredits(selectedUser.balance)}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Remaining pages: {selectedUser.parse_page_remaining}</span>
+                  <span>Limit: {selectedUser.parse_page_limit}</span>
+                  <span>Used: {selectedUser.parse_page_used}</span>
+                  <span>Reserved: {selectedUser.parse_page_reserved}</span>
                 </div>
               </div>
 
@@ -259,6 +309,52 @@ export default function AdminPage() {
                   {feedback}
                 </div>
               )}
+
+              <div className="pt-2 border-t border-border/60">
+                <div className="flex items-center gap-2 mb-4">
+                  <FileText className="w-4 h-4 text-gold" />
+                  <p className="text-sm font-medium text-foreground">Grant parse pages</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Pages</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="20000"
+                    step="1"
+                    value={pageAmount}
+                    onChange={(event) => setPageAmount(event.target.value)}
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Memo</label>
+                  <textarea
+                    value={pageMemo}
+                    onChange={(event) => setPageMemo(event.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handlePageGrant}
+                  disabled={adminPageAllowanceGrant.isPending || !selectedUser || !pageAmount || !pageMemo.trim()}
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg border border-gold/20 bg-gold/10 px-4 py-2 text-sm font-medium text-gold disabled:opacity-50"
+                >
+                  {adminPageAllowanceGrant.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                  Increase page allowance
+                </button>
+
+                {pageFeedback && (
+                  <div className={`mt-3 rounded-lg border px-3 py-2 text-sm ${pageFeedback.includes('Failed') ? 'border-red-500/20 bg-red-500/10 text-red-200' : 'border-gold/20 bg-gold/10 text-gold'}`}>
+                    {pageFeedback}
+                  </div>
+                )}
+              </div>
 
               <p className="text-xs text-muted-foreground">
                 Abuse control: only the configured admin can reach this page, every grant requires a memo, and backend audit metadata records who issued it.

@@ -8,7 +8,6 @@ import { useAuth } from './hooks/useAuth';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
-import RequestAccessPage from './pages/RequestAccessPage';
 import HomePage from './pages/HomePage';
 
 // Lazy-loaded routes (PROD-015 code splitting)
@@ -74,7 +73,7 @@ function App() {
           <Route path="/landing" element={<GuestOnly><LandingPage /></GuestOnly>} />
           <Route path="/login" element={<GuestOnly><LoginPage /></GuestOnly>} />
           <Route path="/register" element={<GuestOnly><RegisterPage /></GuestOnly>} />
-          <Route path="/request-access" element={<GuestOnly><RequestAccessPage /></GuestOnly>} />
+          <Route path="/request-access" element={<Navigate to="/register" replace />} />
 
           {/* ── Authenticated app routes ──────────────── */}
           <Route element={<RequireAuth><MainLayout /></RequireAuth>}>

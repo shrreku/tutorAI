@@ -179,6 +179,15 @@ export default function ResourcesTab({ notebookId }: { notebookId: string }) {
   const linkedIds = useMemo(() => new Set(linked.map((item) => item.resource_id)), [linked]);
   const available = (resources?.items ?? []).filter((r) => !linkedIds.has(r.id));
   const resourceById = useMemo(() => new Map((resources?.items ?? []).map((r) => [r.id, r])), [resources?.items]);
+  const shouldShowDetailedEstimate = Boolean(
+    selectedFile
+      && uploadEstimate
+      && (
+        selectedFile.size >= 10 * 1024 * 1024
+        || uploadEstimate.warnings.length > 0
+        || uploadEstimate.chunk_count_estimate >= 150
+      )
+  );
   const trackerEntries = useMemo(() => {
     const entries: Array<{
       jobId: string;
@@ -346,14 +355,20 @@ export default function ResourcesTab({ notebookId }: { notebookId: string }) {
               <div className="rounded-lg border border-gold/15 bg-gold/[0.04] px-3.5 py-2.5 text-sm space-y-1">
                 <div className="flex items-center gap-2 text-foreground font-medium">
                   <Coins className="w-3.5 h-3.5 text-gold" />
-                  Estimated cost split
+                  {shouldShowDetailedEstimate ? 'Estimated credit split' : 'Processing credits'}
                 </div>
-                <p className="text-xs text-muted-foreground">Reserve now: {formatCredits(uploadEstimate.core_upload_credits)} credits (${uploadEstimate.core_upload_usd.toFixed(4)} USD)</p>
-                <p className="text-xs text-muted-foreground">Curriculum later: {formatCredits(uploadEstimate.curriculum_credits_low)}–{formatCredits(uploadEstimate.curriculum_credits_high)} credits (${uploadEstimate.curriculum_usd_low.toFixed(4)}–${uploadEstimate.curriculum_usd_high.toFixed(4)} USD)</p>
-                <p className="text-xs text-muted-foreground">
-                  Total projected: {formatCredits(uploadEstimate.estimated_credits_low)}–{formatCredits(uploadEstimate.estimated_credits_high)} credits · ~{uploadEstimate.page_count_estimate} pages · ~{uploadEstimate.chunk_count_estimate} chunks · {uploadEstimate.estimate_confidence} confidence
-                </p>
-                <p className="text-[11px] text-muted-foreground">Core upload is reserved immediately. Curriculum preparation is reserved only when that stage starts.</p>
+                <p className="text-xs text-muted-foreground">Reserve now: {formatCredits(uploadEstimate.core_upload_credits)} credits</p>
+                {shouldShowDetailedEstimate ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">Curriculum later: {formatCredits(uploadEstimate.curriculum_credits_low)}–{formatCredits(uploadEstimate.curriculum_credits_high)} credits</p>
+                    <p className="text-xs text-muted-foreground">
+                      Total projected: {formatCredits(uploadEstimate.estimated_credits_low)}–{formatCredits(uploadEstimate.estimated_credits_high)} credits · ~{uploadEstimate.page_count_estimate} pages · ~{uploadEstimate.chunk_count_estimate} chunks · {uploadEstimate.estimate_confidence} confidence
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">Core upload is reserved immediately. Curriculum preparation is reserved only when that stage starts.</p>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">Curriculum preparation is billed separately if and when it runs. Detailed estimates appear automatically for larger documents.</p>
+                )}
                 {uploadEstimate.warnings?.length > 0 && (
                   <p className="text-xs text-amber-400">{uploadEstimate.warnings.join('; ')}</p>
                 )}

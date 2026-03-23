@@ -21,6 +21,10 @@ class PolicyAgentProtocol(Protocol):
     async def decide(self, state: PolicyState) -> PolicyOrchestratorOutput: ...
 
 
+def _clean_concepts(values: list[str] | None) -> list[str]:
+    return [str(value).strip() for value in (values or []) if str(value).strip()]
+
+
 def _dump_evaluation_result(
     value: EvaluatorOutput | dict[str, Any] | None,
 ) -> dict[str, Any] | None:
@@ -74,14 +78,25 @@ def _apply_prereq_gate_to_policy_output(
 
     # Steer retrieval + tutoring to define/activate prerequisite concepts first.
     top_prereqs = prereq_concepts[:3]
-    policy_output.target_concepts = top_prereqs
+    existing_targets = _clean_concepts(getattr(policy_output, "target_concepts", None))
+    merged_targets = existing_targets + [
+        concept for concept in top_prereqs if concept not in existing_targets
+    ]
+    policy_output.target_concepts = merged_targets[:4] or top_prereqs
 
     existing_guidance = (getattr(policy_output, "planner_guidance", None) or "").strip()
-    gate_guidance = (
-        "Prereq gate: student likely lacks prerequisites. "
-        f"Before using advanced jargon, briefly define and ground: {', '.join(top_prereqs)}. "
-        "Then ask a quick check question to confirm understanding."
-    ).strip()
+    if existing_targets:
+        gate_guidance = (
+            "Prereq gate: keep the learner's requested concept as the main target. "
+            f"Only introduce prerequisite support as needed for: {', '.join(top_prereqs)}. "
+            "Avoid rerouting the whole turn away from the student's explicit question."
+        ).strip()
+    else:
+        gate_guidance = (
+            "Prereq gate: student likely lacks prerequisites. "
+            f"Before using advanced jargon, briefly define and ground: {', '.join(top_prereqs)}. "
+            "Then ask a quick check question to confirm understanding."
+        ).strip()
     policy_output.planner_guidance = (
         f"{gate_guidance}\n{existing_guidance}".strip()
         if existing_guidance
@@ -93,13 +108,21 @@ def _apply_prereq_gate_to_policy_output(
         existing_directives = {}
     directive_query = (
         existing_directives.get("query")
-        or f"Definitions + intuition + minimal examples for: {', '.join(top_prereqs)}"
+        or (
+            "Answer the student's requested concept directly while briefly grounding needed prerequisites: "
+            f"{', '.join(top_prereqs)}"
+            if existing_targets
+            else f"Definitions + intuition + minimal examples for: {', '.join(top_prereqs)}"
+        )
     )
     policy_output.retrieval_directives = {
         **existing_directives,
         "query": directive_query,
-        "focus": "prereq",
+        "focus": existing_directives.get("focus")
+        or ("prereq_support" if existing_targets else "prereq"),
         "expand_prereqs": True,
+        "prereq_concepts": top_prereqs,
+        "preserve_primary_target": bool(existing_targets),
     }
 
     append_trace_event(

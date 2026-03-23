@@ -32,7 +32,7 @@ def test_ingestion_pipeline_run_completes_with_fixture_resource(monkeypatch):
             status="success",
             warnings=[],
             errors=[],
-            metadata={"profile": "balanced"},
+            metadata={"llamaparse": {"pages": [{"page_number": 1}]}, "profile": "balanced"},
         )
 
     async def _run_chunk_stage(self, parse_result):
@@ -53,8 +53,8 @@ def test_ingestion_pipeline_run_completes_with_fixture_resource(monkeypatch):
                     page_end=1,
                 ),
             ],
-            strategy="docling_hybrid",
-            metadata={"embedding_strategy": "contextualized"},
+            strategy="section_markdown",
+            metadata={"embedding_strategy": "raw"},
         )
 
     async def _save_chunks(
@@ -157,6 +157,7 @@ def test_ingestion_pipeline_merge_job_metrics_preserves_dispatch_state():
             return SimpleNamespace(
                 metrics={
                     "billing": {"status": "reserved", "reserved_credits": 750},
+                    "page_allowance": {"status": "reserved", "reserved_pages": 12},
                     "async_byok": {"enabled": False, "status": "disabled"},
                 }
             )
@@ -176,12 +177,14 @@ def test_ingestion_pipeline_merge_job_metrics_preserves_dispatch_state():
 
     assert merged["billing"]["status"] == "reserved"
     assert merged["billing"]["reserved_credits"] == 750
+    assert merged["page_allowance"]["status"] == "reserved"
+    assert merged["page_allowance"]["reserved_pages"] == 12
     assert merged["async_byok"]["status"] == "disabled"
     assert merged["status"] == "success"
     assert merged["stages"]["persist"]["chunks"] == 2
 
 
-def test_run_parse_stage_materializes_s3_uri_for_docling(monkeypatch):
+def test_run_parse_stage_materializes_s3_uri_for_parser(monkeypatch):
     seen = {}
 
     class _Storage:
@@ -205,7 +208,7 @@ def test_run_parse_stage_materializes_s3_uri_for_docling(monkeypatch):
 
     pipeline = object.__new__(pipeline_module.IngestionPipeline)
     pipeline.storage = _Storage()
-    pipeline.docling_adapter = _Adapter()
+    pipeline.parser_adapter = _Adapter()
 
     resource = SimpleNamespace(
         id=uuid.uuid4(),

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Key, Loader2, Save, Settings2, ShieldAlert, Trash2, Cpu } from 'lucide-react';
+import { CheckCircle2, Key, Loader2, Save, Settings2, ShieldAlert, Trash2, Cpu, FileText } from 'lucide-react';
 import { getApiErrorMessage } from '../api/client';
 import { useAsyncByokEscrows, useRevokeAsyncByokEscrow, useUserSettings, useUpdateUserSettings, useModelCatalog, useModelPreferences, useUpdateModelPreferences } from '../api/hooks';
 
@@ -134,6 +134,48 @@ export default function SettingsPage() {
       </div>
 
       <div className="max-w-3xl mt-8">
+        <div className="rounded-xl border border-border bg-card p-6 animate-fade-up" style={{ animationDelay: '0.03s' }}>
+          <div className="flex items-start gap-3 mb-5">
+            <div className="w-10 h-10 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center flex-shrink-0">
+              <FileText className="w-5 h-5 text-gold" />
+            </div>
+            <div>
+              <h2 className="font-display text-lg font-semibold text-card-foreground">
+                Parse page allowance
+              </h2>
+              <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
+                Upload parsing is limited by total pages processed across your account. Admins can extend this allowance when needed.
+              </p>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading page allowance...
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-4">
+              <div className="rounded-lg border border-border/70 bg-background/40 p-4">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Remaining</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{data?.parse_page_remaining ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-background/40 p-4">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Limit</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{data?.parse_page_limit ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-background/40 p-4">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Used</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{data?.parse_page_used ?? 0}</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-background/40 p-4">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Reserved</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">{data?.parse_page_reserved ?? 0}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="rounded-xl border border-border bg-card p-6 animate-fade-up" style={{ animationDelay: '0.05s' }}>
           <div className="flex items-start gap-3 mb-5">
             <div className="w-10 h-10 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center flex-shrink-0">
@@ -369,7 +411,7 @@ export default function SettingsPage() {
                         <optgroup key={cls} label={cls.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())}>
                           {models.map((m) => (
                             <option key={m.model_id} value={m.model_id}>
-                              {m.display_name} — {cls.replace('_', ' ')} · ~{(m.input_usd_per_million / 1000 * 100).toFixed(2)}¢/1K in
+                              {m.display_name} — {cls.replace('_', ' ')}
                             </option>
                           ))}
                         </optgroup>

@@ -21,14 +21,25 @@ class DoclingChunker:
     def __init__(
         self,
         embedding_model_id: Optional[str] = None,
+        embedding_provider_name: Optional[str] = None,
         use_contextualized_text: bool = True,
         max_tokens: int = 1600,
         min_tokens: int = 400,
     ) -> None:
         self.embedding_model_id = embedding_model_id or settings.EMBEDDING_MODEL_ID
+        self.embedding_provider_name = (
+            (embedding_provider_name or settings.EMBEDDING_PROVIDER or "")
+            .strip()
+            .lower()
+        )
         self.use_contextualized_text = use_contextualized_text
         self.max_tokens = max_tokens
         self.min_tokens = min_tokens
+        self._allow_tokenizer_download = self.embedding_provider_name not in {
+            "openrouter",
+            "gemini",
+            "mock",
+        }
 
     def chunk(
         self,
@@ -363,6 +374,9 @@ class DoclingChunker:
         return text if isinstance(text, str) else str(text)
 
     def _build_docling_tokenizer(self) -> Any:
+        if not self._allow_tokenizer_download:
+            return None
+
         model_id = (self.embedding_model_id or "").strip()
         if not model_id:
             return None

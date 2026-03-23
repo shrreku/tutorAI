@@ -58,6 +58,80 @@ class SubChunker:
         self.overlap_tokens = overlap_tokens
         self.max_tokens = max_tokens
 
+    def _coerce_int(self, value: object) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _source_spans(self, chunk: ChunkData) -> list[dict]:
+        metadata = dict(chunk.metadata or {})
+        spans = metadata.get("source_spans")
+        if isinstance(spans, list):
+            normalized: list[dict] = []
+            text_length = len(chunk.text or "")
+            for span in spans:
+                if not isinstance(span, dict):
+                    continue
+                span_start = self._coerce_int(span.get("chunk_char_start"))
+                span_end = self._coerce_int(span.get("chunk_char_end"))
+                if span_start is None:
+                    span_start = 0
+                if span_end is None:
+                    span_end = text_length
+                span_start = max(0, min(span_start, text_length))
+                span_end = max(span_start, min(span_end, text_length))
+                if span_end <= span_start:
+                    continue
+                normalized.append(
+                    {
+                        "chunk_char_start": span_start,
+                        "chunk_char_end": span_end,
+                        "page_start": self._coerce_int(span.get("page_start")),
+                        "page_end": self._coerce_int(span.get("page_end")),
+                    }
+                )
+            if normalized:
+                return normalized
+        if not (chunk.text or ""):
+            return []
+        return [
+            {
+                "chunk_char_start": 0,
+                "chunk_char_end": len(chunk.text or ""),
+                "page_start": chunk.page_start,
+                "page_end": chunk.page_end,
+            }
+        ]
+
+    def _derive_page_range(
+        self,
+        chunk: ChunkData,
+        char_start: int,
+        char_end: int,
+    ) -> tuple[Optional[int], Optional[int]]:
+        starts: list[int] = []
+        ends: list[int] = []
+        for span in self._source_spans(chunk):
+            span_start = int(span.get("chunk_char_start", 0))
+            span_end = int(span.get("chunk_char_end", 0))
+            overlap_start = max(char_start, span_start)
+            overlap_end = min(char_end, span_end)
+            if overlap_end <= overlap_start:
+                continue
+            page_start = self._coerce_int(span.get("page_start"))
+            page_end = self._coerce_int(span.get("page_end"))
+            if page_start is not None:
+                starts.append(page_start)
+            if page_end is not None:
+                ends.append(page_end)
+        return (
+            min(starts) if starts else chunk.page_start,
+            max(ends) if ends else chunk.page_end,
+        )
+
     def sub_chunk(self, chunks: list[ChunkData]) -> SubChunkingResult:
         """Split all parent chunks into sub-chunks.
 
@@ -72,6 +146,11 @@ class SubChunker:
 
             # If parent is already small enough, create a single sub-chunk
             if parent_tokens <= self.max_tokens:
+                page_start, page_end = self._derive_page_range(
+                    chunk,
+                    0,
+                    len(chunk.text),
+                )
                 all_sub_chunks.append(
                     SubChunkData(
                         parent_chunk_index=chunk.chunk_index,
@@ -79,8 +158,8 @@ class SubChunker:
                         text=chunk.text,
                         char_start=0,
                         char_end=len(chunk.text),
-                        page_start=chunk.page_start,
-                        page_end=chunk.page_end,
+                        page_start=page_start,
+                        page_end=page_end,
                     )
                 )
                 parent_count += 1
@@ -166,14 +245,19 @@ class SubChunker:
                 merged_end = current_sentences[-1][2]
                 merged_text = text[merged_start:merged_end]
                 if token_len(merged_text) <= self.max_tokens:
+                    page_start, page_end = self._derive_page_range(
+                        chunk,
+                        merged_start,
+                        merged_end,
+                    )
                     sub_chunks[-1] = SubChunkData(
                         parent_chunk_index=chunk.chunk_index,
                         sub_index=prev.sub_index,
                         text=merged_text,
                         char_start=merged_start,
                         char_end=merged_end,
-                        page_start=chunk.page_start,
-                        page_end=chunk.page_end,
+                        page_start=page_start,
+                        page_end=page_end,
                     )
                 else:
                     sub = self._flush_buffer(chunk, current_sentences, sub_index)
@@ -350,6 +434,7 @@ class SubChunker:
         char_start = sentences[0][1]
         char_end = sentences[-1][2]
         text = chunk.text[char_start:char_end]
+        page_start, page_end = self._derive_page_range(chunk, char_start, char_end)
 
         return SubChunkData(
             parent_chunk_index=chunk.chunk_index,
@@ -357,8 +442,8 @@ class SubChunker:
             text=text,
             char_start=char_start,
             char_end=char_end,
-            page_start=chunk.page_start,
-            page_end=chunk.page_end,
+            page_start=page_start,
+            page_end=page_end,
         )
 
     def _compute_overlap(

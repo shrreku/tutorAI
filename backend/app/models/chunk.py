@@ -36,7 +36,7 @@ class Chunk(Base, UUIDMixin, TimestampMixin):
         String(32),
         nullable=True,
     )
-    embedding: Mapped[Optional[list]] = mapped_column(Vector(384), nullable=True)
+    embedding: Mapped[Optional[list]] = mapped_column(Vector(1536), nullable=True)
     enrichment_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     embedding_model_id: Mapped[Optional[str]] = mapped_column(
         String(128), nullable=True

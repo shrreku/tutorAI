@@ -228,9 +228,12 @@ class CurriculumPreparationService:
         )
         for chunk, enrichment in zip(chunks, enrichments):
             existing = dict(chunk.enrichment_metadata or {})
+            parser_payload = existing.get("parser")
             docling_payload = existing.get("docling")
             existing.update(enrichment)
             existing["metadata_level"] = "curriculum_prepare"
+            if parser_payload is not None:
+                existing["parser"] = parser_payload
             if docling_payload is not None:
                 existing["docling"] = docling_payload
             chunk.enrichment_metadata = existing

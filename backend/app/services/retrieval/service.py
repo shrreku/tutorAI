@@ -5,6 +5,7 @@ Concept-aware retrieval for tutoring context.
 """
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Optional
@@ -15,6 +16,7 @@ from app.models.chunk import Chunk
 from app.models.knowledge_base import (
     ResourceBundle,
     ResourceConceptEvidence,
+    ResourceConceptStats,
 )
 from app.services.embedding.base import BaseEmbeddingProvider
 
@@ -42,6 +44,7 @@ class RetrievedChunk:
     char_start: Optional[int] = None
     char_end: Optional[int] = None
     snippet: Optional[str] = None
+    enrichment_metadata: Optional[dict] = None
 
     def to_dict(self) -> dict:
         return {
@@ -88,6 +91,19 @@ class RetrievalResult:
 MIN_SIMILARITY = 0.25
 # Score drop ratio: if score drops below this fraction of best score, stop
 SCORE_CUTOFF_RATIO = 0.35
+NEIGHBOR_MIN_SCORE = 0.58
+NEIGHBOR_SCORE_RATIO = 0.72
+MAX_NEIGHBOR_ANCHORS = 2
+_WORD_RE = re.compile(r"[a-z0-9]+")
+_ARTIFACT_PATTERNS = (
+    re.compile(r"\bfull[- ]page screenshot\b", re.IGNORECASE),
+    re.compile(r"\bnavigation symbols?\b", re.IGNORECASE),
+    re.compile(r"\bbeamer\b", re.IGNORECASE),
+    re.compile(r"\bswitching between slides\b", re.IGNORECASE),
+    re.compile(r"\bimage contains no data to transcribe\b", re.IGNORECASE),
+    re.compile(r"\bno data to transcribe into a table\b", re.IGNORECASE),
+    re.compile(r"\bscreenshot confirms\b", re.IGNORECASE),
+)
 
 
 class RetrievalService:
@@ -100,6 +116,136 @@ class RetrievalService:
     ):
         self.db = db_session
         self.embedding = embedding_provider
+
+    @staticmethod
+    def _normalize_match_text(value: str) -> str:
+        return " ".join(_WORD_RE.findall((value or "").lower()))
+
+    def _score_explicit_concept_match(
+        self,
+        concept_id: str,
+        normalized_message: str,
+        message_tokens: set[str],
+    ) -> float:
+        tokens = [token for token in concept_id.lower().split("_") if token]
+        if not tokens:
+            return 0.0
+
+        phrase = " ".join(tokens)
+        score = 0.0
+        if phrase and re.search(rf"\b{re.escape(phrase)}\b", normalized_message):
+            score = max(score, 100.0 + len(tokens) * 5)
+
+        acronym = "".join(token[0] for token in tokens if token)
+        if len(acronym) >= 2 and acronym in message_tokens:
+            score = max(score, 70.0 + len(tokens) * 3)
+
+        overlap = sum(
+            1 for token in tokens if len(token) >= 4 and token in message_tokens
+        )
+        if overlap >= 2:
+            score = max(score, 40.0 + overlap * 8)
+        elif len(tokens) == 1 and len(tokens[0]) >= 6 and tokens[0] in message_tokens:
+            score = max(score, 25.0 + len(tokens[0]))
+        return score
+
+    def _looks_like_artifact(self, text: str, section_heading: Optional[str]) -> bool:
+        combined = "\n".join(part for part in [section_heading or "", text or ""] if part)
+        if not combined.strip():
+            return True
+        pattern_hits = sum(1 for pattern in _ARTIFACT_PATTERNS if pattern.search(combined))
+        if pattern_hits >= 1:
+            return True
+        alpha_chars = sum(1 for char in combined if char.isalpha())
+        if len(combined) >= 120 and alpha_chars <= 20:
+            return True
+        return False
+
+    def _is_retrieval_eligible(
+        self,
+        text: str,
+        section_heading: Optional[str],
+        enrichment_metadata: Optional[dict],
+    ) -> bool:
+        metadata = enrichment_metadata if isinstance(enrichment_metadata, dict) else {}
+        retrieval_meta = metadata.get("retrieval") or {}
+        if isinstance(retrieval_meta, dict):
+            if retrieval_meta.get("eligible") is False:
+                return False
+            if retrieval_meta.get("artifact_noise"):
+                return False
+        return not self._looks_like_artifact(text or "", section_heading)
+
+    def _is_neighbor_compatible(
+        self,
+        anchor: RetrievedChunk,
+        neighbor: RetrievedChunk,
+    ) -> bool:
+        if not self._is_retrieval_eligible(
+            neighbor.text,
+            neighbor.section_heading,
+            neighbor.enrichment_metadata,
+        ):
+            return False
+        anchor_heading = (anchor.section_heading or "").strip().lower()
+        neighbor_heading = (neighbor.section_heading or "").strip().lower()
+        if anchor_heading and neighbor_heading:
+            return anchor_heading == neighbor_heading
+        if anchor.page_end is not None and neighbor.page_start is not None:
+            return abs(anchor.page_end - neighbor.page_start) <= 1
+        if anchor.page_start is not None and neighbor.page_end is not None:
+            return abs(anchor.page_start - neighbor.page_end) <= 1
+        return False
+
+    async def resolve_explicit_concepts(
+        self,
+        resource_ids: list[uuid.UUID | str],
+        student_message: str,
+        limit: int = 3,
+    ) -> list[str]:
+        normalized_message = self._normalize_match_text(student_message)
+        if not normalized_message:
+            return []
+
+        scoped_resource_ids: list[uuid.UUID] = []
+        for value in resource_ids:
+            try:
+                scoped_resource_ids.append(
+                    value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+                )
+            except (TypeError, ValueError):
+                continue
+        if not scoped_resource_ids:
+            return []
+
+        result = await self.db.execute(
+            select(ResourceConceptStats.concept_id).where(
+                ResourceConceptStats.resource_id.in_(list(dict.fromkeys(scoped_resource_ids)))
+            )
+        )
+        concept_ids = [
+            concept_id
+            for concept_id in dict.fromkeys(result.scalars().all())
+            if isinstance(concept_id, str) and concept_id.strip()
+        ]
+        if not concept_ids:
+            return []
+
+        message_tokens = set(normalized_message.split())
+        ranked = [
+            (
+                self._score_explicit_concept_match(
+                    concept_id,
+                    normalized_message,
+                    message_tokens,
+                ),
+                concept_id,
+            )
+            for concept_id in concept_ids
+        ]
+        ranked = [item for item in ranked if item[0] > 0]
+        ranked.sort(key=lambda item: (-item[0], len(item[1]), item[1]))
+        return [concept_id for _, concept_id in ranked[:limit]]
 
     async def retrieve(
         self,
@@ -193,9 +339,19 @@ class RetrievalService:
                     c.relevance_score = min(1.0, c.relevance_score + 0.15)
                     c.retrieval_reason += " + role_match"
 
+        filtered_candidates = [
+            candidate
+            for candidate in candidates.values()
+            if self._is_retrieval_eligible(
+                candidate.text,
+                candidate.section_heading,
+                candidate.enrichment_metadata,
+            )
+        ]
+
         # Sort by relevance and softly prefer novelty against recently used chunks.
         sorted_candidates = sorted(
-            candidates.values(), key=lambda x: -x.relevance_score
+            filtered_candidates, key=lambda x: -x.relevance_score
         )
         excluded = {str(cid) for cid in (exclude_chunk_ids or []) if cid}
         if excluded:
@@ -396,6 +552,7 @@ class RetrievalService:
         query_embedding = embeddings[0]
 
         # Try sub-chunk search first
+        search_limit = max(limit * 4, limit)
         sub_result = await self.db.execute(
             text("""
                 SELECT
@@ -406,6 +563,7 @@ class RetrievalService:
                     sc.char_end,
                     sc.page_start AS sub_page_start,
                     sc.page_end AS sub_page_end,
+                    sc.enrichment_metadata AS sub_metadata,
                     c.id AS chunk_id,
                     c.text AS chunk_text,
                     c.section_heading,
@@ -414,6 +572,7 @@ class RetrievalService:
                     c.page_end,
                     c.pedagogy_role,
                     c.difficulty,
+                    c.enrichment_metadata AS chunk_metadata,
                     1 - (sc.embedding <=> :query_embedding) AS similarity
                 FROM sub_chunk sc
                 JOIN chunk c ON c.id = sc.parent_chunk_id
@@ -425,7 +584,7 @@ class RetrievalService:
             {
                 "resource_id": str(resource_id),
                 "query_embedding": str(query_embedding),
-                "limit": limit,
+                "limit": search_limit,
             },
         )
         sub_rows = sub_result.all()
@@ -437,6 +596,13 @@ class RetrievalService:
                 sim = float(row.similarity) if row.similarity else 0.0
                 if sim < MIN_SIMILARITY:
                     continue
+                enrichment_metadata = row.sub_metadata or row.chunk_metadata
+                if not self._is_retrieval_eligible(
+                    row.sub_text or row.chunk_text,
+                    row.section_heading,
+                    enrichment_metadata,
+                ):
+                    continue
                 parent_id = row.chunk_id
                 if parent_id in seen_parents:
                     # Keep better score, but update citation if this sub is better
@@ -445,7 +611,18 @@ class RetrievalService:
                         seen_parents[parent_id].sub_chunk_id = row.sub_chunk_id
                         seen_parents[parent_id].char_start = row.char_start
                         seen_parents[parent_id].char_end = row.char_end
+                        seen_parents[parent_id].page_start = (
+                            row.sub_page_start
+                            if row.sub_page_start is not None
+                            else row.page_start
+                        )
+                        seen_parents[parent_id].page_end = (
+                            row.sub_page_end
+                            if row.sub_page_end is not None
+                            else row.page_end
+                        )
                         seen_parents[parent_id].snippet = row.sub_text[:200]
+                        seen_parents[parent_id].enrichment_metadata = enrichment_metadata
                     continue
 
                 seen_parents[parent_id] = RetrievedChunk(
@@ -453,8 +630,12 @@ class RetrievalService:
                     text=row.chunk_text,
                     section_heading=row.section_heading,
                     chunk_index=row.chunk_index,
-                    page_start=row.page_start,
-                    page_end=row.page_end,
+                    page_start=(
+                        row.sub_page_start if row.sub_page_start is not None else row.page_start
+                    ),
+                    page_end=(
+                        row.sub_page_end if row.sub_page_end is not None else row.page_end
+                    ),
                     pedagogy_role=row.pedagogy_role,
                     difficulty=row.difficulty,
                     relevance_score=sim,
@@ -464,6 +645,7 @@ class RetrievalService:
                     char_start=row.char_start,
                     char_end=row.char_end,
                     snippet=row.sub_text[:200],
+                    enrichment_metadata=enrichment_metadata,
                 )
 
             if seen_parents:
@@ -481,6 +663,7 @@ class RetrievalService:
                     page_end,
                     pedagogy_role,
                     difficulty,
+                    enrichment_metadata,
                     1 - (embedding <=> :query_embedding) as similarity
                 FROM chunk
                 WHERE resource_id = :resource_id
@@ -491,7 +674,7 @@ class RetrievalService:
             {
                 "resource_id": str(resource_id),
                 "query_embedding": str(query_embedding),
-                "limit": limit,
+                "limit": search_limit,
             },
         )
 
@@ -499,6 +682,12 @@ class RetrievalService:
         for row in result.all():
             sim = float(row.similarity) if row.similarity else 0.0
             if sim < MIN_SIMILARITY:
+                continue
+            if not self._is_retrieval_eligible(
+                row.text,
+                row.section_heading,
+                row.enrichment_metadata,
+            ):
                 continue
             chunks.append(
                 RetrievedChunk(
@@ -514,6 +703,7 @@ class RetrievalService:
                     retrieval_reason="vector similarity",
                     resource_id=resource_id,
                     snippet=row.text[:200],
+                    enrichment_metadata=row.enrichment_metadata,
                 )
             )
 
@@ -569,6 +759,8 @@ class RetrievalService:
             retrieval_reason="",
             concepts=concepts,
             resource_id=chunk.resource_id,
+            snippet=chunk.text[:200],
+            enrichment_metadata=chunk.enrichment_metadata,
         )
 
     async def _get_bundle(
@@ -606,8 +798,13 @@ class RetrievalService:
         resource_neighbor_maps: dict[uuid.UUID, dict[int, RetrievedChunk]] = {}
         resource_neighbor_indices: dict[uuid.UUID, set[int]] = {}
         resource_chunk_indices: dict[uuid.UUID, set[int]] = {}
+        anchor_chunks = [
+            chunk
+            for chunk in chunks
+            if chunk.resource_id and chunk.relevance_score >= NEIGHBOR_MIN_SCORE
+        ][:MAX_NEIGHBOR_ANCHORS]
 
-        for chunk in chunks:
+        for chunk in anchor_chunks:
             if not chunk.resource_id:
                 continue
             resource_neighbor_indices.setdefault(chunk.resource_id, set())
@@ -640,29 +837,42 @@ class RetrievalService:
                     page_end=chunk.page_end,
                     pedagogy_role=chunk.pedagogy_role,
                     difficulty=chunk.difficulty,
-                    relevance_score=0.3,
+                    relevance_score=0.0,
                     retrieval_reason="neighbor expansion",
                     resource_id=chunk.resource_id,
+                    snippet=chunk.text[:200],
+                    enrichment_metadata=chunk.enrichment_metadata,
                 )
                 for chunk in result.scalars().all()
             }
 
         for anchor in chunks:
+            if anchor.chunk_id not in seen_ids:
+                ordered.append(anchor)
+                seen_ids.add(anchor.chunk_id)
+
             neighbor_by_index = (
                 resource_neighbor_maps.get(anchor.resource_id, {})
                 if anchor.resource_id is not None
                 else {}
             )
+            if anchor not in anchor_chunks:
+                continue
             for offset in range(-max_neighbors, max_neighbors + 1):
                 neighbor_index = anchor.chunk_index + offset
                 if offset != 0 and neighbor_index in neighbor_by_index:
                     neighbor = neighbor_by_index[neighbor_index]
+                    if not self._is_neighbor_compatible(anchor, neighbor):
+                        continue
+                    neighbor.relevance_score = max(
+                        MIN_SIMILARITY,
+                        min(
+                            anchor.relevance_score * NEIGHBOR_SCORE_RATIO,
+                            anchor.relevance_score - 0.08,
+                        ),
+                    )
                     if neighbor.chunk_id not in seen_ids:
                         ordered.append(neighbor)
                         seen_ids.add(neighbor.chunk_id)
-
-            if anchor.chunk_id not in seen_ids:
-                ordered.append(anchor)
-                seen_ids.add(anchor.chunk_id)
 
         return ordered

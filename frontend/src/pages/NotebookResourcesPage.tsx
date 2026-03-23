@@ -178,6 +178,15 @@ export default function NotebookResourcesPage() {
   const linkedIds = useMemo(() => new Set(linked.map((item) => item.resource_id)), [linked]);
   const available = (resources?.items ?? []).filter((r) => !linkedIds.has(r.id));
   const resourceById = useMemo(() => new Map((resources?.items ?? []).map((r) => [r.id, r])), [resources?.items]);
+  const shouldShowDetailedEstimate = Boolean(
+    selectedFile
+      && uploadEstimate
+      && (
+        selectedFile.size >= 10 * 1024 * 1024
+        || uploadEstimate.warnings.length > 0
+        || uploadEstimate.chunk_count_estimate >= 150
+      )
+  );
   const trackerEntries = useMemo(() => {
     const entries: Array<{
       jobId: string;
@@ -382,31 +391,39 @@ export default function NotebookResourcesPage() {
               {estimateIngestion.isPending && selectedFile && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-gold" />
-                  <span>Estimating processing cost…</span>
+                  <span>Checking credit usage…</span>
                 </div>
               )}
               {uploadEstimate && selectedFile && !estimateIngestion.isPending && (
                 <div className="rounded-lg border border-gold/15 bg-gold/[0.04] px-4 py-3 space-y-1.5">
                   <div className="flex items-center gap-2 text-xs font-medium text-foreground">
                     <Coins className="w-3.5 h-3.5 text-gold" />
-                    <span>Estimated processing cost</span>
-                    <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded ${uploadEstimate.estimate_confidence === 'high' ? 'bg-emerald-500/10 text-emerald-400' : uploadEstimate.estimate_confidence === 'medium' ? 'bg-gold/10 text-gold' : 'bg-orange-500/10 text-orange-400'}`}>
-                      {uploadEstimate.estimate_confidence} confidence
-                    </span>
+                    <span>{shouldShowDetailedEstimate ? 'Estimated processing credits' : 'Processing credits'}</span>
+                    {shouldShowDetailedEstimate && (
+                      <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded ${uploadEstimate.estimate_confidence === 'high' ? 'bg-emerald-500/10 text-emerald-400' : uploadEstimate.estimate_confidence === 'medium' ? 'bg-gold/10 text-gold' : 'bg-orange-500/10 text-orange-400'}`}>
+                        {uploadEstimate.estimate_confidence} confidence
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
                     <span>Reserve now: {formatCredits(uploadEstimate.core_upload_credits)} credits</span>
-                    <span>${uploadEstimate.core_upload_usd.toFixed(4)} USD</span>
                   </div>
-                  <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
-                    <span>Curriculum later: {formatCredits(uploadEstimate.curriculum_credits_low)}–{formatCredits(uploadEstimate.curriculum_credits_high)} credits</span>
-                    <span>${uploadEstimate.curriculum_usd_low.toFixed(4)}–${uploadEstimate.curriculum_usd_high.toFixed(4)} USD</span>
-                  </div>
-                  <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
-                    <span>Total projected: {formatCredits(uploadEstimate.estimated_credits_low)}–{formatCredits(uploadEstimate.estimated_credits_high)} credits</span>
-                    <span>~{uploadEstimate.chunk_count_estimate} chunks</span>
-                  </div>
-                  <div className="text-[11px] text-muted-foreground">Core upload is reserved immediately. Curriculum preparation is reserved only when that stage starts.</div>
+                  {shouldShowDetailedEstimate ? (
+                    <>
+                      <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
+                        <span>Curriculum later: {formatCredits(uploadEstimate.curriculum_credits_low)}–{formatCredits(uploadEstimate.curriculum_credits_high)} credits</span>
+                      </div>
+                      <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
+                        <span>Total projected: {formatCredits(uploadEstimate.estimated_credits_low)}–{formatCredits(uploadEstimate.estimated_credits_high)} credits</span>
+                        <span>~{uploadEstimate.chunk_count_estimate} chunks</span>
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">Core upload is reserved immediately. Curriculum preparation is reserved only when that stage starts.</div>
+                    </>
+                  ) : (
+                    <div className="text-[11px] text-muted-foreground">
+                      Curriculum preparation is billed separately if and when it runs. Detailed estimates appear automatically for larger documents.
+                    </div>
+                  )}
                   {uploadEstimate.warnings.length > 0 && (
                     <div className="flex items-start gap-1.5 text-[11px] text-orange-400">
                       <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />

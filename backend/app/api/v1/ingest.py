@@ -47,6 +47,11 @@ from app.services.batched_curriculum_preparation import (
 from app.services.embedding.factory import create_embedding_provider
 from app.services.ingestion.enricher import ChunkEnricher
 from app.services.ingestion.ontology_extractor import OntologyExtractor
+from app.services.ingestion.page_allowance import PageAllowanceService
+from app.services.ingestion.page_counter import (
+    estimate_page_count_from_bytes,
+    estimate_page_count_from_path,
+)
 from app.services.ingestion.pipeline_support import update_job
 from app.services.llm.factory import (
     create_llm_provider,
@@ -131,6 +136,19 @@ def _build_curriculum_billing_metrics(*, estimate: dict) -> dict:
     }
 
 
+def _build_page_allowance_metrics(*, estimated_pages: int, reserved_pages: int) -> dict:
+    return {
+        "page_allowance": {
+            "estimated_pages": int(estimated_pages or 0),
+            "reserved_pages": int(reserved_pages or 0),
+            "actual_pages": None,
+            "charged_pages": None,
+            "status": "reserved" if reserved_pages > 0 else "not_applicable",
+            "release_reason": None,
+        }
+    }
+
+
 def _estimate_retry_credits(
     resource: Resource, latest_job: IngestionJob | None, meter: CreditMeter
 ) -> int:
@@ -158,6 +176,26 @@ def _estimate_retry_credits(
         filename=resource.filename,
         processing_profile=resource.processing_profile or "core_only",
     )
+
+
+def _estimate_retry_pages(resource: Resource, latest_job: IngestionJob | None) -> int:
+    latest_metrics = (latest_job.metrics or {}) if latest_job else {}
+    page_allowance = (
+        latest_metrics.get("page_allowance") if isinstance(latest_metrics, dict) else None
+    )
+    if isinstance(page_allowance, dict) and page_allowance.get("estimated_pages"):
+        return max(int(page_allowance.get("estimated_pages") or 0), 1)
+
+    document = latest_metrics.get("document") if isinstance(latest_metrics, dict) else None
+    if isinstance(document, dict) and document.get("page_count_actual"):
+        return max(int(document.get("page_count_actual") or 0), 1)
+
+    if resource.file_path_or_uri and urlparse(resource.file_path_or_uri).scheme in {"", "file"}:
+        try:
+            return estimate_page_count_from_path(resource.file_path_or_uri, resource.filename)
+        except OSError:
+            return 1
+    return 1
 
 
 def _job_billing_payload(
@@ -255,6 +293,14 @@ def _get_curriculum_billing_state(job: IngestionJob | None) -> dict:
         return {}
     curriculum_billing = metrics.get("curriculum_billing")
     return curriculum_billing if isinstance(curriculum_billing, dict) else {}
+
+
+def _get_page_allowance_state(job: IngestionJob | None) -> dict:
+    metrics = (getattr(job, "metrics", None) or {}) if job else {}
+    if not isinstance(metrics, dict):
+        return {}
+    page_allowance = metrics.get("page_allowance")
+    return page_allowance if isinstance(page_allowance, dict) else {}
 
 
 def _estimate_curriculum_from_job(
@@ -557,6 +603,7 @@ async def _continue_background_curriculum_preparation(
             "release_reason": None,
         },
         "curriculum_preparation": summary,
+        "kb_summary": summary.get("kb_summary") or (job.metrics or {}).get("kb_summary"),
     }
     await update_job(
         db,
@@ -598,12 +645,16 @@ async def _mark_dispatch_failure(
     job_id: UUID,
     owner_user_id: UUID,
     reserved_credits: int,
+    reserved_pages: int,
     escrow_id: UUID | None,
     reason: str,
 ) -> None:
     meter = CreditMeter(db)
     if reserved_credits > 0:
         await meter.release_ingestion(owner_user_id, str(job_id), reserved_credits)
+    allowance_service = PageAllowanceService(db)
+    if reserved_pages > 0:
+        await allowance_service.release_pages(owner_user_id, reserved_pages)
 
     job_repo = IngestionJobRepository(db)
     job = await job_repo.get_by_id(job_id)
@@ -622,6 +673,15 @@ async def _mark_dispatch_failure(
             )
             billing["release_reason"] = "dispatch_failure"
             metrics["billing"] = billing
+        page_allowance = dict(metrics.get("page_allowance") or {})
+        if page_allowance:
+            page_allowance["status"] = (
+                "released"
+                if reserved_pages > 0
+                else page_allowance.get("status", "not_applicable")
+            )
+            page_allowance["release_reason"] = "dispatch_failure"
+            metrics["page_allowance"] = page_allowance
         async_byok = dict(metrics.get("async_byok") or {})
         if async_byok:
             async_byok["status"] = "deleted"
@@ -775,6 +835,9 @@ async def upload_resource(
             detail="File is empty",
         )
 
+    page_allowance_service = PageAllowanceService(db)
+    user = await page_allowance_service.ensure_user_defaults(user)
+    estimated_pages = estimate_page_count_from_bytes(file.filename, file_content)
     meter = CreditMeter(db)
     job_id = uuid.uuid4()
     resource_id = uuid.uuid4()
@@ -782,9 +845,32 @@ async def upload_resource(
     estimate = meter.estimate_ingestion_v2(
         file_size_bytes=len(file_content),
         filename=file.filename,
+        page_count_estimate=estimated_pages,
     )
     estimated_credits = 0
     reserved_credits = 0
+    reserved_pages = 0
+    reserved_page_result = await page_allowance_service.reserve_pages(user.id, estimated_pages)
+    if reserved_page_result is None:
+        remaining_pages = page_allowance_service.remaining_pages_for(user)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Parse page allowance exceeded. "
+                f"This upload is estimated at {estimated_pages} pages, but you only have {remaining_pages} pages remaining."
+            ),
+        )
+    reserved_pages = reserved_page_result
+    logger.info(
+        "Accepted upload for ingestion: user_id=%s filename=%s estimated_pages=%s reserved_pages=%s job_id=%s resource_id=%s queue_mode=%s",
+        user.id,
+        file.filename,
+        estimated_pages,
+        reserved_pages,
+        job_id,
+        resource_id,
+        queue_mode,
+    )
     uses_platform_credits = settings.CREDITS_ENABLED and not use_async_byok
     if uses_platform_credits:
         estimated_credits = int(estimate["core_upload_credits"])
@@ -792,6 +878,9 @@ async def upload_resource(
             user.id, str(job_id), estimated_credits
         )
         if reserved is None:
+            if reserved_pages > 0:
+                await page_allowance_service.release_pages(user.id, reserved_pages)
+                await db.commit()
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail="Insufficient credits for upload processing. Check your balance in Billing.",
@@ -802,6 +891,11 @@ async def upload_resource(
     try:
         storage = create_storage_provider(settings)
         file_path = await storage.save_file(file_content, file.filename)
+        logger.info(
+            "Stored ingestion upload for resource %s at %s",
+            resource_id,
+            file_path,
+        )
 
         resource_repo = ResourceRepository(db)
         resource = Resource(
@@ -845,6 +939,10 @@ async def upload_resource(
                     reserved_credits=reserved_credits,
                     file_size_bytes=len(file_content),
                 ),
+                **_build_page_allowance_metrics(
+                    estimated_pages=estimated_pages,
+                    reserved_pages=reserved_pages,
+                ),
                 **_build_curriculum_billing_metrics(estimate=estimate),
                 **_build_async_byok_metrics(
                     escrow_id=escrow.id if escrow else None,
@@ -875,7 +973,7 @@ async def upload_resource(
                 str(escrow.id) if escrow else None,
             )
             logger.info(
-                f"Started in-process ingestion for resource {resource.id}, job {job.id}"
+                f"Started in-process ingestion for resource {resource.id}, job {job.id}, parser=llamaparse"
             )
     except Exception:
         await db.rollback()
@@ -886,11 +984,15 @@ async def upload_resource(
                 job_id=job_id,
                 owner_user_id=user.id,
                 reserved_credits=reserved_credits,
+                reserved_pages=reserved_pages,
                 escrow_id=escrow.id if escrow else None,
                 reason="Could not dispatch ingestion job after upload",
             )
-        elif reserved_credits > 0:
-            await meter.release_ingestion(user.id, str(job_id), reserved_credits)
+        elif reserved_credits > 0 or reserved_pages > 0:
+            if reserved_credits > 0:
+                await meter.release_ingestion(user.id, str(job_id), reserved_credits)
+            if reserved_pages > 0:
+                await page_allowance_service.release_pages(user.id, reserved_pages)
             await db.commit()
         raise
 
@@ -974,6 +1076,8 @@ async def retry_ingestion(
     resource.error_message = None
 
     meter = CreditMeter(db)
+    page_allowance_service = PageAllowanceService(db)
+    user = await page_allowance_service.ensure_user_defaults(user)
     job_id = uuid.uuid4()
     escrow = None
     file_size_bytes = (
@@ -986,12 +1090,26 @@ async def retry_ingestion(
         if latest_job
         else 0
     )
+    estimated_pages = _estimate_retry_pages(resource, latest_job)
     estimate = meter.estimate_ingestion_v2(
         file_size_bytes=file_size_bytes,
         filename=resource.filename,
+        page_count_estimate=estimated_pages,
     )
     estimated_credits = 0
     reserved_credits = 0
+    reserved_pages = 0
+    reserved_page_result = await page_allowance_service.reserve_pages(user.id, estimated_pages)
+    if reserved_page_result is None:
+        remaining_pages = page_allowance_service.remaining_pages_for(user)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Parse page allowance exceeded. "
+                f"This retry is estimated at {estimated_pages} pages, but you only have {remaining_pages} pages remaining."
+            ),
+        )
+    reserved_pages = reserved_page_result
     uses_platform_credits = settings.CREDITS_ENABLED and not use_async_byok
     if uses_platform_credits:
         estimated_credits = int(estimate["core_upload_credits"])
@@ -999,6 +1117,9 @@ async def retry_ingestion(
             user.id, str(job_id), estimated_credits
         )
         if reserved is None:
+            if reserved_pages > 0:
+                await page_allowance_service.release_pages(user.id, reserved_pages)
+                await db.commit()
             raise HTTPException(
                 status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 detail="Insufficient credits for upload retry processing. Check your balance in Billing.",
@@ -1033,6 +1154,10 @@ async def retry_ingestion(
                     estimated_credits=estimated_credits,
                     reserved_credits=reserved_credits,
                     file_size_bytes=file_size_bytes,
+                ),
+                **_build_page_allowance_metrics(
+                    estimated_pages=estimated_pages,
+                    reserved_pages=reserved_pages,
                 ),
                 **_build_curriculum_billing_metrics(estimate=estimate),
                 **_build_async_byok_metrics(
@@ -1077,11 +1202,15 @@ async def retry_ingestion(
                 job_id=job_id,
                 owner_user_id=user.id,
                 reserved_credits=reserved_credits,
+                reserved_pages=reserved_pages,
                 escrow_id=escrow.id if escrow else None,
                 reason="Could not dispatch ingestion retry job",
             )
-        elif reserved_credits > 0:
-            await meter.release_ingestion(user.id, str(job_id), reserved_credits)
+        elif reserved_credits > 0 or reserved_pages > 0:
+            if reserved_credits > 0:
+                await meter.release_ingestion(user.id, str(job_id), reserved_credits)
+            if reserved_pages > 0:
+                await page_allowance_service.release_pages(user.id, reserved_pages)
             await db.commit()
         raise
 
@@ -1263,6 +1392,29 @@ async def run_ingestion_pipeline(
                             "status": "finalized",
                         },
                     }
+                page_allowance = _get_page_allowance_state(job)
+                reserved_pages = int(page_allowance.get("reserved_pages") or 0)
+                if reserved_pages > 0 and page_allowance.get("status") == "reserved":
+                    allowance_service = PageAllowanceService(db)
+                    actual_pages = int(
+                        ((result if isinstance(result, dict) else {}).get("document") or {}).get("page_count_actual")
+                        or page_allowance.get("estimated_pages")
+                        or reserved_pages
+                    )
+                    charged_pages = await allowance_service.finalize_pages(
+                        job.owner_user_id,
+                        actual_pages,
+                        reserved_pages,
+                    )
+                    job.metrics = {
+                        **(job.metrics or {}),
+                        "page_allowance": {
+                            **page_allowance,
+                            "actual_pages": actual_pages,
+                            "charged_pages": charged_pages,
+                            "status": "finalized",
+                        },
+                    }
                 if escrow_uuid is not None:
                     escrow_service = AsyncByokEscrowService(
                         AsyncByokEscrowRepository(db)
@@ -1291,6 +1443,7 @@ async def run_ingestion_pipeline(
                 if job is not None:
                     billing = _get_billing_state(job)
                     curriculum_billing = _get_curriculum_billing_state(job)
+                    page_allowance = _get_page_allowance_state(job)
                     reserved_credits = int(billing.get("reserved_credits") or 0)
                     if (
                         job.owner_user_id
@@ -1298,34 +1451,65 @@ async def run_ingestion_pipeline(
                         and billing.get("status") == "reserved"
                     ):
                         meter = CreditMeter(db2)
-                        await meter.release_ingestion(
-                            job.owner_user_id, job_id, reserved_credits
-                        )
-                        job.metrics = {
-                            **(job.metrics or {}),
-                            "billing": {
-                                **billing,
-                                "status": "released",
-                                "release_reason": "worker_failure",
-                            },
-                        }
-                        if (
-                            int(curriculum_billing.get("reserved_credits") or 0) > 0
-                            and curriculum_billing.get("status") == "reserved"
-                        ):
-                            await _release_curriculum_reservation(
-                                meter,
-                                user_id=job.owner_user_id,
-                                curriculum_billing=curriculum_billing,
+                        try:
+                            await meter.release_ingestion(
+                                job.owner_user_id, job_id, reserved_credits
                             )
                             job.metrics = {
                                 **(job.metrics or {}),
-                                "curriculum_billing": {
-                                    **curriculum_billing,
+                                "billing": {
+                                    **billing,
                                     "status": "released",
                                     "release_reason": "worker_failure",
                                 },
                             }
+                        except Exception as e:
+                            logger.exception(f"Failed to release billing credits: {e}")
+                            job.metrics = {
+                                **(job.metrics or {}),
+                                "billing": {
+                                    **billing,
+                                    "status": "release_failed",
+                                    "release_reason": "worker_failure",
+                                },
+                            }
+                    reserved_pages = int(page_allowance.get("reserved_pages") or 0)
+                    if (
+                        job.owner_user_id
+                        and reserved_pages > 0
+                        and page_allowance.get("status") == "reserved"
+                    ):
+                        allowance_service = PageAllowanceService(db2)
+                        await allowance_service.release_pages(
+                            job.owner_user_id, reserved_pages
+                        )
+                        job.metrics = {
+                            **(job.metrics or {}),
+                            "page_allowance": {
+                                **page_allowance,
+                                "status": "released",
+                                "release_reason": "worker_failure",
+                            },
+                        }
+                    if (
+                        job.owner_user_id
+                        and int(curriculum_billing.get("reserved_credits") or 0) > 0
+                        and curriculum_billing.get("status") == "reserved"
+                    ):
+                        meter = CreditMeter(db2)
+                        await _release_curriculum_reservation(
+                            meter,
+                            user_id=job.owner_user_id,
+                            curriculum_billing=curriculum_billing,
+                        )
+                        job.metrics = {
+                            **(job.metrics or {}),
+                            "curriculum_billing": {
+                                **curriculum_billing,
+                                "status": "released",
+                                "release_reason": "worker_failure",
+                            },
+                        }
                     async_byok = _get_async_byok_state(job)
                     if async_byok.get("escrow_id"):
                         escrow_service = AsyncByokEscrowService(

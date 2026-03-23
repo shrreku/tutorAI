@@ -51,26 +51,36 @@ def create_embedding_provider(config: Settings) -> BaseEmbeddingProvider:
         if _embedding_provider is not None:
             return _embedding_provider
 
-        try:
-            from app.services.embedding.local_provider import LocalEmbeddingProvider
+        provider_name = (config.EMBEDDING_PROVIDER or "local").strip().lower()
 
-            provider = LocalEmbeddingProvider(model_id=config.EMBEDDING_MODEL_ID)
-
-            if provider.dimension != config.EMBEDDING_DIMENSION:
-                raise ValueError(
-                    f"Embedding dimension mismatch: provider returns {provider.dimension}, "
-                    f"but config expects {config.EMBEDDING_DIMENSION}. "
-                    f"Update EMBEDDING_DIMENSION in your config to match the model."
-                )
-
-            _embedding_provider = provider
-        except ImportError as e:
-            logger.warning(
-                f"Could not load local embedding provider: {e}. Using mock provider."
-            )
+        if provider_name == "mock":
             _embedding_provider = MockEmbeddingProvider(
                 model_id=config.EMBEDDING_MODEL_ID,
                 dimension=config.EMBEDDING_DIMENSION,
             )
+            return _embedding_provider
+
+        if provider_name in {"gemini", "openrouter"}:
+            from app.services.embedding.remote_provider import RemoteEmbeddingProvider
+
+            _embedding_provider = RemoteEmbeddingProvider(
+                provider=provider_name,
+                model_id=config.EMBEDDING_MODEL_ID,
+                dimension=config.EMBEDDING_DIMENSION,
+                api_key=config.EMBEDDING_API_KEY or "",
+                base_url=config.EMBEDDING_API_BASE_URL,
+            )
+            return _embedding_provider
+
+        if provider_name == "local":
+            raise ValueError(
+                "Local embedding providers are no longer supported. "
+                "Set EMBEDDING_PROVIDER to openrouter, gemini, or mock."
+            )
+
+        raise ValueError(
+            f"Unsupported EMBEDDING_PROVIDER '{config.EMBEDDING_PROVIDER}'. "
+            "Expected one of: gemini, openrouter, mock."
+        )
 
     return _embedding_provider

@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Awaitable, Callable, Optional
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chunk import Chunk, ChunkConcept
@@ -217,6 +217,7 @@ class BatchedCurriculumPreparationService:
         if progress_callback is not None:
             await progress_callback("curriculum_finalize", 99)
 
+        kb_summary = await self._build_final_kb_summary(resource_id, total_batches)
         await self.db.commit()
         return {
             "prepared": True,
@@ -227,6 +228,7 @@ class BatchedCurriculumPreparationService:
             "total_batches": total_batches,
             "batches_completed": sum(1 for b in batches if b.status == "completed"),
             "batches_failed": sum(1 for b in batches if b.status == "failed"),
+            "kb_summary": kb_summary,
         }
 
     async def _reset_curriculum_state(self, resource_id: uuid.UUID) -> None:
@@ -589,9 +591,12 @@ class BatchedCurriculumPreparationService:
         )
         for chunk, enrichment in zip(chunks, enrichments):
             existing = dict(chunk.enrichment_metadata or {})
+            parser_payload = existing.get("parser")
             docling_payload = existing.get("docling")
             existing.update(enrichment)
             existing["metadata_level"] = "curriculum_prepare"
+            if parser_payload is not None:
+                existing["parser"] = parser_payload
             if docling_payload is not None:
                 existing["docling"] = docling_payload
             chunk.enrichment_metadata = existing
@@ -653,11 +658,79 @@ class BatchedCurriculumPreparationService:
     @staticmethod
     def _estimate_tokens(text: str) -> int:
         """Rough word-based token estimate."""
-        return max(1, len(text.split()) * 4 // 3)
+        return max(1, len((text or "").split()) // 1)
 
-    # ------------------------------------------------------------------
-    # Artifact persistence
-    # ------------------------------------------------------------------
+    async def _build_final_kb_summary(
+        self,
+        resource_id: uuid.UUID,
+        total_batches: int,
+    ) -> dict:
+        async def _count(statement):
+            result = await self.db.execute(statement)
+            return int(result.scalar() or 0)
+
+        return {
+            "phase": "curriculum_ready",
+            "parent_chunks": await _count(
+                select(func.count()).select_from(Chunk).where(Chunk.resource_id == resource_id)
+            ),
+            "sub_chunks": await _count(
+                select(func.count()).select_from(SubChunk).where(SubChunk.resource_id == resource_id)
+            ),
+            "concept_stats": await _count(
+                select(func.count())
+                .select_from(ResourceConceptStats)
+                .where(ResourceConceptStats.resource_id == resource_id)
+            ),
+            "concept_evidence": await _count(
+                select(func.count())
+                .select_from(ResourceConceptEvidence)
+                .where(ResourceConceptEvidence.resource_id == resource_id)
+            ),
+            "graph_edges": await _count(
+                select(func.count())
+                .select_from(ResourceConceptGraph)
+                .where(ResourceConceptGraph.resource_id == resource_id)
+            ),
+            "bundles": await _count(
+                select(func.count()).select_from(ResourceBundle).where(ResourceBundle.resource_id == resource_id)
+            ),
+            "topic_bundles": await _count(
+                select(func.count())
+                .select_from(ResourceTopicBundle)
+                .where(ResourceTopicBundle.resource_id == resource_id)
+            ),
+            "topics": await _count(
+                select(func.count()).select_from(ResourceTopic).where(ResourceTopic.resource_id == resource_id)
+            ),
+            "learning_objectives": await _count(
+                select(func.count())
+                .select_from(ResourceLearningObjective)
+                .where(ResourceLearningObjective.resource_id == resource_id)
+            ),
+            "prereq_hints": await _count(
+                select(func.count())
+                .select_from(ResourcePrereqHint)
+                .where(ResourcePrereqHint.resource_id == resource_id)
+            ),
+            "processing_batches": await _count(
+                select(func.count())
+                .select_from(ProcessingBatch)
+                .where(ProcessingBatch.resource_id == resource_id)
+            ),
+            "study_ready_batches": await _count(
+                select(func.count())
+                .select_from(ProcessingBatch)
+                .where(ProcessingBatch.resource_id == resource_id)
+                .where(ProcessingBatch.is_study_ready.is_(True))
+            ),
+            "artifact_states": await _count(
+                select(func.count())
+                .select_from(ResourceArtifactState)
+                .where(ResourceArtifactState.resource_id == resource_id)
+            ),
+            "total_batches": total_batches,
+        }
 
     async def _upsert_processing_manifest_artifact(
         self,

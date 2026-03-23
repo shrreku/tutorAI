@@ -25,6 +25,8 @@ import type {
   AdminBillingOverview,
   AdminGrantRequest,
   AdminGrantResponse,
+  AdminPageAllowanceGrantRequest,
+  AdminPageAllowanceGrantResponse,
   CreditBalance,
   CreditUsageHistory,
   AdminMonthlyGrantRequest,
@@ -449,6 +451,19 @@ export function useAdminGrant() {
       apiClient.post<AdminGrantResponse>('/billing/admin/grant', request),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.billing.all });
+    },
+  });
+}
+
+export function useAdminPageAllowanceGrant() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (request: AdminPageAllowanceGrantRequest) =>
+      apiClient.post<AdminPageAllowanceGrantResponse>('/billing/admin/page-allowance/grant', request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.billing.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.user.settings() });
     },
   });
 }

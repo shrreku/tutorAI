@@ -34,6 +34,29 @@ class DoclingAdapter:
 
     async def convert(self, source: str) -> DoclingConversionResult:
         """Convert local path or URL source to a normalized conversion result."""
+        if (settings.LLAMAPARSE_API_KEY or "").strip():
+            from app.services.ingestion.llamaparse_adapter import LlamaParseAdapter
+
+            llama_result = await LlamaParseAdapter().convert(source)
+            return DoclingConversionResult(
+                source=llama_result.source,
+                source_type=llama_result.source_type,
+                status=llama_result.status,
+                docling_document=None,
+                sections=llama_result.sections,
+                warnings=list(llama_result.warnings or []),
+                errors=list(llama_result.errors or []),
+                metadata={
+                    **(llama_result.metadata or {}),
+                    "docling": {
+                        "delegated_to": "llamaparse",
+                        "llamaparse": llama_result.metadata.get("llamaparse")
+                        if isinstance(llama_result.metadata, dict)
+                        else None,
+                    },
+                },
+            )
+
         converter = self._get_converter()
 
         source_type = "url" if self._is_url(source) else "file"

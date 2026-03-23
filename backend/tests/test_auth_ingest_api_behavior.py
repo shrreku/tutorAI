@@ -20,6 +20,39 @@ class _DummyDb:
         return None
 
 
+class _AllowanceService:
+    def __init__(self, _db, *, reserve_result=1, remaining=800, grant_limit=1000):
+        self.reserve_result = reserve_result
+        self.remaining = remaining
+        self.grant_limit = grant_limit
+        self.released: list[tuple[object, int]] = []
+
+    async def ensure_user_defaults(self, user):
+        if not hasattr(user, "parse_page_limit"):
+            user.parse_page_limit = self.grant_limit
+        if not hasattr(user, "parse_page_used"):
+            user.parse_page_used = 0
+        if not hasattr(user, "parse_page_reserved"):
+            user.parse_page_reserved = 0
+        return user
+
+    async def reserve_pages(self, _user_id, _estimated_pages):
+        return self.reserve_result
+
+    async def release_pages(self, user_id, reserved_pages):
+        self.released.append((user_id, reserved_pages))
+
+    async def grant_pages(self, _user_id, amount):
+        return SimpleNamespace(
+            parse_page_limit=self.grant_limit + amount,
+            parse_page_used=25,
+            parse_page_reserved=10,
+        )
+
+    def remaining_pages_for(self, _user):
+        return self.remaining
+
+
 def test_estimate_retry_credits_uses_cached_file_size_for_s3_uri():
     class _Meter:
         def estimate_ingestion_credits(self, **kwargs):
@@ -354,6 +387,11 @@ def test_ingest_upload_rejects_when_insufficient_credits(monkeypatch):
 
     monkeypatch.setattr(ingestion_repo_module, "IngestionJobRepository", _JobRepo)
     monkeypatch.setattr(ingest_module, "CreditMeter", _Meter)
+    monkeypatch.setattr(
+        ingest_module,
+        "PageAllowanceService",
+        lambda db: _AllowanceService(db, reserve_result=1, remaining=800),
+    )
 
     upload = UploadFile(filename="doc.pdf", file=BytesIO(b"hello"))
 
@@ -370,6 +408,51 @@ def test_ingest_upload_rejects_when_insufficient_credits(monkeypatch):
 
     assert exc.value.status_code == 402
     assert "Insufficient credits" in str(exc.value.detail)
+
+
+def test_ingest_upload_rejects_when_page_allowance_exceeded(monkeypatch):
+    monkeypatch.setattr(settings, "FEATURE_UPLOADS_ENABLED", True, raising=False)
+    monkeypatch.setattr(settings, "AUTH_ENABLED", False, raising=False)
+    monkeypatch.setattr(settings, "CREDITS_ENABLED", False, raising=False)
+    monkeypatch.setattr(
+        settings, "UPLOAD_ALLOWED_EXTENSIONS", ".pdf,.md", raising=False
+    )
+    monkeypatch.setattr(settings, "INGESTION_MAX_CONCURRENT_JOBS", 3, raising=False)
+    monkeypatch.setattr(settings, "INGESTION_QUEUE_ENABLED", False, raising=False)
+    monkeypatch.setattr(settings, "REDIS_URL", None, raising=False)
+
+    class _JobRepo:
+        def __init__(self, _db):
+            pass
+
+        async def expire_stale_active_jobs(self, max_age_minutes=5):
+            return 0
+
+        async def count_active_jobs(self, include_pending=True):
+            return 0
+
+    monkeypatch.setattr(ingestion_repo_module, "IngestionJobRepository", _JobRepo)
+    monkeypatch.setattr(
+        ingest_module,
+        "PageAllowanceService",
+        lambda db: _AllowanceService(db, reserve_result=None, remaining=2),
+    )
+
+    upload = UploadFile(filename="doc.pdf", file=BytesIO(b"hello"))
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            ingest_module.upload_resource(
+                background_tasks=BackgroundTasks(),
+                file=upload,
+                topic="architecture",
+                db=_DummyDb(),
+                user=SimpleNamespace(id=uuid4()),
+            )
+        )
+
+    assert exc.value.status_code == 403
+    assert "Parse page allowance exceeded" in str(exc.value.detail)
 
 
 def test_get_ingestion_status_forbidden_for_non_owner(monkeypatch):
@@ -530,6 +613,32 @@ def test_admin_monthly_grant_skips_users_already_granted_for_period(monkeypatch)
     ]
 
 
+def test_admin_page_allowance_grant_returns_new_limit(monkeypatch):
+    from app.api.v1 import billing as billing_module
+
+    monkeypatch.setattr(
+        billing_module,
+        "PageAllowanceService",
+        lambda db: _AllowanceService(db, grant_limit=800),
+    )
+
+    response = asyncio.run(
+        billing_module.admin_grant_page_allowance(
+            request=billing_module.AdminPageAllowanceGrantRequest(
+                user_id=str(uuid4()),
+                amount=250,
+                memo="support top-up",
+            ),
+            db=_DummyDb(),
+            user=SimpleNamespace(id=uuid4(), external_id="admin@example.com"),
+        )
+    )
+
+    assert response.amount == 250
+    assert response.new_limit == 1050
+    assert response.remaining_pages == 800
+
+
 def test_async_llm_config_reports_missing_platform_fields(monkeypatch):
     monkeypatch.setattr(settings, "LLM_API_KEY", "", raising=False)
     monkeypatch.setattr(settings, "LLM_API_BASE_URL", "", raising=False)
@@ -688,6 +797,11 @@ def test_ingest_upload_uses_async_byok_escrow_and_bypasses_credits(monkeypatch):
     monkeypatch.setattr(ingest_module, "AsyncByokEscrowService", _EscrowService)
     monkeypatch.setattr(
         ingest_module, "AsyncByokEscrowRepository", lambda _db: object()
+    )
+    monkeypatch.setattr(
+        ingest_module,
+        "PageAllowanceService",
+        lambda db: _AllowanceService(db, reserve_result=1, remaining=800),
     )
     monkeypatch.setattr(
         "app.services.ingestion.queue.enqueue_ingestion_job", _fake_enqueue

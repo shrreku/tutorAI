@@ -800,7 +800,7 @@ def test_batched_persist_enrichments_updates_child_sub_chunks():
         section_heading="Conduction",
         page_start=1,
         page_end=1,
-        enrichment_metadata={"docling": {"source": "docling_hybrid"}},
+        enrichment_metadata={"parser": {"source": "llamaparse_markdown"}},
         pedagogy_role=None,
         difficulty=None,
     )
@@ -849,6 +849,6 @@ def test_batched_persist_enrichments_updates_child_sub_chunks():
     asyncio.run(service._persist_enrichments([parent_chunk], [enrichment]))
 
     assert parent_chunk.enrichment_metadata["metadata_level"] == "curriculum_prepare"
-    assert parent_chunk.enrichment_metadata["docling"]["source"] == "docling_hybrid"
+    assert parent_chunk.enrichment_metadata["parser"]["source"] == "llamaparse_markdown"
     assert child_sub_chunk.enrichment_metadata["metadata_level"] == "curriculum_prepare"
     assert child_sub_chunk.enrichment_metadata["concepts_taught"] == ["Conduction"]

@@ -28,6 +28,13 @@ class RetrieverProtocol(Protocol):
         top_k: int = 5,
     ) -> RetrievalResult: ...
 
+    async def resolve_explicit_concepts(
+        self,
+        resource_ids: list[Any],
+        student_message: str,
+        limit: int = 3,
+    ) -> list[str]: ...
+
 
 def _roles_for_step(step_type: str | None) -> list[str]:
     """Return preferred pedagogy roles for a step type.
@@ -178,6 +185,24 @@ def _build_retrieval_query(
     return query
 
 
+async def _resolve_student_explicit_concepts(
+    retriever: RetrieverProtocol,
+    resource_ids: list[str],
+    student_message: str,
+) -> list[str]:
+    if _is_thin_message(student_message):
+        return []
+    resolver = getattr(retriever, "resolve_explicit_concepts", None)
+    if not callable(resolver):
+        return []
+    try:
+        resolved = await resolver(resource_ids, student_message, limit=3)
+    except Exception:
+        logger.exception("Explicit concept resolution failed")
+        return []
+    return [str(concept).strip() for concept in (resolved or []) if str(concept).strip()]
+
+
 async def retrieve_knowledge(
     retriever: RetrieverProtocol,
     session: SessionWithResourceId,
@@ -226,12 +251,35 @@ async def retrieve_knowledge(
             raise ValueError(
                 f"Session scope {out_of_scope} is outside notebook scope {notebook_id}"
             )
+    explicit_concepts = await _resolve_student_explicit_concepts(
+        retriever,
+        scope_resource_ids,
+        student_message,
+    )
+    effective_target_concepts = list(target_concepts or [])
+    if explicit_concepts:
+        effective_target_concepts = explicit_concepts + [
+            concept
+            for concept in effective_target_concepts
+            if concept not in explicit_concepts
+        ]
+        effective_target_concepts = effective_target_concepts[:4]
+        if policy_output is not None:
+            policy_output.target_concepts = effective_target_concepts
+            directives = getattr(policy_output, "retrieval_directives", None) or {}
+            if not isinstance(directives, dict):
+                directives = {}
+            policy_output.retrieval_directives = {
+                **directives,
+                "focus": directives.get("focus") or "student_explicit",
+                "student_explicit_concepts": explicit_concepts,
+            }
     recent_chunk_ids = [
         str(cid) for cid in (plan.get("recent_evidence_chunk_ids") or []) if cid
     ]
     query = _build_retrieval_query(
         student_message=student_message,
-        target_concepts=target_concepts,
+        target_concepts=effective_target_concepts,
         step_type=step_type,
         step_goal=step_goal,
         objective_title=objective_title,
@@ -241,7 +289,8 @@ async def retrieve_knowledge(
     logger.debug("Retrieval query built (len=%d): %s", len(query), query[:200])
 
     ret_meta = {
-        "target_concepts": target_concepts,
+        "target_concepts": effective_target_concepts,
+        "explicit_concepts": explicit_concepts,
         "step_type": step_type,
         "pedagogy_roles": pedagogy_roles,
         "scope_type": resolved_scope.get("scope_type"),
@@ -264,7 +313,7 @@ async def retrieve_knowledge(
             resource_id=session.resource_id,
             resource_ids=scope_resource_ids,
             query=query,
-            target_concepts=target_concepts,
+            target_concepts=effective_target_concepts,
             pedagogy_roles=pedagogy_roles or None,
             exclude_chunk_ids=recent_chunk_ids,
             top_k=5,
@@ -292,7 +341,7 @@ async def retrieve_knowledge(
 
     retrieval_contract = build_retrieval_contract(
         query=query,
-        target_concepts=target_concepts,
+        target_concepts=effective_target_concepts,
         pedagogy_roles=pedagogy_roles,
         resource_ids=scope_resource_ids,
         scope_type=resolved_scope.get("scope_type") or "single_resource",

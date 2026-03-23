@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS chunk (
     page_end INTEGER,
     pedagogy_role VARCHAR(64),
     difficulty VARCHAR(32),
-    embedding vector(384),
+    embedding vector(1536),
     enrichment_metadata JSONB,
     embedding_model_id VARCHAR(128),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
@@ -37,6 +37,25 @@ CREATE TABLE IF NOT EXISTS chunk (
 );
 CREATE INDEX IF NOT EXISTS ix_chunk_resource_id ON chunk(resource_id);
 CREATE INDEX IF NOT EXISTS ix_chunk_resource_chunk_index ON chunk(resource_id, chunk_index);
+
+CREATE TABLE IF NOT EXISTS sub_chunk (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    parent_chunk_id UUID NOT NULL REFERENCES chunk(id) ON DELETE CASCADE,
+    resource_id UUID NOT NULL REFERENCES resource(id) ON DELETE CASCADE,
+    sub_index INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    char_start INTEGER NOT NULL,
+    char_end INTEGER NOT NULL,
+    page_start INTEGER,
+    page_end INTEGER,
+    enrichment_metadata JSONB,
+    embedding vector(1536),
+    embedding_model_id VARCHAR(128),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_sub_chunk_parent_sub ON sub_chunk(parent_chunk_id, sub_index);
+CREATE INDEX IF NOT EXISTS ix_sub_chunk_resource ON sub_chunk(resource_id);
 
 -- Create chunk_concept table
 CREATE TABLE IF NOT EXISTS chunk_concept (
@@ -174,6 +193,9 @@ CREATE TABLE IF NOT EXISTS user_profile (
     password_hash VARCHAR(256),
     global_mastery JSONB,
     preferences JSONB,
+    parse_page_limit INTEGER NOT NULL DEFAULT 800,
+    parse_page_used INTEGER NOT NULL DEFAULT 0,
+    parse_page_reserved INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL
 );
@@ -214,8 +236,8 @@ CREATE TABLE IF NOT EXISTS tutor_turn (
     mastery_before JSONB,
     mastery_after JSONB,
     rl_reward FLOAT,
-    rl_state_embedding vector(384),
-    rl_action_embedding vector(384),
+    rl_state_embedding vector(1536),
+    rl_action_embedding vector(1536),
     token_count INTEGER,
     latency_ms INTEGER,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() NOT NULL,
@@ -273,6 +295,7 @@ CREATE TABLE IF NOT EXISTS api_key (
 
 -- Create HNSW indexes for vector similarity search
 CREATE INDEX IF NOT EXISTS ix_chunk_embedding_hnsw ON chunk USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS ix_sub_chunk_embedding_hnsw ON sub_chunk USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS ix_tutor_turn_state_embedding_hnsw ON tutor_turn USING hnsw (rl_state_embedding vector_cosine_ops);
 
 -- Create alembic_version table to track migrations

@@ -532,6 +532,10 @@ class UserSettingsResponse(BaseModel):
     async_byok_escrow_enabled: bool = False
     async_byok_escrow_backend: Optional[str] = None
     async_byok_escrow_ttl_minutes: int = 0
+    parse_page_limit: int = 0
+    parse_page_used: int = 0
+    parse_page_reserved: int = 0
+    parse_page_remaining: int = 0
 
 
 class AsyncByokEscrowResponse(BaseModel):

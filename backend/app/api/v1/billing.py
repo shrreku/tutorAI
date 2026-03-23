@@ -21,6 +21,7 @@ from app.models.session import UserProfile
 from app.schemas.api import CreditEstimateRequest, CreditEstimateResponse
 from app.services.credits.meter import CreditMeter
 from app.services.email import send_email, build_alpha_invite_email
+from app.services.ingestion.page_allowance import PageAllowanceService
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 logger = logging.getLogger(__name__)
@@ -70,6 +71,19 @@ class AdminGrantResponse(BaseModel):
     new_balance: int
 
 
+class AdminPageAllowanceGrantRequest(BaseModel):
+    user_id: str
+    amount: int = Field(gt=0, le=settings.ADMIN_PAGE_ALLOWANCE_GRANT_MAX)
+    memo: str = Field(min_length=3, max_length=280)
+
+
+class AdminPageAllowanceGrantResponse(BaseModel):
+    user_id: str
+    amount: int
+    new_limit: int
+    remaining_pages: int
+
+
 class AdminUserSummaryResponse(BaseModel):
     id: str
     email: Optional[str] = None
@@ -80,12 +94,17 @@ class AdminUserSummaryResponse(BaseModel):
     lifetime_granted: int = 0
     lifetime_used: int = 0
     is_admin: bool = False
+    parse_page_limit: int = 0
+    parse_page_used: int = 0
+    parse_page_reserved: int = 0
+    parse_page_remaining: int = 0
 
 
 class AdminOverviewResponse(BaseModel):
     configured_admin_external_id: Optional[str] = None
     credits_enabled: bool
     default_monthly_grant: int = 0
+    default_page_allowance: int = 0
     current_grant_period: str
     users: list[AdminUserSummaryResponse] = []
 
@@ -183,7 +202,14 @@ async def get_balance(
     await meter.ensure_account(user.id)
 
     repo = CreditAccountRepository(db)
-    account = await repo.get_account(user.id)
+    reconcile = getattr(repo, "reconcile_account_projection", None)
+    account = (
+        await reconcile(user.id)
+        if callable(reconcile)
+        else await repo.get_account(user.id)
+    )
+    if account is not None and callable(reconcile):
+        await db.commit()
     if not account:
         return BalanceResponse(
             credits_enabled=True,
@@ -263,10 +289,20 @@ async def get_admin_overview(
         )
 
     rows = (await db.execute(query)).all()
+    repo = CreditAccountRepository(db)
+    corrected_accounts: dict[str, CreditAccount | None] = {}
+    reconcile = getattr(repo, "reconcile_account_projection", None)
+    if callable(reconcile):
+        for profile, _account in rows:
+            corrected_accounts[str(profile.id)] = await reconcile(profile.id)
+    if corrected_accounts and callable(reconcile):
+        await db.commit()
+    page_allowance = PageAllowanceService(db)
     return AdminOverviewResponse(
         configured_admin_external_id=get_configured_admin_external_id(),
         credits_enabled=settings.CREDITS_ENABLED,
         default_monthly_grant=settings.CREDITS_DEFAULT_MONTHLY_GRANT,
+        default_page_allowance=settings.INGESTION_DEFAULT_PAGE_ALLOWANCE,
         current_grant_period=CreditMeter.current_grant_period_key(),
         users=[
             AdminUserSummaryResponse(
@@ -275,10 +311,14 @@ async def get_admin_overview(
                 display_name=profile.display_name,
                 external_id=profile.external_id,
                 created_at=profile.created_at.isoformat() if profile.created_at else "",
-                balance=account.balance if account else 0,
-                lifetime_granted=account.lifetime_granted if account else 0,
-                lifetime_used=account.lifetime_used if account else 0,
+                balance=(corrected_accounts.get(str(profile.id)) or account).balance if (corrected_accounts.get(str(profile.id)) or account) else 0,
+                lifetime_granted=(corrected_accounts.get(str(profile.id)) or account).lifetime_granted if (corrected_accounts.get(str(profile.id)) or account) else 0,
+                lifetime_used=(corrected_accounts.get(str(profile.id)) or account).lifetime_used if (corrected_accounts.get(str(profile.id)) or account) else 0,
                 is_admin=is_admin_user(profile),
+                parse_page_limit=int(profile.parse_page_limit or 0),
+                parse_page_used=int(profile.parse_page_used or 0),
+                parse_page_reserved=int(profile.parse_page_reserved or 0),
+                parse_page_remaining=page_allowance.remaining_pages_for(profile),
             )
             for profile, account in rows
         ],
@@ -326,6 +366,35 @@ async def admin_grant(
         user_id=request.user_id,
         amount=request.amount,
         new_balance=account.balance if account else 0,
+    )
+
+
+@router.post(
+    "/admin/page-allowance/grant", response_model=AdminPageAllowanceGrantResponse
+)
+async def admin_grant_page_allowance(
+    request: AdminPageAllowanceGrantRequest,
+    db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(require_admin),
+):
+    import uuid as _uuid
+
+    target_user_id = _uuid.UUID(request.user_id)
+    allowance_service = PageAllowanceService(db)
+    updated_user = await allowance_service.grant_pages(target_user_id, request.amount)
+    await db.commit()
+    logger.warning(
+        "Admin page allowance grant issued by %s to user %s for %s pages (%s)",
+        user.external_id,
+        request.user_id,
+        request.amount,
+        request.memo,
+    )
+    return AdminPageAllowanceGrantResponse(
+        user_id=request.user_id,
+        amount=request.amount,
+        new_limit=int(updated_user.parse_page_limit or 0),
+        remaining_pages=allowance_service.remaining_pages_for(updated_user),
     )
 
 

@@ -53,6 +53,7 @@ from app.services.ingestion.enricher import ChunkEnricher
 from app.services.ingestion.ontology_extractor import OntologyExtractor
 from app.services.ingestion.pipeline import IngestionPipeline
 from app.services.ingestion.pipeline_support import update_job
+from app.services.ingestion.page_allowance import PageAllowanceService
 from app.services.llm.factory import (
     create_llm_provider,
     get_missing_platform_llm_config,
@@ -99,6 +100,16 @@ def _get_curriculum_billing_state(job) -> dict:
     if not isinstance(curriculum_billing, dict):
         curriculum_billing = {}
     return curriculum_billing
+
+
+def _get_page_allowance_state(job) -> dict:
+    metrics = getattr(job, "metrics", None) or {}
+    if not isinstance(metrics, dict):
+        metrics = {}
+    page_allowance = metrics.get("page_allowance")
+    if not isinstance(page_allowance, dict):
+        page_allowance = {}
+    return page_allowance
 
 
 def _estimate_curriculum_from_job(*, meter: CreditMeter, resource, job) -> dict:
@@ -457,6 +468,24 @@ async def reconcile_orphaned_jobs() -> dict[str, int]:
                     },
                 }
 
+            page_allowance = _get_page_allowance_state(job)
+            reserved_pages = int(page_allowance.get("reserved_pages") or 0)
+            if (
+                owner_user_id
+                and reserved_pages > 0
+                and page_allowance.get("status") == "reserved"
+            ):
+                allowance_service = PageAllowanceService(db)
+                await allowance_service.release_pages(owner_user_id, reserved_pages)
+                job.metrics = {
+                    **job.metrics,
+                    "page_allowance": {
+                        **page_allowance,
+                        "status": "released",
+                        "release_reason": "worker_restart",
+                    },
+                }
+
             curriculum_billing = _get_curriculum_billing_state(job)
             if (
                 owner_user_id
@@ -731,6 +760,29 @@ async def process_job(payload: dict, attempt: int = 1) -> bool:
                                 job_id,
                                 exc_info=True,
                             )
+                page_allowance = _get_page_allowance_state(job)
+                reserved_pages = int(page_allowance.get("reserved_pages") or 0)
+                if reserved_pages > 0 and page_allowance.get("status") == "reserved":
+                    allowance_service = PageAllowanceService(db)
+                    actual_pages = int(
+                        ((result if isinstance(result, dict) else {}).get("document") or {}).get("page_count_actual")
+                        or page_allowance.get("estimated_pages")
+                        or reserved_pages
+                    )
+                    charged_pages = await allowance_service.finalize_pages(
+                        job.owner_user_id,
+                        actual_pages,
+                        reserved_pages,
+                    )
+                    job.metrics = {
+                        **(job.metrics or {}),
+                        "page_allowance": {
+                            **page_allowance,
+                            "actual_pages": actual_pages,
+                            "charged_pages": charged_pages,
+                            "status": "finalized",
+                        },
+                    }
                 if escrow_id:
                     escrow_service = AsyncByokEscrowService(
                         AsyncByokEscrowRepository(db)
@@ -819,6 +871,7 @@ async def process_job(payload: dict, attempt: int = 1) -> bool:
                         if j:
                             billing = _get_billing_state(j)
                             curriculum_billing = _get_curriculum_billing_state(j)
+                            page_allowance = _get_page_allowance_state(j)
                             async_byok = _get_async_byok_state(j)
                             reserved_credits = int(billing.get("reserved_credits") or 0)
                             if (
@@ -834,6 +887,24 @@ async def process_job(payload: dict, attempt: int = 1) -> bool:
                                     **(j.metrics or {}),
                                     "billing": {
                                         **billing,
+                                        "status": "released",
+                                        "release_reason": "worker_failure",
+                                    },
+                                }
+                            reserved_pages = int(page_allowance.get("reserved_pages") or 0)
+                            if (
+                                j.owner_user_id
+                                and reserved_pages > 0
+                                and page_allowance.get("status") == "reserved"
+                            ):
+                                allowance_service = PageAllowanceService(db2)
+                                await allowance_service.release_pages(
+                                    j.owner_user_id, reserved_pages
+                                )
+                                j.metrics = {
+                                    **(j.metrics or {}),
+                                    "page_allowance": {
+                                        **page_allowance,
                                         "status": "released",
                                         "release_reason": "worker_failure",
                                     },

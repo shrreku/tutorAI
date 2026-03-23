@@ -6,6 +6,7 @@ deferred to later job families.
 """
 
 import logging
+import re
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -27,11 +28,11 @@ from app.db.repositories.resource_artifact_repo import ResourceArtifactRepositor
 from app.services.llm.base import BaseLLMProvider
 from app.services.embedding.base import BaseEmbeddingProvider
 from app.services.storage.base import StorageProvider
-from app.services.ingestion.docling_adapter import (
-    DoclingAdapter,
-    DoclingConversionResult,
+from app.services.ingestion.llamaparse_adapter import (
+    LlamaParseAdapter,
+    LlamaParseConversionResult,
 )
-from app.services.ingestion.docling_chunker import DoclingChunker, DoclingChunkingResult
+from app.services.ingestion.section_chunker import SectionChunker, SectionChunkingResult
 from app.services.ingestion.sub_chunker import SubChunker
 from app.services.ingestion.ingestion_types import ChunkData, SectionData, token_len
 from app.services.ingestion.resource_profile import build_resource_profile
@@ -48,6 +49,15 @@ logger = logging.getLogger(__name__)
 PIPELINE_VERSION = "2.0.0"
 CORE_CHECKPOINT_ARTIFACT_KIND = "core_ingestion_checkpoint"
 CORE_CHECKPOINT_VERSION = "1.0"
+_RETRIEVAL_ARTIFACT_PATTERNS = (
+    re.compile(r"\bfull[- ]page screenshot\b", re.IGNORECASE),
+    re.compile(r"\bnavigation symbols?\b", re.IGNORECASE),
+    re.compile(r"\bbeamer\b", re.IGNORECASE),
+    re.compile(r"\bswitching between slides\b", re.IGNORECASE),
+    re.compile(r"\bimage contains no data to transcribe\b", re.IGNORECASE),
+    re.compile(r"\bno data to transcribe into a table\b", re.IGNORECASE),
+    re.compile(r"\bscreenshot confirms\b", re.IGNORECASE),
+)
 
 
 class IngestionStage(str, Enum):
@@ -74,10 +84,9 @@ class IngestionPipeline:
         self.embedding = embedding_provider
         self.storage = storage_provider
 
-        self.docling_adapter = DoclingAdapter()
-        self.docling_chunker = DoclingChunker(
+        self.parser_adapter = LlamaParseAdapter()
+        self.section_chunker = SectionChunker(
             embedding_model_id=embedding_provider.model_id,
-            use_contextualized_text=settings.INGESTION_DOCLING_CONTEXTUALIZED_TEXT,
         )
         self.sub_chunker = SubChunker(
             target_tokens=448,
@@ -307,6 +316,12 @@ class IngestionPipeline:
             "stages": {},
         }
 
+        logger.info(
+            "Starting ingestion pipeline for resource %s job %s",
+            resource_id,
+            job_id,
+        )
+
         try:
             # Update job status
             await self._update_job_stage(job_id, IngestionStage.PARSE, 0)
@@ -426,8 +441,26 @@ class IngestionPipeline:
             # Stage 3: Sub-chunk for retrieval + embed
             logger.info(f"Stage 3: Sub-chunking + embedding for resource {resource_id}")
             sub_chunking_result = self.sub_chunker.sub_chunk(chunks)
-            sub_chunks = sub_chunking_result.sub_chunks
+            generated_sub_chunks = sub_chunking_result.sub_chunks
             metrics["stages"]["sub_chunk"] = sub_chunking_result.metadata
+            retrieval_eligible_parent_indices = {
+                index
+                for index, enrichment in enrichment_by_chunk_index.items()
+                if ((enrichment.get("retrieval") or {}).get("eligible") is not False)
+            }
+            sub_chunks = [
+                sub_chunk
+                for sub_chunk in generated_sub_chunks
+                if sub_chunk.parent_chunk_index in retrieval_eligible_parent_indices
+            ]
+            filtered_sub_chunk_count = len(generated_sub_chunks) - len(sub_chunks)
+            metrics["stages"]["sub_chunk"]["generated"] = len(generated_sub_chunks)
+            metrics["stages"]["sub_chunk"]["indexed"] = len(sub_chunks)
+            metrics["stages"]["sub_chunk"]["filtered_out"] = filtered_sub_chunk_count
+            metrics["stages"]["sub_chunk"]["filtered_parent_count"] = max(
+                0,
+                len(enrichment_by_chunk_index) - len(retrieval_eligible_parent_indices),
+            )
 
             if sub_chunks:
                 batch_size = max(1, int(settings.INGESTION_EMBED_BATCH_SIZE or 0))
@@ -465,6 +498,13 @@ class IngestionPipeline:
                 chunking_metadata=chunking_metadata,
             )
             metrics["stages"]["persist"]["artifacts_created"] = artifacts_created
+            metrics["kb_summary"] = self._build_core_kb_summary(
+                chunks,
+                sub_chunks,
+                enrichments,
+                artifacts_created,
+                filtered_sub_chunk_count,
+            )
 
             metrics["quality"] = compute_quality_metrics(
                 resource_id=resource_id,
@@ -555,7 +595,7 @@ class IngestionPipeline:
 
     def _build_document_metrics(
         self,
-        parse_result: DoclingConversionResult,
+        parse_result: LlamaParseConversionResult,
         chunks: list[ChunkData],
     ) -> dict:
         page_numbers: set[int] = set()
@@ -576,11 +616,11 @@ class IngestionPipeline:
             if chunk.page_end is not None:
                 page_numbers.add(chunk.page_end)
 
-        docling_pages = ((parse_result.metadata or {}).get("docling") or {}).get(
+        parser_pages = ((parse_result.metadata or {}).get("llamaparse") or {}).get(
             "pages"
         )
-        if isinstance(docling_pages, list):
-            page_count_actual = max(len(docling_pages), len(page_numbers))
+        if isinstance(parser_pages, list):
+            page_count_actual = max(len(parser_pages), len(page_numbers))
         else:
             page_count_actual = len(page_numbers)
 
@@ -599,13 +639,19 @@ class IngestionPipeline:
         )
         return result.scalar_one_or_none()
 
-    async def _run_parse_stage(self, resource: Resource) -> DoclingConversionResult:
+    async def _run_parse_stage(self, resource: Resource) -> LlamaParseConversionResult:
         """Convert source file with Docling and normalize extracted sections."""
         if not resource.file_path_or_uri:
             raise ValueError(f"Resource {resource.id} has no source path/URI")
 
         source = resource.file_path_or_uri
         temp_path: Optional[Path] = None
+
+        logger.info(
+            "Starting LlamaParse stage for resource %s source=%s",
+            resource.id,
+            source,
+        )
 
         try:
             parsed = urlparse(source)
@@ -622,8 +668,13 @@ class IngestionPipeline:
                     handle.write(file_bytes)
                     temp_path = Path(handle.name)
                 source = str(temp_path)
+                logger.info(
+                    "Materialized S3 source for LlamaParse resource %s to temp file %s",
+                    resource.id,
+                    source,
+                )
 
-            conversion = await self.docling_adapter.convert(source)
+            conversion = await self.parser_adapter.convert(source)
         finally:
             if temp_path is not None:
                 try:
@@ -634,17 +685,21 @@ class IngestionPipeline:
                     )
 
         if not conversion.sections:
-            raise ValueError("Docling conversion produced no extractable sections")
+            raise ValueError("LlamaParse conversion produced no extractable sections")
+        logger.info(
+            "Completed LlamaParse stage for resource %s parser_job_id=%s sections=%s status=%s",
+            resource.id,
+            conversion.parser_job_id,
+            len(conversion.sections),
+            conversion.status,
+        )
         return conversion
 
     async def _run_chunk_stage(
-        self, parse_result: DoclingConversionResult
-    ) -> DoclingChunkingResult:
+        self, parse_result: LlamaParseConversionResult
+    ) -> SectionChunkingResult:
         """Chunk converted Docling document with HybridChunker default."""
-        chunking_result = self.docling_chunker.chunk(
-            docling_document=parse_result.docling_document,
-            sections=parse_result.sections,
-        )
+        chunking_result = self.section_chunker.chunk(sections=parse_result.sections)
         return chunking_result
 
     async def _run_graph_stage(self, resource_id: uuid.UUID) -> dict:
@@ -679,6 +734,48 @@ class IngestionPipeline:
         }
         return build_result
 
+    def _build_retrieval_metadata(self, chunk: ChunkData) -> dict:
+        text = chunk.text or ""
+        heading = chunk.section_heading or ""
+        combined = "\n".join(part for part in [heading, text] if part)
+        pattern_hits = [
+            pattern.pattern
+            for pattern in _RETRIEVAL_ARTIFACT_PATTERNS
+            if pattern.search(combined)
+        ]
+        alpha_chars = sum(1 for char in combined if char.isalpha())
+        eligible = not pattern_hits and not (
+            len(combined) >= 120 and alpha_chars <= 20
+        )
+        return {
+            "eligible": eligible,
+            "artifact_noise": not eligible,
+            "artifact_signals": pattern_hits,
+        }
+
+    def _build_core_kb_summary(
+        self,
+        chunks: list[ChunkData],
+        indexed_sub_chunks: list,
+        enrichments: list[dict],
+        artifacts_created: int,
+        filtered_sub_chunk_count: int,
+    ) -> dict:
+        retrieval_eligible_parents = sum(
+            1
+            for enrichment in enrichments
+            if ((enrichment.get("retrieval") or {}).get("eligible") is not False)
+        )
+        return {
+            "phase": "core_ready",
+            "parent_chunks": len(chunks),
+            "retrieval_eligible_parent_chunks": retrieval_eligible_parents,
+            "retrieval_filtered_parent_chunks": len(chunks) - retrieval_eligible_parents,
+            "indexed_sub_chunks": len(indexed_sub_chunks),
+            "retrieval_filtered_sub_chunks": filtered_sub_chunk_count,
+            "resource_profile_artifacts": artifacts_created,
+        }
+
     def _build_lightweight_enrichments(self, chunks: list[ChunkData]) -> list[dict]:
         """Build minimal deterministic per-chunk metadata for core ingestion."""
         enrichments: list[dict] = []
@@ -707,6 +804,7 @@ class IngestionPipeline:
                     "prereq_hints": [],
                     "pedagogy_role": pedagogy_role,
                     "difficulty": difficulty,
+                    "retrieval": self._build_retrieval_metadata(chunk),
                     "skipped": False,
                     "metadata_level": "core_lightweight",
                 }
@@ -721,18 +819,18 @@ class IngestionPipeline:
         chunking_metadata: Optional[dict] = None,
     ) -> dict[int, "uuid.UUID"]:
         """Save parent chunks (no embedding). Returns chunk_index → chunk_id map."""
-        from app.services.ingestion.docling_adapter import DoclingAdapter
+        from app.services.ingestion.llamaparse_adapter import LlamaParseAdapter
 
         chunk_id_map: dict[int, uuid.UUID] = {}
 
         for i, (chunk, enrichment) in enumerate(zip(chunks, enrichments)):
             enrichment_payload = dict(enrichment)
-            enrichment_payload["docling"] = {
+            enrichment_payload["parser"] = {
+                "provider": "llamaparse",
                 "chunk_provenance": chunk.metadata,
                 "chunking": chunking_metadata or {},
             }
-            # Ensure entire payload is JSON-serializable (defense-in-depth)
-            enrichment_payload = DoclingAdapter._make_json_safe(enrichment_payload)
+            enrichment_payload = LlamaParseAdapter._make_json_safe(enrichment_payload)
             db_chunk = Chunk(
                 id=uuid.uuid4(),
                 resource_id=resource_id,
