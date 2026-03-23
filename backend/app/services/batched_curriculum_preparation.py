@@ -672,10 +672,14 @@ class BatchedCurriculumPreparationService:
         return {
             "phase": "curriculum_ready",
             "parent_chunks": await _count(
-                select(func.count()).select_from(Chunk).where(Chunk.resource_id == resource_id)
+                select(func.count())
+                .select_from(Chunk)
+                .where(Chunk.resource_id == resource_id)
             ),
             "sub_chunks": await _count(
-                select(func.count()).select_from(SubChunk).where(SubChunk.resource_id == resource_id)
+                select(func.count())
+                .select_from(SubChunk)
+                .where(SubChunk.resource_id == resource_id)
             ),
             "concept_stats": await _count(
                 select(func.count())
@@ -693,7 +697,9 @@ class BatchedCurriculumPreparationService:
                 .where(ResourceConceptGraph.resource_id == resource_id)
             ),
             "bundles": await _count(
-                select(func.count()).select_from(ResourceBundle).where(ResourceBundle.resource_id == resource_id)
+                select(func.count())
+                .select_from(ResourceBundle)
+                .where(ResourceBundle.resource_id == resource_id)
             ),
             "topic_bundles": await _count(
                 select(func.count())
@@ -701,7 +707,9 @@ class BatchedCurriculumPreparationService:
                 .where(ResourceTopicBundle.resource_id == resource_id)
             ),
             "topics": await _count(
-                select(func.count()).select_from(ResourceTopic).where(ResourceTopic.resource_id == resource_id)
+                select(func.count())
+                .select_from(ResourceTopic)
+                .where(ResourceTopic.resource_id == resource_id)
             ),
             "learning_objectives": await _count(
                 select(func.count())

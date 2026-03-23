@@ -76,7 +76,9 @@ def test_page_allowance_finalize_charges_max_of_actual_and_reserved():
     db = _Db(user)
     service = PageAllowanceService(db)
 
-    charged = asyncio.run(service.finalize_pages(user.id, actual_pages=9, reserved_pages=6))
+    charged = asyncio.run(
+        service.finalize_pages(user.id, actual_pages=9, reserved_pages=6)
+    )
 
     assert charged == 9
     assert db.flushed >= 1
@@ -100,7 +102,9 @@ def test_page_allowance_release_caps_to_reserved_balance():
 
 
 def test_page_allowance_remaining_pages_never_negative():
-    user = SimpleNamespace(parse_page_limit=10, parse_page_used=9, parse_page_reserved=5)
+    user = SimpleNamespace(
+        parse_page_limit=10, parse_page_used=9, parse_page_reserved=5
+    )
 
     remaining = PageAllowanceService.remaining_pages_for(user)
 

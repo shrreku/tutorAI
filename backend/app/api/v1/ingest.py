@@ -181,18 +181,27 @@ def _estimate_retry_credits(
 def _estimate_retry_pages(resource: Resource, latest_job: IngestionJob | None) -> int:
     latest_metrics = (latest_job.metrics or {}) if latest_job else {}
     page_allowance = (
-        latest_metrics.get("page_allowance") if isinstance(latest_metrics, dict) else None
+        latest_metrics.get("page_allowance")
+        if isinstance(latest_metrics, dict)
+        else None
     )
     if isinstance(page_allowance, dict) and page_allowance.get("estimated_pages"):
         return max(int(page_allowance.get("estimated_pages") or 0), 1)
 
-    document = latest_metrics.get("document") if isinstance(latest_metrics, dict) else None
+    document = (
+        latest_metrics.get("document") if isinstance(latest_metrics, dict) else None
+    )
     if isinstance(document, dict) and document.get("page_count_actual"):
         return max(int(document.get("page_count_actual") or 0), 1)
 
-    if resource.file_path_or_uri and urlparse(resource.file_path_or_uri).scheme in {"", "file"}:
+    if resource.file_path_or_uri and urlparse(resource.file_path_or_uri).scheme in {
+        "",
+        "file",
+    }:
         try:
-            return estimate_page_count_from_path(resource.file_path_or_uri, resource.filename)
+            return estimate_page_count_from_path(
+                resource.file_path_or_uri, resource.filename
+            )
         except OSError:
             return 1
     return 1
@@ -603,7 +612,8 @@ async def _continue_background_curriculum_preparation(
             "release_reason": None,
         },
         "curriculum_preparation": summary,
-        "kb_summary": summary.get("kb_summary") or (job.metrics or {}).get("kb_summary"),
+        "kb_summary": summary.get("kb_summary")
+        or (job.metrics or {}).get("kb_summary"),
     }
     await update_job(
         db,
@@ -850,7 +860,9 @@ async def upload_resource(
     estimated_credits = 0
     reserved_credits = 0
     reserved_pages = 0
-    reserved_page_result = await page_allowance_service.reserve_pages(user.id, estimated_pages)
+    reserved_page_result = await page_allowance_service.reserve_pages(
+        user.id, estimated_pages
+    )
     if reserved_page_result is None:
         remaining_pages = page_allowance_service.remaining_pages_for(user)
         raise HTTPException(
@@ -1099,7 +1111,9 @@ async def retry_ingestion(
     estimated_credits = 0
     reserved_credits = 0
     reserved_pages = 0
-    reserved_page_result = await page_allowance_service.reserve_pages(user.id, estimated_pages)
+    reserved_page_result = await page_allowance_service.reserve_pages(
+        user.id, estimated_pages
+    )
     if reserved_page_result is None:
         remaining_pages = page_allowance_service.remaining_pages_for(user)
         raise HTTPException(
@@ -1397,7 +1411,10 @@ async def run_ingestion_pipeline(
                 if reserved_pages > 0 and page_allowance.get("status") == "reserved":
                     allowance_service = PageAllowanceService(db)
                     actual_pages = int(
-                        ((result if isinstance(result, dict) else {}).get("document") or {}).get("page_count_actual")
+                        (
+                            (result if isinstance(result, dict) else {}).get("document")
+                            or {}
+                        ).get("page_count_actual")
                         or page_allowance.get("estimated_pages")
                         or reserved_pages
                     )

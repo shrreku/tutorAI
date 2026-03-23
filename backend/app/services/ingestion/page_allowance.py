@@ -38,7 +38,9 @@ class PageAllowanceService:
             return None
         return await self.ensure_user_defaults(user)
 
-    async def reserve_pages(self, user_id: uuid.UUID, estimated_pages: int) -> Optional[int]:
+    async def reserve_pages(
+        self, user_id: uuid.UUID, estimated_pages: int
+    ) -> Optional[int]:
         estimated_pages = max(int(estimated_pages or 0), 0)
         user = await self.get_user(user_id)
         if user is None:
@@ -52,9 +54,16 @@ class PageAllowanceService:
             update(UserProfile)
             .where(
                 UserProfile.id == user_id,
-                (UserProfile.parse_page_limit - UserProfile.parse_page_used - UserProfile.parse_page_reserved) >= estimated_pages,
+                (
+                    UserProfile.parse_page_limit
+                    - UserProfile.parse_page_used
+                    - UserProfile.parse_page_reserved
+                )
+                >= estimated_pages,
             )
-            .values(parse_page_reserved=UserProfile.parse_page_reserved + estimated_pages)
+            .values(
+                parse_page_reserved=UserProfile.parse_page_reserved + estimated_pages
+            )
         )
         await self.db.flush()
         if not result.rowcount:
@@ -95,7 +104,9 @@ class PageAllowanceService:
         await self.db.execute(
             update(UserProfile)
             .where(UserProfile.id == user_id)
-            .values(parse_page_reserved=UserProfile.parse_page_reserved - release_amount)
+            .values(
+                parse_page_reserved=UserProfile.parse_page_reserved - release_amount
+            )
         )
         await self.db.flush()
 

@@ -20,9 +20,28 @@ def estimate_page_count_from_bytes(filename: str, file_bytes: bytes) -> int:
             return _count_word_pages(file_bytes)
         if extension in {".xlsx", ".xls"}:
             return _count_workbook_pages(file_bytes)
-        if extension in {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tif", ".tiff", ".svg"}:
+        if extension in {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".gif",
+            ".bmp",
+            ".webp",
+            ".tif",
+            ".tiff",
+            ".svg",
+        }:
             return 1
-        if extension in {".md", ".txt", ".html", ".htm", ".xml", ".csv", ".tsv", ".epub"}:
+        if extension in {
+            ".md",
+            ".txt",
+            ".html",
+            ".htm",
+            ".xml",
+            ".csv",
+            ".tsv",
+            ".epub",
+        }:
             return _estimate_textual_pages(file_bytes)
     except Exception:
         return _heuristic_fallback(file_bytes, extension)

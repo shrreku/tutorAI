@@ -311,9 +311,19 @@ async def get_admin_overview(
                 display_name=profile.display_name,
                 external_id=profile.external_id,
                 created_at=profile.created_at.isoformat() if profile.created_at else "",
-                balance=(corrected_accounts.get(str(profile.id)) or account).balance if (corrected_accounts.get(str(profile.id)) or account) else 0,
-                lifetime_granted=(corrected_accounts.get(str(profile.id)) or account).lifetime_granted if (corrected_accounts.get(str(profile.id)) or account) else 0,
-                lifetime_used=(corrected_accounts.get(str(profile.id)) or account).lifetime_used if (corrected_accounts.get(str(profile.id)) or account) else 0,
+                balance=(corrected_accounts.get(str(profile.id)) or account).balance
+                if (corrected_accounts.get(str(profile.id)) or account)
+                else 0,
+                lifetime_granted=(
+                    corrected_accounts.get(str(profile.id)) or account
+                ).lifetime_granted
+                if (corrected_accounts.get(str(profile.id)) or account)
+                else 0,
+                lifetime_used=(
+                    corrected_accounts.get(str(profile.id)) or account
+                ).lifetime_used
+                if (corrected_accounts.get(str(profile.id)) or account)
+                else 0,
                 is_admin=is_admin_user(profile),
                 parse_page_limit=int(profile.parse_page_limit or 0),
                 parse_page_used=int(profile.parse_page_used or 0),

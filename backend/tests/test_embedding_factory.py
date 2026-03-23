@@ -5,7 +5,10 @@ import pytest
 
 import app.services.embedding.factory as factory_module
 import app.services.embedding.remote_provider as remote_provider_module
-from app.services.embedding.factory import MockEmbeddingProvider, create_embedding_provider
+from app.services.embedding.factory import (
+    MockEmbeddingProvider,
+    create_embedding_provider,
+)
 from app.services.embedding.remote_provider import RemoteEmbeddingProvider
 
 
@@ -96,14 +99,14 @@ def test_create_embedding_provider_rejects_local_backend():
         EMBEDDING_API_BASE_URL=None,
     )
 
-    with pytest.raises(ValueError, match="Local embedding providers are no longer supported"):
+    with pytest.raises(
+        ValueError, match="Local embedding providers are no longer supported"
+    ):
         create_embedding_provider(config)
 
 
 def test_remote_gemini_single_embed_uses_dimension_override(monkeypatch):
-    dummy_client = _DummyAsyncClient(
-        [{"embedding": {"values": [0.1, 0.2, 0.3, 0.4]}}]
-    )
+    dummy_client = _DummyAsyncClient([{"embedding": {"values": [0.1, 0.2, 0.3, 0.4]}}])
     monkeypatch.setattr(
         remote_provider_module,
         "httpx",

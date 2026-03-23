@@ -200,7 +200,9 @@ async def _resolve_student_explicit_concepts(
     except Exception:
         logger.exception("Explicit concept resolution failed")
         return []
-    return [str(concept).strip() for concept in (resolved or []) if str(concept).strip()]
+    return [
+        str(concept).strip() for concept in (resolved or []) if str(concept).strip()
+    ]
 
 
 async def retrieve_knowledge(

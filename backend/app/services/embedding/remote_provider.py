@@ -110,7 +110,9 @@ class RemoteEmbeddingProvider(BaseEmbeddingProvider):
         response.raise_for_status()
         payload = response.json()
         items = payload.get("embeddings") or []
-        return [self._coerce_embedding((item or {}).get("values") or []) for item in items]
+        return [
+            self._coerce_embedding((item or {}).get("values") or []) for item in items
+        ]
 
     async def _embed_openrouter(self, texts: list[str]) -> list[list[float]]:
         headers = {
@@ -130,7 +132,10 @@ class RemoteEmbeddingProvider(BaseEmbeddingProvider):
         response.raise_for_status()
         payload = response.json()
         items = payload.get("data") or []
-        return [self._coerce_embedding((item or {}).get("embedding") or []) for item in items]
+        return [
+            self._coerce_embedding((item or {}).get("embedding") or [])
+            for item in items
+        ]
 
     def _coerce_embedding(self, values: list[Any]) -> list[float]:
         return [float(value) for value in values]

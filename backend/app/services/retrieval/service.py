@@ -150,10 +150,14 @@ class RetrievalService:
         return score
 
     def _looks_like_artifact(self, text: str, section_heading: Optional[str]) -> bool:
-        combined = "\n".join(part for part in [section_heading or "", text or ""] if part)
+        combined = "\n".join(
+            part for part in [section_heading or "", text or ""] if part
+        )
         if not combined.strip():
             return True
-        pattern_hits = sum(1 for pattern in _ARTIFACT_PATTERNS if pattern.search(combined))
+        pattern_hits = sum(
+            1 for pattern in _ARTIFACT_PATTERNS if pattern.search(combined)
+        )
         if pattern_hits >= 1:
             return True
         alpha_chars = sum(1 for char in combined if char.isalpha())
@@ -220,7 +224,9 @@ class RetrievalService:
 
         result = await self.db.execute(
             select(ResourceConceptStats.concept_id).where(
-                ResourceConceptStats.resource_id.in_(list(dict.fromkeys(scoped_resource_ids)))
+                ResourceConceptStats.resource_id.in_(
+                    list(dict.fromkeys(scoped_resource_ids))
+                )
             )
         )
         concept_ids = [
@@ -622,7 +628,9 @@ class RetrievalService:
                             else row.page_end
                         )
                         seen_parents[parent_id].snippet = row.sub_text[:200]
-                        seen_parents[parent_id].enrichment_metadata = enrichment_metadata
+                        seen_parents[
+                            parent_id
+                        ].enrichment_metadata = enrichment_metadata
                     continue
 
                 seen_parents[parent_id] = RetrievedChunk(
@@ -631,10 +639,14 @@ class RetrievalService:
                     section_heading=row.section_heading,
                     chunk_index=row.chunk_index,
                     page_start=(
-                        row.sub_page_start if row.sub_page_start is not None else row.page_start
+                        row.sub_page_start
+                        if row.sub_page_start is not None
+                        else row.page_start
                     ),
                     page_end=(
-                        row.sub_page_end if row.sub_page_end is not None else row.page_end
+                        row.sub_page_end
+                        if row.sub_page_end is not None
+                        else row.page_end
                     ),
                     pedagogy_role=row.pedagogy_role,
                     difficulty=row.difficulty,

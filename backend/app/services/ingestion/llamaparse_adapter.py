@@ -34,7 +34,9 @@ class LlamaParseAdapter:
         self._base_url = settings.LLAMAPARSE_API_BASE_URL.rstrip("/")
         self._tier = (settings.LLAMAPARSE_TIER or "agentic_plus").strip()
         self._version = (settings.LLAMAPARSE_VERSION or "latest").strip()
-        self._poll_interval_s = max(float(settings.LLAMAPARSE_POLL_INTERVAL_S or 2.0), 0.25)
+        self._poll_interval_s = max(
+            float(settings.LLAMAPARSE_POLL_INTERVAL_S or 2.0), 0.25
+        )
         self._poll_timeout_s = max(int(settings.LLAMAPARSE_POLL_TIMEOUT_S or 900), 30)
 
     async def convert(self, source: str) -> LlamaParseConversionResult:
@@ -150,7 +152,9 @@ class LlamaParseAdapter:
         )
         return job_id
 
-    async def _start_parse_for_url(self, client: httpx.AsyncClient, source_url: str) -> str:
+    async def _start_parse_for_url(
+        self, client: httpx.AsyncClient, source_url: str
+    ) -> str:
         return await self._start_parse(client, {"source_url": source_url})
 
     async def _start_parse(
@@ -201,7 +205,9 @@ class LlamaParseAdapter:
                 or "PENDING"
             ).upper()
             if status != last_status:
-                logger.info("LlamaParse poll status: job_id=%s status=%s", job_id, status)
+                logger.info(
+                    "LlamaParse poll status: job_id=%s status=%s", job_id, status
+                )
                 last_status = status
             if status == "COMPLETED":
                 return last_payload
@@ -332,7 +338,9 @@ class LlamaParseAdapter:
                     or page_entry.get("page")
                     or page_entry.get("number")
                 )
-                page_markdown = page_entry.get("markdown") or page_entry.get("text") or ""
+                page_markdown = (
+                    page_entry.get("markdown") or page_entry.get("text") or ""
+                )
                 if not isinstance(page_markdown, str) or not page_markdown.strip():
                     continue
                 page_sections = split_markdown_sections(page_markdown)
@@ -385,7 +393,9 @@ class LlamaParseAdapter:
                     continue
                 sections.append(
                     SectionData(
-                        heading=f"Page {page_number}" if page_number is not None else None,
+                        heading=f"Page {page_number}"
+                        if page_number is not None
+                        else None,
                         page_start=page_number,
                         page_end=page_number,
                         text=page_text.strip(),
@@ -394,7 +404,9 @@ class LlamaParseAdapter:
                 )
         return sections
 
-    def _extract_page_summaries(self, result_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    def _extract_page_summaries(
+        self, result_payload: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         summaries: list[dict[str, Any]] = []
         page_sources = []
         for field_name in ("markdown", "text", "items"):
@@ -412,14 +424,20 @@ class LlamaParseAdapter:
                 )
                 if page_number is None:
                     continue
-                page_summary = page_map.setdefault(page_number, {"page_number": page_number})
+                page_summary = page_map.setdefault(
+                    page_number, {"page_number": page_number}
+                )
                 if source_name == "markdown":
-                    page_summary["has_markdown"] = bool(entry.get("markdown") or entry.get("text"))
+                    page_summary["has_markdown"] = bool(
+                        entry.get("markdown") or entry.get("text")
+                    )
                 elif source_name == "text":
                     page_summary["has_text"] = bool(entry.get("text"))
                 elif source_name == "items":
                     items = entry.get("items")
-                    page_summary["item_count"] = len(items) if isinstance(items, list) else 0
+                    page_summary["item_count"] = (
+                        len(items) if isinstance(items, list) else 0
+                    )
         for page_number in sorted(page_map):
             summaries.append(page_map[page_number])
         return summaries
@@ -479,7 +497,9 @@ class LlamaParseAdapter:
         if isinstance(obj, (set, frozenset)):
             return [LlamaParseAdapter._make_json_safe(v) for v in sorted(obj, key=str)]
         if isinstance(obj, dict):
-            return {str(k): LlamaParseAdapter._make_json_safe(v) for k, v in obj.items()}
+            return {
+                str(k): LlamaParseAdapter._make_json_safe(v) for k, v in obj.items()
+            }
         if isinstance(obj, (list, tuple)):
             return [LlamaParseAdapter._make_json_safe(v) for v in obj]
         if hasattr(obj, "value"):

@@ -765,7 +765,10 @@ async def process_job(payload: dict, attempt: int = 1) -> bool:
                 if reserved_pages > 0 and page_allowance.get("status") == "reserved":
                     allowance_service = PageAllowanceService(db)
                     actual_pages = int(
-                        ((result if isinstance(result, dict) else {}).get("document") or {}).get("page_count_actual")
+                        (
+                            (result if isinstance(result, dict) else {}).get("document")
+                            or {}
+                        ).get("page_count_actual")
                         or page_allowance.get("estimated_pages")
                         or reserved_pages
                     )
@@ -891,7 +894,9 @@ async def process_job(payload: dict, attempt: int = 1) -> bool:
                                         "release_reason": "worker_failure",
                                     },
                                 }
-                            reserved_pages = int(page_allowance.get("reserved_pages") or 0)
+                            reserved_pages = int(
+                                page_allowance.get("reserved_pages") or 0
+                            )
                             if (
                                 j.owner_user_id
                                 and reserved_pages > 0

@@ -321,7 +321,9 @@ class CreditAccountRepository:
         await self.db.flush()
         return computed
 
-    async def reconcile_account_projection(self, user_id: uuid.UUID) -> Optional[CreditAccount]:
+    async def reconcile_account_projection(
+        self, user_id: uuid.UUID
+    ) -> Optional[CreditAccount]:
         """Recompute cached balance and lifetime counters from ledger history."""
         account = await self.get_account(user_id)
         if not account:

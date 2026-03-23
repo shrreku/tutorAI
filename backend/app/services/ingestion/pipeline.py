@@ -744,9 +744,7 @@ class IngestionPipeline:
             if pattern.search(combined)
         ]
         alpha_chars = sum(1 for char in combined if char.isalpha())
-        eligible = not pattern_hits and not (
-            len(combined) >= 120 and alpha_chars <= 20
-        )
+        eligible = not pattern_hits and not (len(combined) >= 120 and alpha_chars <= 20)
         return {
             "eligible": eligible,
             "artifact_noise": not eligible,
@@ -770,7 +768,8 @@ class IngestionPipeline:
             "phase": "core_ready",
             "parent_chunks": len(chunks),
             "retrieval_eligible_parent_chunks": retrieval_eligible_parents,
-            "retrieval_filtered_parent_chunks": len(chunks) - retrieval_eligible_parents,
+            "retrieval_filtered_parent_chunks": len(chunks)
+            - retrieval_eligible_parents,
             "indexed_sub_chunks": len(indexed_sub_chunks),
             "retrieval_filtered_sub_chunks": filtered_sub_chunk_count,
             "resource_profile_artifacts": artifacts_created,

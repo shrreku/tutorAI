@@ -17,7 +17,10 @@ def test_llamaparse_adapter_extracts_markdown_page_sections():
             "markdown": {
                 "pages": [
                     {"page_number": 1, "markdown": "# Intro\nHeat transfer basics."},
-                    {"page_number": 2, "markdown": "## Conduction\nConduction details."},
+                    {
+                        "page_number": 2,
+                        "markdown": "## Conduction\nConduction details.",
+                    },
                 ]
             }
         }

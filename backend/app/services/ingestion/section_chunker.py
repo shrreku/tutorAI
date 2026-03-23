@@ -58,7 +58,9 @@ class SectionChunker:
         page_end: Optional[int],
         metadata: Optional[dict] = None,
     ) -> ChunkData:
-        normalized_metadata = self._with_source_spans(text, page_start, page_end, metadata)
+        normalized_metadata = self._with_source_spans(
+            text, page_start, page_end, metadata
+        )
         resolved_page_start, resolved_page_end = self._page_range_from_spans(
             normalized_metadata.get("source_spans") or [],
             page_start,
@@ -169,7 +171,9 @@ class SectionChunker:
                 if key != "source_spans"
             }
         )
-        merged["source_spans"] = self._source_spans_for_chunk(left) + self._shift_source_spans(
+        merged["source_spans"] = self._source_spans_for_chunk(
+            left
+        ) + self._shift_source_spans(
             self._source_spans_for_chunk(right),
             len(left.text or "") + separator_len,
         )
@@ -405,7 +409,9 @@ class SectionChunker:
                         section_heading=chunk.section_heading,
                         page_start=chunk.page_start,
                         page_end=chunk.page_end,
-                        metadata=self._slice_chunk_metadata(chunk, piece_start, piece_end),
+                        metadata=self._slice_chunk_metadata(
+                            chunk, piece_start, piece_end
+                        ),
                     )
                 )
             current_parts = []
@@ -428,7 +434,9 @@ class SectionChunker:
                     pieces.append(
                         self._build_chunk_data(
                             chunk_index=0,
-                            text=text[span_start + local_start : span_start + local_end],
+                            text=text[
+                                span_start + local_start : span_start + local_end
+                            ],
                             section_heading=chunk.section_heading,
                             page_start=chunk.page_start,
                             page_end=chunk.page_end,
@@ -451,7 +459,14 @@ class SectionChunker:
         return pieces
 
     def _split_text_spans(self, text: str) -> list[tuple[str, int, int]]:
-        paragraphs = self._locate_parts(text, [paragraph.strip() for paragraph in text.split("\n\n") if paragraph.strip()])
+        paragraphs = self._locate_parts(
+            text,
+            [
+                paragraph.strip()
+                for paragraph in text.split("\n\n")
+                if paragraph.strip()
+            ],
+        )
         if len(paragraphs) > 1:
             return paragraphs
         sentences = self._split_sentences(text)

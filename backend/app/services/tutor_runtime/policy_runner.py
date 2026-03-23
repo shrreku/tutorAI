@@ -106,14 +106,11 @@ def _apply_prereq_gate_to_policy_output(
     existing_directives = getattr(policy_output, "retrieval_directives", None) or {}
     if not isinstance(existing_directives, dict):
         existing_directives = {}
-    directive_query = (
-        existing_directives.get("query")
-        or (
-            "Answer the student's requested concept directly while briefly grounding needed prerequisites: "
-            f"{', '.join(top_prereqs)}"
-            if existing_targets
-            else f"Definitions + intuition + minimal examples for: {', '.join(top_prereqs)}"
-        )
+    directive_query = existing_directives.get("query") or (
+        "Answer the student's requested concept directly while briefly grounding needed prerequisites: "
+        f"{', '.join(top_prereqs)}"
+        if existing_targets
+        else f"Definitions + intuition + minimal examples for: {', '.join(top_prereqs)}"
     )
     policy_output.retrieval_directives = {
         **existing_directives,

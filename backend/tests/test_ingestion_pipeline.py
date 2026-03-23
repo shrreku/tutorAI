@@ -32,7 +32,10 @@ def test_ingestion_pipeline_run_completes_with_fixture_resource(monkeypatch):
             status="success",
             warnings=[],
             errors=[],
-            metadata={"llamaparse": {"pages": [{"page_number": 1}]}, "profile": "balanced"},
+            metadata={
+                "llamaparse": {"pages": [{"page_number": 1}]},
+                "profile": "balanced",
+            },
         )
 
     async def _run_chunk_stage(self, parse_result):
