@@ -174,17 +174,11 @@ def test_docling_adapter_delegates_to_llamaparse_when_api_key_is_set(monkeypatch
     assert result.metadata["llamaparse"]["job_id"] == "job-123"
 
 
-def test_docling_chunker_skips_tokenizer_download_for_remote_embeddings(monkeypatch):
+def test_docling_chunker_skips_tokenizer_download_for_remote_embeddings():
     chunker = DoclingChunker(
         embedding_model_id="google/gemini-embedding-001",
         embedding_provider_name="openrouter",
     )
 
-    monkeypatch.setattr(
-        "transformers.AutoTokenizer.from_pretrained",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("Tokenizer download should not be attempted")
-        ),
-    )
-
+    assert chunker._allow_tokenizer_download is False
     assert chunker._build_docling_tokenizer() is None

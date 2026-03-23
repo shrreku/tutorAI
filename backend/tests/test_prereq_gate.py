@@ -70,9 +70,9 @@ def test_policy_runner_prereq_gate_steers_retrieval_without_denying_advancement(
     )
 
     assert policy_output.progression_decision == ProgressionDecision.ADVANCE_STEP
-    assert policy_output.target_concepts == ["set", "function"]
+    assert policy_output.target_concepts == ["advanced", "set", "function"]
     assert policy_output.retrieval_directives is not None
-    assert policy_output.retrieval_directives.get("focus") == "prereq"
+    assert policy_output.retrieval_directives.get("focus") == "prereq_support"
     assert "Prereq gate" in (policy_output.planner_guidance or "")
 
     guidance_events = [

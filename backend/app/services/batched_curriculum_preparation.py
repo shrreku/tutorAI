@@ -667,7 +667,20 @@ class BatchedCurriculumPreparationService:
     ) -> dict:
         async def _count(statement):
             result = await self.db.execute(statement)
-            return int(result.scalar() or 0)
+            if hasattr(result, "scalar_one_or_none"):
+                value = result.scalar_one_or_none()
+            elif hasattr(result, "scalar"):
+                value = result.scalar()
+            elif hasattr(result, "scalars"):
+                scalar_result = result.scalars()
+                value = (
+                    scalar_result.scalar_one_or_none()
+                    if hasattr(scalar_result, "scalar_one_or_none")
+                    else None
+                )
+            else:
+                value = None
+            return int(value or 0)
 
         return {
             "phase": "curriculum_ready",

@@ -686,10 +686,11 @@ class IngestionPipeline:
 
         if not conversion.sections:
             raise ValueError("LlamaParse conversion produced no extractable sections")
+        parser_job_id = getattr(conversion, "parser_job_id", None)
         logger.info(
             "Completed LlamaParse stage for resource %s parser_job_id=%s sections=%s status=%s",
             resource.id,
-            conversion.parser_job_id,
+            parser_job_id,
             len(conversion.sections),
             conversion.status,
         )
