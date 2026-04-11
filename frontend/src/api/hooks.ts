@@ -33,7 +33,11 @@ import type {
   AdminMonthlyGrantResponse,
   AsyncByokEscrow,
   ModelPricing,
+  ModelPricingCreateRequest,
+  ModelPricingUpdateRequest,
   TaskAssignment,
+  TaskAssignmentCreateRequest,
+  TaskAssignmentUpdateRequest,
   ModelTaskHealth,
   TaskModelsResponse,
   UserModelPreferences,
@@ -202,6 +206,46 @@ export function useNotebookProgress(notebookId: string) {
     queryFn: () => apiClient.get<NotebookProgress>(`/notebooks/${notebookId}/progress`),
     enabled: !!notebookId,
   });
+}
+
+/**
+ * Batch-fetch progress for a list of notebook IDs (for list-page cards).
+ * Returns a Map<notebookId, NotebookProgress>.
+ */
+export function useNotebookProgressBatch(notebookIds: string[]) {
+  const results = useQueries({
+    queries: notebookIds.map((id) => ({
+      queryKey: queryKeys.notebooks.progress(id),
+      queryFn: () => apiClient.get<NotebookProgress>(`/notebooks/${id}/progress`),
+      enabled: !!id,
+      staleTime: 1000 * 120,
+    })),
+  });
+  const map = new Map<string, NotebookProgress>();
+  notebookIds.forEach((id, i) => {
+    if (results[i]?.data) map.set(id, results[i].data!);
+  });
+  return map;
+}
+
+/**
+ * Batch-fetch resource counts for a list of notebook IDs (for list-page cards).
+ * Returns a Map<notebookId, number>.
+ */
+export function useNotebookResourceCountBatch(notebookIds: string[]) {
+  const results = useQueries({
+    queries: notebookIds.map((id) => ({
+      queryKey: queryKeys.notebooks.resources(id),
+      queryFn: () => apiClient.get<PaginatedResponse<NotebookResource>>(`/notebooks/${id}/resources`),
+      enabled: !!id,
+      staleTime: 1000 * 120,
+    })),
+  });
+  const map = new Map<string, number>();
+  notebookIds.forEach((id, i) => {
+    if (results[i]?.data) map.set(id, results[i].data!.total ?? results[i].data!.items?.length ?? 0);
+  });
+  return map;
 }
 
 export function useNotebookArtifacts(notebookId: string, artifactType?: string) {
@@ -559,10 +603,64 @@ export function useAdminModelPricing() {
   });
 }
 
+export function useAdminCreateModelPricing() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: ModelPricingCreateRequest) =>
+      apiClient.post<ModelPricing>('/models/admin/pricing', request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.models.all });
+    },
+  });
+}
+
+export function useAdminUpdateModelPricing(modelId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: ModelPricingUpdateRequest) =>
+      apiClient.patch<ModelPricing>(`/models/admin/pricing/${modelId}`, request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.models.all });
+    },
+  });
+}
+
+export function useAdminDeactivateModelPricing() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (modelId: string) => apiClient.delete<ModelPricing>(`/models/admin/pricing/${modelId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.models.all });
+    },
+  });
+}
+
 export function useAdminTaskAssignments() {
   return useQuery({
     queryKey: queryKeys.models.adminAssignments(),
     queryFn: () => apiClient.get<TaskAssignment[]>('/models/admin/assignments'),
+  });
+}
+
+export function useAdminCreateTaskAssignment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: TaskAssignmentCreateRequest) =>
+      apiClient.post<TaskAssignment>('/models/admin/assignments', request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.models.all });
+    },
+  });
+}
+
+export function useAdminUpdateTaskAssignment(taskType: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: TaskAssignmentUpdateRequest) =>
+      apiClient.patch<TaskAssignment>(`/models/admin/assignments/${taskType}`, request),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.models.all });
+    },
   });
 }
 

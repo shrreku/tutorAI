@@ -43,6 +43,9 @@ async def get_my_settings(
     return UserSettingsResponse(
         consent_training_global=consent_training_global,
         consent_preference_set=consent_preference_set,
+        consent_personalization=bool(
+            getattr(user, "consent_personalization", True)
+        ),
         is_admin=is_admin_user(user),
         async_byok_escrow_enabled=async_byok_feature_available(),
         async_byok_escrow_backend=settings.ASYNC_BYOK_ESCROW_BACKEND
@@ -55,6 +58,7 @@ async def get_my_settings(
         parse_page_used=int(user.parse_page_used or 0),
         parse_page_reserved=int(user.parse_page_reserved or 0),
         parse_page_remaining=page_allowance.remaining_pages_for(user),
+        learning_preferences=user.learning_preferences,
     )
 
 
@@ -67,10 +71,27 @@ async def update_my_settings(
     """Update mutable user-level settings."""
     user_repo = UserProfileRepository(db)
     page_allowance = PageAllowanceService(db)
-    updated = await user_repo.update_settings(
-        user,
-        consent_training_global=request.consent_training_global,
-    )
+    # Update consent and learning preferences
+    update_kwargs = {}
+    if request.consent_training_global is not None:
+        update_kwargs["consent_training_global"] = request.consent_training_global
+    updated = await user_repo.update_settings(user, **update_kwargs)
+
+    # Persist learning preferences if provided
+    if request.learning_preferences is not None:
+        updated.learning_preferences = request.learning_preferences.model_dump(
+            exclude_none=True
+        )
+        db.add(updated)
+
+    # Persist personalization consent if provided
+    if request.consent_personalization is not None:
+        updated.consent_personalization = request.consent_personalization
+        db.add(updated)
+
+    if request.learning_preferences is not None or request.consent_personalization is not None:
+        await db.commit()
+        await db.refresh(updated)
     updated = await page_allowance.ensure_user_defaults(updated)
     (
         consent_training_global,
@@ -79,6 +100,9 @@ async def update_my_settings(
     return UserSettingsResponse(
         consent_training_global=consent_training_global,
         consent_preference_set=consent_preference_set,
+        consent_personalization=bool(
+            getattr(updated, "consent_personalization", True)
+        ),
         is_admin=is_admin_user(updated),
         async_byok_escrow_enabled=async_byok_feature_available(),
         async_byok_escrow_backend=settings.ASYNC_BYOK_ESCROW_BACKEND
@@ -91,6 +115,7 @@ async def update_my_settings(
         parse_page_used=int(updated.parse_page_used or 0),
         parse_page_reserved=int(updated.parse_page_reserved or 0),
         parse_page_remaining=page_allowance.remaining_pages_for(updated),
+        learning_preferences=updated.learning_preferences,
     )
 
 

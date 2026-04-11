@@ -11,6 +11,7 @@ from app.schemas.agent_output import (
     ProgressionDecision,
 )
 from app.services.llm.base import BaseLLMProvider
+from app.services.tutor_runtime.personalization import format_personalization_block
 
 logger = logging.getLogger(__name__)
 
@@ -217,16 +218,30 @@ class PolicyAgent(BaseAgent[PolicyState, PolicyOrchestratorOutput]):
             else "MASTERY: (none)"
         )
 
+        personalization_block = format_personalization_block(
+            state.learner_personalization
+        )
+
         # Recent conversation
         hist_block = "RECENT CONVERSATION: (none)"
         if state.recent_turns:
+            turns = list(state.recent_turns[-3:])
             lines = []
-            for t in state.recent_turns[-3:]:
+            last_turn_index = len(turns) - 1
+
+            for index, t in enumerate(turns):
+                student_message = t.get("student_message") or ""
+                tutor_response = t.get("tutor_response") or ""
+                if index < last_turn_index:
+                    student_message = student_message[:80]
+                    tutor_response = tutor_response[:80]
+
                 lines.append(
-                    f"  Student: {(t.get('student_message') or '')[:80]}\n"
+                    f"  Student: {student_message}\n"
                     f"  Tutor [{t.get('pedagogical_action', '?')}/{t.get('current_step', '?')}]: "
-                    f"{(t.get('tutor_response') or '')[:80]}"
+                    f"{tutor_response}"
                 )
+
             hist_block = "RECENT CONVERSATION:\n" + "\n".join(lines)
 
         # Evaluation
@@ -244,11 +259,13 @@ class PolicyAgent(BaseAgent[PolicyState, PolicyOrchestratorOutput]):
         if state.awaiting_evaluation:
             pending_checkpoint_block = (
                 "PENDING CHECKPOINT:\n"
-                f"  Pending question: {(state.pending_tutor_question or 'N/A')[:240]}\n"
-                f"  Pending tutor response: {(state.pending_tutor_response or '')[:240]}"
+                f"  Pending question: {(state.pending_tutor_question or 'N/A')}\n"
+                f"  Pending tutor response: {(state.pending_tutor_response or '')}"
             )
 
         return f"""SESSION MODE: {state.session_mode}
+
+    {personalization_block}
 
     {journey_block}
 

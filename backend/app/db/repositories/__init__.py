@@ -13,6 +13,7 @@ from app.db.repositories.notebook_repo import (
     NotebookRepository,
     NotebookResourceRepository,
     NotebookSessionRepository,
+    NotebookPlanningStateRepository,
     NotebookProgressRepository,
     NotebookArtifactRepository,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "NotebookRepository",
     "NotebookResourceRepository",
     "NotebookSessionRepository",
+    "NotebookPlanningStateRepository",
     "NotebookProgressRepository",
     "NotebookArtifactRepository",
 ]

@@ -19,6 +19,7 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "^5.17.0",
     "clsx": "^2.1.0",
+    "framer-motion": "^12.38.0",
     "katex": "^0.16.38",
     "lucide-react": "^0.311.0",
     "react": "^18.2.0",

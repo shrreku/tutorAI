@@ -23,6 +23,7 @@ interface RegisterPayload {
   password: string;
   display_name: string;
   consent_training: boolean;
+  consent_personalization: boolean;
   invite_token?: string;
   access_code?: string;
   promo_code?: string;

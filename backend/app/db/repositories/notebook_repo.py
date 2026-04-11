@@ -12,6 +12,7 @@ from app.models.notebook import (
     NotebookResource,
     NotebookSession,
     NotebookProgress,
+    NotebookPlanningState,
     NotebookArtifact,
 )
 
@@ -54,6 +55,7 @@ class NotebookRepository(BaseRepository[Notebook]):
                 selectinload(Notebook.sessions),
                 selectinload(Notebook.progress),
                 selectinload(Notebook.artifacts),
+                selectinload(Notebook.planning_state),
             )
         )
         return result.scalar_one_or_none()
@@ -114,6 +116,12 @@ class NotebookSessionRepository(BaseRepository[NotebookSession]):
         )
         return list(result.scalars().all())
 
+    async def get_by_session_id(self, session_id: UUID) -> Optional[NotebookSession]:
+        result = await self.db.execute(
+            select(NotebookSession).where(NotebookSession.session_id == session_id)
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_pair(
         self, notebook_id: UUID, session_id: UUID
     ) -> Optional[NotebookSession]:
@@ -131,6 +139,21 @@ class NotebookSessionRepository(BaseRepository[NotebookSession]):
         await self.db.flush()
         await self.db.refresh(notebook_session)
         return notebook_session
+
+
+class NotebookPlanningStateRepository(BaseRepository[NotebookPlanningState]):
+    """Repository for notebook planning state."""
+
+    def __init__(self, db: AsyncSession):
+        super().__init__(NotebookPlanningState, db)
+
+    async def get_by_notebook(self, notebook_id: UUID) -> Optional[NotebookPlanningState]:
+        result = await self.db.execute(
+            select(NotebookPlanningState).where(
+                NotebookPlanningState.notebook_id == notebook_id
+            )
+        )
+        return result.scalar_one_or_none()
 
 
 class NotebookProgressRepository(BaseRepository[NotebookProgress]):

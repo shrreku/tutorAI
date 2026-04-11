@@ -213,6 +213,46 @@ export interface KnowledgeBaseUpdateRequest {
   topic_bundles?: KnowledgeBaseTopicBundleUpdate[];
 }
 
+export interface CoverageTopicSnapshot {
+  topic_id?: string | null;
+  topic_name?: string | null;
+  concept_count: number;
+  planned_count: number;
+  taught_count: number;
+  mastered_count: number;
+  planned_percent: number;
+  taught_percent: number;
+  mastered_percent: number;
+}
+
+export interface CoverageSnapshot {
+  total_concepts: number;
+  planned_concepts: number;
+  taught_concepts: number;
+  mastered_concepts: number;
+  planned_percent: number;
+  taught_percent: number;
+  mastered_percent: number;
+  total_objectives: number;
+  planned_objectives: number;
+  taught_objectives: number;
+  mastered_objectives: number;
+  objective_planned_percent: number;
+  objective_taught_percent: number;
+  objective_mastered_percent: number;
+  topic_coverage: CoverageTopicSnapshot[];
+}
+
+export interface NotebookPlanningState {
+  notebook_id: string;
+  revision: number;
+  knowledge_state: Record<string, unknown>;
+  learner_state: Record<string, unknown>;
+  planner_state: Record<string, unknown>;
+  coverage_snapshot: CoverageSnapshot | Record<string, unknown>;
+  updated_at: string | null;
+}
+
 // Session types
 export interface Session {
   id: string;
@@ -239,10 +279,12 @@ export interface Session {
     session_overview?: string | null;
   } | null;
   created_at: string;
+  consent_training: boolean;
+  plan_state: Record<string, unknown> | null;
+  notebook_planning_state: NotebookPlanningState | null;
 }
 
 export interface SessionDetail extends Session {
-  plan_state: Record<string, unknown> | null;
   turn_count: number;
 }
 
@@ -251,6 +293,35 @@ export interface SessionCreateRequest {
   topic?: string;
   selected_topics?: string[];
   consent_training?: boolean | null;
+}
+
+// ---- Learner Personalization (PROD-021) ----
+
+export interface LearnerPreferences {
+  pace?: 'relaxed' | 'moderate' | 'intensive' | null;
+  depth?: 'surface' | 'balanced' | 'deep' | null;
+  tutoring_style?: 'explanation-heavy' | 'practice-heavy' | 'balanced' | 'socratic' | null;
+  hint_level?: 'none' | 'gentle' | 'full' | null;
+  language?: string | null;
+  accessibility?: Record<string, unknown> | null;
+}
+
+export interface NotebookPersonalization {
+  purpose?: 'exam_prep' | 'assignment' | 'concept_mastery' | 'doubt_clearing' | 'general' | null;
+  urgency?: boolean | null;
+  study_pace?: 'relaxed' | 'moderate' | 'intensive' | null;
+  study_depth?: 'surface' | 'balanced' | 'deep' | null;
+  practice_intensity?: 'light' | 'moderate' | 'heavy' | null;
+  exam_context?: string | null;
+}
+
+export interface SessionPersonalization {
+  time_budget_minutes?: number | null;
+  today_goal?: string | null;
+  interaction_style?: 'explanation-heavy' | 'practice-heavy' | 'balanced' | 'revision' | null;
+  confidence?: 'unsure' | 'somewhat' | 'confident' | null;
+  want_hints?: boolean | null;
+  want_examples?: boolean | null;
 }
 
 // Notebook types
@@ -262,6 +333,7 @@ export interface Notebook {
   target_date: string | null;
   status: string;
   settings_json: Record<string, unknown> | null;
+  personalization: NotebookPersonalization | null;
   created_at: string;
   updated_at: string;
 }
@@ -271,6 +343,7 @@ export interface NotebookCreateRequest {
   goal?: string;
   target_date?: string;
   settings_json?: Record<string, unknown>;
+  personalization?: NotebookPersonalization;
 }
 
 export interface NotebookUpdateRequest {
@@ -279,6 +352,7 @@ export interface NotebookUpdateRequest {
   target_date?: string;
   status?: string;
   settings_json?: Record<string, unknown>;
+  personalization?: NotebookPersonalization;
 }
 
 export interface NotebookResource {
@@ -308,6 +382,9 @@ export interface NotebookSession {
   ended_at: string | null;
   created_at: string;
   updated_at: string;
+  mastery_avg: number | null;
+  concepts_count: number;
+  topic: string | null;
 }
 
 export interface NotebookSessionCreateRequest {
@@ -319,6 +396,8 @@ export interface NotebookSessionCreateRequest {
   selected_topics?: string[];
   consent_training?: boolean | null;
   resume_existing?: boolean;
+  curriculum_model_id?: string;
+  personalization?: SessionPersonalization;
 }
 
 export interface NotebookSessionDetail {
@@ -326,6 +405,7 @@ export interface NotebookSessionDetail {
   session: Session;
   reused_existing: boolean;
   preparation_summary?: Record<string, unknown>;
+  notebook_planning_state?: NotebookPlanningState | null;
 }
 
 export interface NotebookProgress {
@@ -335,6 +415,8 @@ export interface NotebookProgress {
   weak_concepts_snapshot: string[];
   sessions_count: number;
   completed_sessions_count: number;
+  coverage_snapshot: CoverageSnapshot | Record<string, unknown>;
+  notebook_planning_state: NotebookPlanningState | null;
   updated_at: string | null;
 }
 
@@ -359,6 +441,7 @@ export interface NotebookArtifactGenerateRequest {
 export interface UserSettings {
   consent_training_global: boolean;
   consent_preference_set: boolean;
+  consent_personalization: boolean;
   is_admin: boolean;
   async_byok_escrow_enabled: boolean;
   async_byok_escrow_backend?: string | null;
@@ -369,10 +452,13 @@ export interface UserSettings {
   parse_page_remaining: number;
   byok_api_key_set?: boolean;
   byok_api_base_url?: string;
+  learning_preferences?: LearnerPreferences | null;
 }
 
 export interface UserSettingsUpdateRequest {
   consent_training_global?: boolean;
+  consent_personalization?: boolean;
+  learning_preferences?: LearnerPreferences;
 }
 
 export interface AdminUserSummary {
@@ -573,6 +659,7 @@ export interface SessionSummaryResponse {
   concepts_to_revisit: string[];
   objectives: SessionObjectiveSummary[];
   mastery_snapshot: Record<string, number>;
+  notebook_planning_state: NotebookPlanningState | null;
 }
 
 export interface EvaluationResult {
@@ -732,6 +819,31 @@ export interface ModelPricing {
   notes: string | null;
 }
 
+export interface ModelPricingCreateRequest {
+  model_id: string;
+  provider_name: string;
+  display_name: string;
+  model_class: string;
+  input_usd_per_million: number;
+  output_usd_per_million: number;
+  cache_write_usd_per_million?: number | null;
+  cache_read_usd_per_million?: number | null;
+  is_active?: boolean;
+  is_user_selectable?: boolean;
+  supports_structured_output?: boolean;
+  supports_long_context?: boolean;
+  supports_byok?: boolean;
+  notes?: string | null;
+}
+
+export interface ModelPricingUpdateRequest {
+  input_usd_per_million?: number;
+  output_usd_per_million?: number;
+  is_active?: boolean;
+  is_user_selectable?: boolean;
+  notes?: string | null;
+}
+
 export interface TaskAssignment {
   task_type: string;
   default_model_id: string;
@@ -740,6 +852,24 @@ export interface TaskAssignment {
   user_override_allowed: boolean;
   rollout_state: string;
   beta_only: boolean;
+}
+
+export interface TaskAssignmentCreateRequest {
+  task_type: string;
+  default_model_id: string;
+  fallback_model_ids?: string[];
+  allowed_model_ids?: string[];
+  user_override_allowed?: boolean;
+  rollout_state?: string;
+  beta_only?: boolean;
+}
+
+export interface TaskAssignmentUpdateRequest {
+  default_model_id?: string;
+  fallback_model_ids?: string[];
+  allowed_model_ids?: string[];
+  user_override_allowed?: boolean;
+  rollout_state?: string;
 }
 
 export interface ModelTaskHealth {
@@ -769,9 +899,11 @@ export interface UserModelPreferences {
 }
 
 export interface UserModelPreferencesUpdate {
-  tutoring_model_id?: string;
+  policy_model_id?: string;
+  response_model_id?: string;
   artifact_model_id?: string;
   upload_model_id?: string;
+  tutoring_model_id?: string;
 }
 
 export interface BillingOperation {

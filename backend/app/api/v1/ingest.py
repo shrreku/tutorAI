@@ -768,6 +768,8 @@ async def upload_resource(
     file: UploadFile = File(...),
     topic: str = Form(default=None),
     use_async_byok: bool = Form(default=False),
+    ontology_model_id: Optional[str] = Form(default=None),
+    enrichment_model_id: Optional[str] = Form(default=None),
     db: AsyncSession = Depends(get_db),
     user: UserProfile = Depends(require_auth),
     byok: dict = Depends(get_byok_api_key),
@@ -934,6 +936,11 @@ async def upload_resource(
             )
 
         job_repo = IngestionJobRepository(db)
+        model_overrides: dict = {}
+        if ontology_model_id:
+            model_overrides["ontology_model_id"] = ontology_model_id
+        if enrichment_model_id:
+            model_overrides["enrichment_model_id"] = enrichment_model_id
         job = IngestionJob(
             id=job_id,
             resource_id=resource.id,
@@ -961,6 +968,9 @@ async def upload_resource(
                     provider_name=escrow.provider_name if escrow else None,
                     expires_at=escrow.expires_at if escrow else None,
                 ),
+                **({
+                    "model_overrides": model_overrides
+                } if model_overrides else {}),
             },
         )
         job = await job_repo.create(job)

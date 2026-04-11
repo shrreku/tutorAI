@@ -13,6 +13,7 @@ def get_missing_platform_llm_config(
     """Return required platform LLM settings that are missing for a task."""
     model_map = {
         "tutoring": config.LLM_MODEL_TUTORING,
+        "artifact_generation": config.LLM_MODEL_TUTORING,
         "evaluation": config.LLM_MODEL_EVALUATION,
         "curriculum": config.LLM_MODEL_CURRICULUM,
         "ontology": config.LLM_MODEL_ONTOLOGY,
@@ -56,7 +57,7 @@ def create_llm_provider(
     Args:
         config: Application settings.
         task: One of 'default', 'tutoring', 'evaluation', 'curriculum',
-              'ontology', 'enrichment'. Selects the per-task model override
+              'artifact_generation', 'ontology', 'enrichment'. Selects the per-task model override
               from config (e.g. LLM_MODEL_TUTORING). Falls back to LLM_MODEL.
         model_override: Explicit model name that takes precedence over task map.
         byok_api_key: User-supplied API key (BYOK).  When provided, this key
@@ -66,6 +67,7 @@ def create_llm_provider(
     """
     model_map = {
         "tutoring": config.LLM_MODEL_TUTORING,
+        "artifact_generation": config.LLM_MODEL_TUTORING,
         "evaluation": config.LLM_MODEL_EVALUATION,
         "curriculum": config.LLM_MODEL_CURRICULUM,
         "ontology": config.LLM_MODEL_ONTOLOGY,

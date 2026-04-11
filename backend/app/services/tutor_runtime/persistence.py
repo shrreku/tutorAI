@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from app.models.notebook import NotebookSession
 from app.models.session import TutorTurn, UserSession
 from app.agents.summary_agent import SummaryAgent, SummaryState
+from app.services.notebook_planning import NotebookPlanningStateService
 from app.services.tutor_runtime.state_loader import next_turn_index
 from app.services.tutor_runtime.step_state import get_step_index
 from app.services.tutor_runtime.types import TurnResult
@@ -308,6 +309,18 @@ async def handle_session_complete(
         .where(NotebookSession.session_id == session.id)
         .values(ended_at=completed_at)
     )
+    planning_snapshot = await NotebookPlanningStateService(db).sync_for_session(
+        session.id
+    )
+    if planning_snapshot:
+        session.plan_state = {
+            **(session.plan_state or {}),
+            "notebook_planning_state": planning_snapshot.get(
+                "notebook_planning_state"
+            ),
+            "coverage_snapshot": planning_snapshot.get("coverage_snapshot") or {},
+        }
+        flag_modified(session, "plan_state")
     await db.commit()
 
     return TurnResult(

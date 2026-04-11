@@ -7,6 +7,7 @@ from app.agents.base import BaseAgent
 from app.schemas.agent_state import TutorState
 from app.schemas.agent_output import TutorOutput
 from app.services.llm.base import BaseLLMProvider
+from app.services.tutor_runtime.personalization import format_personalization_block
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,17 @@ Write a natural, conversational tutoring response to the student.
 # Session structure
 The session follows **learning objectives**, each with a flexible **step roadmap**.
 You are told the current objective, canonical step type, effective step type, target concepts, and source material.
+
+# Learner personalization
+You may also be given a compact learner preference snapshot. Treat it as soft guidance, not a hard constraint.
+Use it to adapt:
+- pace and verbosity
+- depth of explanation
+- hinting vs direct answers
+- practice intensity
+- the amount of worked examples or recap
+
+When preferences conflict, prioritize the current session mode, the roadmap step, and the student's immediate message.
 
 # Core rules
 1. **Stay on-objective.** Teach the concepts in the current objective.
@@ -158,6 +170,10 @@ class TutorAgent(BaseAgent[TutorState, TutorOutput]):
         if state.ad_hoc_step_type:
             guidance += f"\nAD-HOC STEP TYPE: {state.ad_hoc_step_type}"
 
+        personalization_block = format_personalization_block(
+            state.learner_personalization
+        )
+
         # Retrieved knowledge
         chunks = state.retrieved_chunks
         if chunks:
@@ -174,6 +190,8 @@ class TutorAgent(BaseAgent[TutorState, TutorOutput]):
 
     {ctx}{targets}{guidance}{mastery_block}
 
+{personalization_block}
+
 {knowledge}
 
 STUDENT MESSAGE: "{state.student_message}"
@@ -186,20 +204,6 @@ Write your tutoring response now."""
     def _fallback_response(self, state: TutorState) -> TutorOutput:
         step = state.effective_step_type or state.current_step
         mode = (state.session_mode or "learn").strip().lower()
-        planner_guidance = (state.planner_guidance or "").strip().lower()
-        if (
-            "offer exactly two options" in planner_guidance
-            and "mastery may be incomplete" in planner_guidance
-        ):
-            response = (
-                "We can do either of these:\n"
-                "1. Answer the pending checkpoint now so I can verify this step.\n"
-                "2. Skip ahead, with the understanding that your mastery for this part may be incomplete."
-            )
-            return TutorOutput(
-                response_text=response,
-                evidence_chunk_ids=state.evidence_chunk_ids,
-            )
         if mode == "doubt":
             response = (
                 "Let’s resolve the exact sticking point first. Here is the shortest accurate explanation of that idea, "

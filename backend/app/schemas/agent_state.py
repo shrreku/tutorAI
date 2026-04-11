@@ -28,8 +28,15 @@ class PolicyState(BaseModel):
     mastery_snapshot: Dict[str, float] = Field(
         default_factory=dict, description="Concept → mastery mapping (0-1)"
     )
+    learner_personalization: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Merged learner preferences from user, notebook, and session scope.",
+    )
     recent_turns: List[Dict[str, Any]] = Field(default_factory=list)
     latest_evaluation: Optional[Dict[str, Any]] = None
+    awaiting_evaluation: bool = False
+    pending_tutor_question: Optional[str] = None
+    pending_tutor_response: Optional[str] = None
     # Full plan context so policy can navigate objectives fluently
     current_objective_index: int = Field(default=0, ge=0)
     total_objectives: int = Field(default=1, ge=1)
@@ -49,18 +56,6 @@ class PolicyState(BaseModel):
         serialization_alias="max_ad_hoc_per_objective",
     )
     last_decision: Optional[str] = None
-    awaiting_evaluation: bool = Field(
-        default=False,
-        description="Whether the session is currently waiting on a pending checkpoint answer.",
-    )
-    pending_tutor_question: Optional[str] = Field(
-        default=None,
-        description="Most recent tutor checkpoint/question still pending evaluation.",
-    )
-    pending_tutor_response: Optional[str] = Field(
-        default=None,
-        description="Most recent tutor response associated with the pending checkpoint.",
-    )
 
 
 class TutorState(BaseModel):
@@ -92,6 +87,10 @@ class TutorState(BaseModel):
     evidence_chunk_ids: Optional[List[str]] = None
     mastery_snapshot: Dict[str, float] = Field(
         default_factory=dict, description="Concept → mastery mapping (0-1)"
+    )
+    learner_personalization: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Merged learner preferences from user, notebook, and session scope.",
     )
     ad_hoc_step_type: Optional[str] = Field(
         default=None,

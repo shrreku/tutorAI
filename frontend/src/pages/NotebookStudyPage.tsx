@@ -166,9 +166,6 @@ export default function NotebookStudyPage() {
   const resourceMap = new Map((allResources?.items ?? []).map((resource) => [resource.id, resource]));
 
   const recommendedMode = sessions.length === 0 ? 'learn' : turns.length > 0 ? (activeNotebookSession?.mode as (typeof MODES)[number] | undefined) ?? 'practice' : 'practice';
-  const recommendedReason = sessions.length === 0
-    ? 'Start with a learn session to establish the objective sequence and baseline understanding.'
-    : 'Use the launcher to open a fresh branch when you want a different scope or topic than your current thread.';
 
   const launchResources = (notebookResources?.items ?? []).map((resource) => {
     const fullResource = resourceMap.get(resource.resource_id) ?? resource.resource ?? undefined;
@@ -215,8 +212,10 @@ export default function NotebookStudyPage() {
               <span className="capitalize text-foreground font-medium">{activeNotebookSession.mode}</span>
               <span className="text-muted-foreground">·</span>
               <span className="text-muted-foreground">{new Date(activeNotebookSession.started_at).toLocaleDateString()}</span>
-              {modelPrefs?.preferences?.tutoring_model_id && (
-                <span className="text-muted-foreground/60 text-[10px] truncate max-w-[80px]">{modelPrefs.preferences.tutoring_model_id.split('/').pop()}</span>
+              {(modelPrefs?.preferences?.response_model_id || modelPrefs?.preferences?.policy_model_id || modelPrefs?.preferences?.tutoring_model_id) && (
+                <span className="text-muted-foreground/60 text-[10px] truncate max-w-[80px]">
+                  {(modelPrefs.preferences.response_model_id || modelPrefs.preferences.policy_model_id || modelPrefs.preferences.tutoring_model_id).split('/').pop()}
+                </span>
               )}
               <ChevronDown className="w-3 h-3 text-muted-foreground" />
             </button>
@@ -297,16 +296,19 @@ export default function NotebookStudyPage() {
         {turnsLoading ? (
           <div className="flex items-center justify-center h-full"><Loader2 className="w-5 h-5 text-gold animate-spin" /></div>
         ) : !activeSessionId ? (
-          <div className="h-full flex items-center justify-center">
-            <div className="w-full max-w-5xl animate-fade-up">
+          <div className="h-full flex items-center justify-center px-6 py-8">
+            <div className="w-full max-w-xl animate-fade-up surface-scholarly rounded-[28px] border border-border/70 p-5">
+              <div className="mb-4">
+                <h2 className="editorial-title text-2xl text-foreground">Open a new study thread</h2>
+                <p className="mt-1 text-sm text-muted-foreground reading-copy">Launch from here for a different scope, resource mix, or topic focus.</p>
+              </div>
               <SessionLaunchPanel
                 resources={launchResources}
                 recommendedMode={recommendedMode}
-                recommendedReason={recommendedReason}
                 pending={createNotebookSession.isPending}
                 onLaunch={startSessionFromLaunchPanel}
-                title="Open a new study thread"
-                subtitle="Launch from here when you want a fresh session with a specific scope, resource mix, or topic focus."
+                onManageResources={() => navigate(`/notebooks/${notebookId}?tab=resources`)}
+                manageResourcesLabel="Upload resource"
               />
             </div>
           </div>

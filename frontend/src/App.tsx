@@ -6,6 +6,9 @@ import { useAuth } from './hooks/useAuth';
 
 // Eagerly-loaded routes (auth shell, landing)
 import LandingPage from './pages/LandingPage';
+import LandingPage2 from './pages/LandingPage2';
+import LandingPage3 from './pages/LandingPage3';
+import LandingPage4 from './pages/LandingPage4';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import HomePage from './pages/HomePage';
@@ -71,6 +74,9 @@ function App() {
         <Routes>
           {/* ── Public / guest routes ─────────────────── */}
           <Route path="/landing" element={<GuestOnly><LandingPage /></GuestOnly>} />
+          <Route path="/landing2" element={<GuestOnly><LandingPage2 /></GuestOnly>} />
+          <Route path="/landing3" element={<GuestOnly><LandingPage3 /></GuestOnly>} />
+          <Route path="/landing4" element={<GuestOnly><LandingPage4 /></GuestOnly>} />
           <Route path="/login" element={<GuestOnly><LoginPage /></GuestOnly>} />
           <Route path="/register" element={<GuestOnly><RegisterPage /></GuestOnly>} />
           <Route path="/request-access" element={<Navigate to="/register" replace />} />

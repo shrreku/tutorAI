@@ -20,8 +20,10 @@ from app.schemas.api import (
     CurriculumOverview,
     ObjectiveSummary,
     PaginatedResponse,
+    NotebookPlanningStateResponse,
 )
 from app.services.tutor_runtime.persistence import clear_transient_runtime_flags
+from app.services.notebook_planning import NotebookPlanningStateService
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +74,16 @@ def _session_response(session: UserSession) -> SessionResponse:
         current_concept_id=(ps.get("focus_concepts") or [None])[0],
         mastery=session.mastery,
         curriculum_overview=_build_curriculum_overview(ps),
+        plan_state=session.plan_state,
+        notebook_planning_state=_planning_state_response(ps.get("notebook_planning_state")),
         created_at=session.created_at,
     )
+
+
+def _planning_state_response(payload: dict | None):
+    if not payload:
+        return None
+    return NotebookPlanningStateResponse(**payload)
 
 
 @router.post("/resource", response_model=SessionResponse)
@@ -109,6 +119,15 @@ async def get_session(
             detail=f"Session {session_id} not found",
         )
 
+    planning_snapshot = await NotebookPlanningStateService(db).sync_for_session(session.id)
+    if planning_snapshot:
+        session.plan_state = {
+            **(session.plan_state or {}),
+            "notebook_planning_state": planning_snapshot.get("notebook_planning_state"),
+            "coverage_snapshot": planning_snapshot.get("coverage_snapshot") or {},
+        }
+        await db.commit()
+
     ps = session.plan_state or {}
     return SessionDetailResponse(
         id=session.id,
@@ -121,8 +140,9 @@ async def get_session(
         current_concept_id=(ps.get("focus_concepts") or [None])[0],
         mastery=session.mastery,
         curriculum_overview=_build_curriculum_overview(ps),
-        created_at=session.created_at,
         plan_state=session.plan_state,
+        notebook_planning_state=_planning_state_response(ps.get("notebook_planning_state")),
+        created_at=session.created_at,
         turn_count=_canonical_turn_count(session),
     )
 
@@ -226,6 +246,14 @@ async def end_session(
         .where(NotebookSession.session_id == session.id)
         .values(ended_at=datetime.now(timezone.utc))
     )
+    planning_snapshot = await NotebookPlanningStateService(db).sync_for_session(session.id)
+    if planning_snapshot:
+        session.plan_state = {
+            **(session.plan_state or {}),
+            "notebook_planning_state": planning_snapshot.get("notebook_planning_state"),
+            "coverage_snapshot": planning_snapshot.get("coverage_snapshot") or {},
+        }
+        flag_modified(session, "plan_state")
     await db.commit()
     await db.refresh(session)
 
@@ -240,6 +268,9 @@ async def end_session(
         concepts_to_revisit=summary_data.get("concepts_to_revisit", []),
         objectives=summary_data.get("objectives", []),
         mastery_snapshot=summary_data.get("mastery_snapshot", {}),
+        notebook_planning_state=_planning_state_response(
+            (session.plan_state or {}).get("notebook_planning_state")
+        ),
     )
 
 
@@ -260,9 +291,20 @@ async def get_session_summary(
             detail=f"Session {session_id} not found",
         )
 
-    plan = session.plan_state or {}
+    planning_snapshot = await NotebookPlanningStateService(db).sync_for_session(session.id)
+    if planning_snapshot:
+        plan = session.plan_state or {}
+        plan = {
+            **plan,
+            "notebook_planning_state": planning_snapshot.get("notebook_planning_state"),
+            "coverage_snapshot": planning_snapshot.get("coverage_snapshot") or {},
+        }
+        session.plan_state = plan
+        await db.commit()
+
     mastery = dict(session.mastery) if session.mastery else {}
     turn_count = _canonical_turn_count(session)
+    plan = session.plan_state or {}
     plan["turn_count"] = turn_count
     summary_data = plan.get("session_summary")
 
@@ -300,6 +342,7 @@ async def get_session_summary(
         concepts_to_revisit=summary_data.get("concepts_to_revisit", []),
         objectives=summary_data.get("objectives", []),
         mastery_snapshot=summary_data.get("mastery_snapshot", mastery),
+        notebook_planning_state=_planning_state_response(plan.get("notebook_planning_state")),
     )
 
 

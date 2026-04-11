@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Plus, Trash2, Loader2, Upload, FileText,
   CheckCircle2, AlertCircle, Clock, Coins, ShieldCheck,
-  X, Upload as CloudUpload, Link2,
+  X, Upload as CloudUpload, Link2, ChevronDown, Cpu,
 } from 'lucide-react';
 import { getApiErrorMessage } from '../../api/client';
 import {
   useNotebookResources, useResources,
   useAttachNotebookResource, useDetachNotebookResource,
   useUserSettings, useUploadResource, useIngestionStatus, useRetryIngestion,
-  useIngestionEstimate,
+  useIngestionEstimate, useTaskModels,
 } from '../../api/hooks';
 import { formatCredits } from '../../lib/credits';
 import {
@@ -145,11 +145,16 @@ export default function ResourcesTab({ notebookId }: { notebookId: string }) {
   const detach = useDetachNotebookResource(notebookId);
   const uploadResource = useUploadResource();
   const retryIngestion = useRetryIngestion();
+  const { data: ontologyTaskModels } = useTaskModels('ingestion_ontology');
+  const { data: enrichmentTaskModels } = useTaskModels('ingestion_enrichment');
 
   const [selectedResourceId, setSelectedResourceId] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [topic, setTopic] = useState('');
   const [useAsyncByok, setUseAsyncByok] = useState(false);
+  const [ontologyModelId, setOntologyModelId] = useState('');
+  const [enrichmentModelId, setEnrichmentModelId] = useState('');
+  const [showAdvancedModels, setShowAdvancedModels] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -233,6 +238,8 @@ export default function ResourcesTab({ notebookId }: { notebookId: string }) {
     formData.append('file', selectedFile);
     if (topic.trim()) formData.append('topic', topic.trim());
     if (asyncByokAvailable && useAsyncByok) formData.append('use_async_byok', 'true');
+    if (ontologyModelId) formData.append('ontology_model_id', ontologyModelId);
+    if (enrichmentModelId) formData.append('enrichment_model_id', enrichmentModelId);
     try {
       const upload = await uploadResource.mutateAsync(formData);
       await attach.mutateAsync({ resource_id: upload.resource_id });
@@ -287,9 +294,9 @@ export default function ResourcesTab({ notebookId }: { notebookId: string }) {
   };
 
   return (
-    <div className="px-6 lg:px-8 py-6 animate-tab-enter">
+    <div className="px-6 lg:px-8 py-4 animate-tab-enter">
       {(feedbackMessage || errorMessage) && (
-        <div className={`mb-5 max-w-5xl rounded-xl border px-4 py-3 text-sm flex items-start gap-3 animate-fade-up ${errorMessage ? 'border-red-500/20 bg-red-500/[0.06] text-red-300' : 'border-gold/20 bg-gold/[0.06] text-gold'}`}>
+        <div className={`mb-4 max-w-5xl rounded-xl border px-4 py-3 text-sm flex items-start gap-3 animate-fade-up ${errorMessage ? 'border-red-500/20 bg-red-500/[0.06] text-red-300' : 'border-gold/20 bg-gold/[0.06] text-gold'}`}>
           {errorMessage ? <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" /> : <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />}
           <div className="flex-1">{errorMessage || feedbackMessage}</div>
           <button onClick={() => { setErrorMessage(null); setFeedbackMessage(null); }} className="shrink-0 p-0.5 rounded hover:bg-white/[0.06]"><X className="w-3.5 h-3.5" /></button>
@@ -297,8 +304,8 @@ export default function ResourcesTab({ notebookId }: { notebookId: string }) {
       )}
 
       {trackerEntries.length > 0 && (
-        <div className="mb-5 max-w-5xl animate-fade-up">
-          <div className="space-y-3">
+        <div className="mb-4 max-w-5xl animate-fade-up">
+          <div className="space-y-2">
             {trackerEntries.map((tracker) => (
               <div key={tracker.jobId} className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">{tracker.label}</p>
@@ -309,65 +316,102 @@ export default function ResourcesTab({ notebookId }: { notebookId: string }) {
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-5 mb-8 max-w-5xl">
-        {/* Upload */}
-        <div className="lg:col-span-3 rounded-xl border border-border bg-card overflow-hidden animate-fade-up">
-          <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px] mb-6 max-w-5xl">
+        {/* Upload — compact */}
+        <div className="rounded-xl border border-border bg-card overflow-hidden animate-fade-up">
+          <div className="px-4 py-3 border-b border-border/50 flex items-center gap-2">
             <CloudUpload className="w-4 h-4 text-gold" />
             <h2 className="text-sm font-semibold text-foreground">Upload new resource</h2>
           </div>
-          <div className="p-5 space-y-4">
+          <div className="p-4 space-y-3">
+            {/* Drop zone — smaller */}
             <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} onClick={() => fileInputRef.current?.click()}
-              className={`relative cursor-pointer rounded-lg border-2 border-dashed p-8 text-center transition-all duration-200 ${isDragging ? 'border-gold bg-gold/[0.06] scale-[1.01]' : selectedFile ? 'border-emerald-500/30 bg-emerald-500/[0.04]' : 'border-border/60 bg-background/30 hover:border-gold/30 hover:bg-gold/[0.02]'}`}>
+              className={`relative cursor-pointer rounded-lg border-2 border-dashed px-4 py-4 text-center transition-all duration-200 ${isDragging ? 'border-gold bg-gold/[0.06] scale-[1.01]' : selectedFile ? 'border-emerald-500/30 bg-emerald-500/[0.04]' : 'border-border/60 bg-background/30 hover:border-gold/30 hover:bg-gold/[0.02]'}`}>
               <input ref={fileInputRef} type="file" accept=".pdf,.docx,.pptx,.md,.html,.txt,.csv" onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)} className="hidden" />
               {selectedFile ? (
-                <div className="flex items-center justify-center gap-3">
-                  <FileText className={`w-8 h-8 ${getFileExtColor(selectedFile.name)}`} />
-                  <div className="text-left">
-                    <p className="text-sm font-medium text-foreground">{selectedFile.name}</p>
-                    <p className="text-xs text-muted-foreground">{(selectedFile.size / 1024).toFixed(1)} KB · Click or drop to replace</p>
+                <div className="flex items-center gap-3">
+                  <FileText className={`w-6 h-6 shrink-0 ${getFileExtColor(selectedFile.name)}`} />
+                  <div className="text-left min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{selectedFile.name}</p>
+                    <p className="text-xs text-muted-foreground">{(selectedFile.size / 1024).toFixed(1)} KB · drop to replace</p>
                   </div>
                 </div>
               ) : (
-                <>
-                  <Upload className="w-8 h-8 mx-auto text-muted-foreground/50 mb-3" />
-                  <p className="text-sm text-muted-foreground mb-1">{isDragging ? 'Drop file here' : 'Click or drag a file to upload'}</p>
-                  <p className="text-xs text-muted-foreground/60">PDF, DOCX, PPTX, Markdown, HTML, TXT, CSV</p>
-                </>
+                <div className="flex items-center justify-center gap-2.5">
+                  <Upload className="w-5 h-5 text-muted-foreground/50 shrink-0" />
+                  <div className="text-left">
+                    <p className="text-sm text-muted-foreground">{isDragging ? 'Drop file here' : 'Click or drag a file to upload'}</p>
+                    <p className="text-xs text-muted-foreground/60">PDF, DOCX, PPTX, MD, HTML, TXT, CSV</p>
+                  </div>
+                </div>
               )}
             </div>
 
+            {/* Topic + model selectors row */}
             <input type="text" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Topic label (optional)"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:border-gold/30 focus:ring-1 focus:ring-gold/20" />
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:border-gold/30 focus:ring-1 focus:ring-gold/20" />
+
+            {/* AI Model selection (collapsible) */}
+            <div className="rounded-lg border border-border/50 bg-background/30 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowAdvancedModels(!showAdvancedModels)}
+                className="w-full flex items-center justify-between px-3 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span className="inline-flex items-center gap-1.5"><Cpu className="w-3 h-3" /> AI models for this upload</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${showAdvancedModels ? 'rotate-180' : ''}`} />
+              </button>
+              {showAdvancedModels && (
+                <div className="px-3 pb-3 grid grid-cols-2 gap-2 border-t border-border/30 pt-2.5">
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1">Ontology</label>
+                    <select
+                      value={ontologyModelId}
+                      onChange={(e) => setOntologyModelId(e.target.value)}
+                      className="w-full rounded border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:border-gold/30"
+                    >
+                      <option value="">Default ({ontologyTaskModels?.default_model_id?.split('/').pop() ?? '…'})</option>
+                      {(ontologyTaskModels?.allowed_models ?? []).map((m) => (
+                        <option key={m.model_id} value={m.model_id}>{m.display_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1">Enrichment</label>
+                    <select
+                      value={enrichmentModelId}
+                      onChange={(e) => setEnrichmentModelId(e.target.value)}
+                      className="w-full rounded border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:border-gold/30"
+                    >
+                      <option value="">Default ({enrichmentTaskModels?.default_model_id?.split('/').pop() ?? '…'})</option>
+                      {(enrichmentTaskModels?.allowed_models ?? []).map((m) => (
+                        <option key={m.model_id} value={m.model_id}>{m.display_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {userSettings?.async_byok_escrow_enabled && (
-              <label className={`flex items-start gap-3 rounded-lg border px-3.5 py-3 text-sm cursor-pointer transition-all ${useAsyncByok ? 'border-gold/30 bg-gold/[0.06]' : 'border-border/50 bg-background/30'} ${!asyncByokAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <label className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 text-sm cursor-pointer transition-all ${useAsyncByok ? 'border-gold/30 bg-gold/[0.06]' : 'border-border/50 bg-background/30'} ${!asyncByokAvailable ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <input type="checkbox" checked={useAsyncByok} onChange={(e) => setUseAsyncByok(e.target.checked)} disabled={!asyncByokAvailable} className="mt-0.5 h-4 w-4 rounded border-border accent-[hsl(var(--gold))]" />
                 <div>
-                  <p className="font-medium text-foreground text-sm">Use my BYOK for background processing</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Creates encrypted server-side escrow for up to {userSettings.async_byok_escrow_ttl_minutes} min.{!asyncByokAvailable && ' Save a BYOK key in Settings first.'}</p>
+                  <p className="font-medium text-foreground text-sm">Use my BYOK for processing</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Escrow up to {userSettings.async_byok_escrow_ttl_minutes} min.{!asyncByokAvailable && ' Save a BYOK key in Settings first.'}</p>
                 </div>
               </label>
             )}
 
-            {/* CM-014: Upload cost estimate */}
             {uploadEstimate && (
-              <div className="rounded-lg border border-gold/15 bg-gold/[0.04] px-3.5 py-2.5 text-sm space-y-1">
-                <div className="flex items-center gap-2 text-foreground font-medium">
-                  <Coins className="w-3.5 h-3.5 text-gold" />
+              <div className="rounded-lg border border-gold/15 bg-gold/[0.04] px-3 py-2 text-sm space-y-0.5">
+                <div className="flex items-center gap-2 text-foreground font-medium text-xs">
+                  <Coins className="w-3 h-3 text-gold" />
                   {shouldShowDetailedEstimate ? 'Estimated credit split' : 'Processing credits'}
                 </div>
                 <p className="text-xs text-muted-foreground">Reserve now: {formatCredits(uploadEstimate.core_upload_credits)} credits</p>
-                {shouldShowDetailedEstimate ? (
-                  <>
-                    <p className="text-xs text-muted-foreground">Curriculum later: {formatCredits(uploadEstimate.curriculum_credits_low)}–{formatCredits(uploadEstimate.curriculum_credits_high)} credits</p>
-                    <p className="text-xs text-muted-foreground">
-                      Total projected: {formatCredits(uploadEstimate.estimated_credits_low)}–{formatCredits(uploadEstimate.estimated_credits_high)} credits · ~{uploadEstimate.page_count_estimate} pages · ~{uploadEstimate.chunk_count_estimate} chunks · {uploadEstimate.estimate_confidence} confidence
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">Core upload is reserved immediately. Curriculum preparation is reserved only when that stage starts.</p>
-                  </>
-                ) : (
-                  <p className="text-[11px] text-muted-foreground">Curriculum preparation is billed separately if and when it runs. Detailed estimates appear automatically for larger documents.</p>
+                {shouldShowDetailedEstimate && (
+                  <p className="text-xs text-muted-foreground">Curriculum later: {formatCredits(uploadEstimate.curriculum_credits_low)}–{formatCredits(uploadEstimate.curriculum_credits_high)} credits</p>
                 )}
                 {uploadEstimate.warnings?.length > 0 && (
                   <p className="text-xs text-amber-400">{uploadEstimate.warnings.join('; ')}</p>
@@ -375,32 +419,30 @@ export default function ResourcesTab({ notebookId }: { notebookId: string }) {
               </div>
             )}
 
-            <div className="flex items-center gap-3">
-              <button onClick={handleUpload} disabled={!selectedFile || uploadResource.isPending || attach.isPending}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gold text-primary-foreground text-sm font-medium hover:bg-gold/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                {uploadResource.isPending || attach.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                Upload & attach
-              </button>
-            </div>
+            <button onClick={handleUpload} disabled={!selectedFile || uploadResource.isPending || attach.isPending}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gold text-primary-foreground text-sm font-medium hover:bg-gold/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              {uploadResource.isPending || attach.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              Upload & attach
+            </button>
           </div>
         </div>
 
-        {/* Attach from library */}
-        <div className="lg:col-span-2 rounded-xl border border-border bg-card overflow-hidden animate-fade-up" style={{ animationDelay: '0.05s' }}>
-          <div className="px-5 py-4 border-b border-border/50 flex items-center gap-2">
+        {/* Right column: attach from library */}
+        <div className="rounded-xl border border-border bg-card overflow-hidden animate-fade-up" style={{ animationDelay: '0.05s' }}>
+          <div className="px-4 py-3 border-b border-border/50 flex items-center gap-2">
             <Link2 className="w-4 h-4 text-gold" />
             <h2 className="text-sm font-semibold text-foreground">Attach from library</h2>
           </div>
-          <div className="p-5 space-y-4">
-            <p className="text-xs text-muted-foreground">Previously uploaded resources can be linked to multiple notebooks.</p>
+          <div className="p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Link a previously uploaded resource to this notebook.</p>
             <select value={selectedResourceId} onChange={(e) => setSelectedResourceId(e.target.value)}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:border-gold/30 focus:ring-1 focus:ring-gold/20">
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:border-gold/30 focus:ring-1 focus:ring-gold/20">
               <option value="">Select a resource…</option>
               {available.map((r) => <option key={r.id} value={r.id}>{r.filename}{getResourceDisplayStatus(r) === 'processing' ? ' (processing…)' : ''}</option>)}
             </select>
             <button onClick={handleAttach} disabled={!selectedResourceId || attach.isPending}
-              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-gold/10 border border-gold/20 text-gold text-sm font-medium hover:bg-gold/20 transition-colors disabled:opacity-50">
-              {attach.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Attach resource
+              className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-gold/10 border border-gold/20 text-gold text-sm font-medium hover:bg-gold/20 transition-colors disabled:opacity-50">
+              {attach.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Attach
             </button>
           </div>
         </div>

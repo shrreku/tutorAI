@@ -23,6 +23,7 @@ from app.agents.safety_critic import SafetyCritic
 from app.agents.tutor_agent import TutorAgent
 from app.models.notebook import NotebookSession
 from app.models.session import UserSession
+from app.services.notebook_planning import NotebookPlanningStateService
 from app.services.retrieval.service import RetrievalService
 from app.services.tutor_runtime.stage_handoffs import (
     apply_evaluation_plan_updates as _apply_evaluation_plan_updates,
@@ -350,6 +351,24 @@ class TurnPipeline:
             return
 
         resolved_scope = resolve_plan_scope(plan)
+        notebook_planning_service = NotebookPlanningStateService(self.db)
+        notebook_planning_snapshot = await notebook_planning_service.sync_for_session(
+            session.id
+        )
+        if notebook_planning_snapshot:
+            plan["notebook_planning_state"] = notebook_planning_snapshot.get(
+                "notebook_planning_state"
+            )
+            plan["coverage_snapshot"] = notebook_planning_snapshot.get(
+                "coverage_snapshot"
+            )
+        planning_context = notebook_planning_service.build_planning_context(
+            (notebook_planning_snapshot or {}).get("notebook_planning_state"),
+            mode=plan.get("mode") or "learn",
+            topic=resolved_scope.get("topic") or plan.get("active_topic"),
+            selected_topics=list(resolved_scope.get("selected_topics") or []),
+            personalization_snapshot=plan.get("learner_personalization"),
+        )
         existing_objective_ids = [
             obj.get("objective_id")
             for obj in objective_queue
@@ -365,6 +384,7 @@ class TurnPipeline:
             mode=plan.get("mode") or "learn",
             max_new_objectives=int(planner_state.get("objective_batch_size", 2) or 2),
             existing_objective_ids=existing_objective_ids,
+            planning_context=planning_context,
         )
 
         planner_state["last_planning_mode"] = "extend"
@@ -1145,6 +1165,20 @@ class TurnPipeline:
         trace_events = _consume_trace_events(plan)
 
         session.plan_state = plan
+        flag_modified(session, "plan_state")
+        flag_modified(session, "mastery")
+
+        notebook_planning_snapshot = await NotebookPlanningStateService(
+            self.db
+        ).sync_for_session(session.id)
+        if notebook_planning_snapshot:
+            plan["notebook_planning_state"] = notebook_planning_snapshot.get(
+                "notebook_planning_state"
+            )
+            plan["coverage_snapshot"] = notebook_planning_snapshot.get(
+                "coverage_snapshot"
+            )
+            session.plan_state = plan
         flag_modified(session, "plan_state")
         flag_modified(session, "mastery")
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import List, Optional, Dict, Any, Generic, TypeVar
 from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict
 
 
 T = TypeVar("T")
@@ -332,6 +332,46 @@ class ResourceKnowledgeBaseResponse(BaseModel):
     latest_job: Optional[IngestionStatusResponse] = None
 
 
+# Learner personalization schemas
+class LearnerPreferences(BaseModel):
+    """Account-level learner preference defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pace: Optional[str] = None
+    depth: Optional[str] = None
+    tutoring_style: Optional[str] = None
+    hint_level: Optional[str] = None
+    language: Optional[str] = None
+    accessibility: Optional[Dict[str, Any]] = None
+
+
+class NotebookPersonalization(BaseModel):
+    """Notebook-scoped personalization preferences."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    purpose: Optional[str] = None
+    urgency: Optional[bool] = None
+    study_pace: Optional[str] = None
+    study_depth: Optional[str] = None
+    practice_intensity: Optional[str] = None
+    exam_context: Optional[str] = None
+
+
+class SessionPersonalization(BaseModel):
+    """Session-scoped personalization overrides."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    time_budget_minutes: Optional[int] = None
+    today_goal: Optional[str] = None
+    interaction_style: Optional[str] = None
+    confidence: Optional[str] = None
+    want_hints: Optional[bool] = None
+    want_examples: Optional[bool] = None
+
+
 # Notebook API schemas
 class NotebookCreate(BaseModel):
     """Request to create a notebook."""
@@ -342,6 +382,7 @@ class NotebookCreate(BaseModel):
     goal: Optional[str] = None
     target_date: Optional[datetime] = None
     settings_json: Optional[Dict[str, Any]] = None
+    personalization: Optional[NotebookPersonalization] = None
 
 
 class NotebookUpdate(BaseModel):
@@ -354,6 +395,7 @@ class NotebookUpdate(BaseModel):
     target_date: Optional[datetime] = None
     status: Optional[str] = None
     settings_json: Optional[Dict[str, Any]] = None
+    personalization: Optional[NotebookPersonalization] = None
 
 
 class NotebookResponse(BaseModel):
@@ -368,6 +410,7 @@ class NotebookResponse(BaseModel):
     target_date: Optional[datetime] = None
     status: str
     settings_json: Optional[Dict[str, Any]] = None
+    personalization: Optional[NotebookPersonalization] = None
     created_at: datetime
     updated_at: datetime
 
@@ -410,34 +453,12 @@ class NotebookSessionCreateRequest(BaseModel):
     selected_topics: Optional[List[str]] = None
     mode: str = "learn"
     consent_training: Optional[bool] = Field(default=None)
+    personalization: Optional[SessionPersonalization] = None
+    curriculum_model_id: Optional[str] = None
     resume_existing: bool = Field(
         default=True,
         description="Resume the latest active session for this resource when available.",
     )
-
-    @model_validator(mode="after")
-    def validate_mode_specific_input(self) -> "NotebookSessionCreateRequest":
-        normalized_topic = (self.topic or "").strip() or None
-        normalized_selected_topics = [
-            item.strip()
-            for item in (self.selected_topics or [])
-            if isinstance(item, str) and item.strip()
-        ]
-
-        self.topic = normalized_topic
-        self.selected_topics = normalized_selected_topics or None
-        self.mode = (self.mode or "learn").strip().lower()
-
-        has_anchor_resource = self.resource_id is not None
-
-        if self.mode == "doubt" and not (
-            self.topic or self.selected_topics or has_anchor_resource
-        ):
-            raise ValueError(
-                "Doubt mode requires learner input in topic or selected_topics"
-            )
-
-        return self
 
 
 class NotebookSessionResponse(BaseModel):
@@ -453,7 +474,9 @@ class NotebookSessionResponse(BaseModel):
     ended_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
-
+    mastery_avg: Optional[float] = None
+    concepts_count: int = 0
+    topic: Optional[str] = None
 
 class NotebookSessionDetailResponse(BaseModel):
     """Notebook session detail with nested session metadata."""
@@ -464,6 +487,68 @@ class NotebookSessionDetailResponse(BaseModel):
     session: "SessionResponse"
     reused_existing: bool = False
     preparation_summary: Dict[str, Any] = Field(default_factory=dict)
+    notebook_planning_state: Optional["NotebookPlanningStateResponse"] = None
+
+
+class NotebookArtifactGenerateRequest(BaseModel):
+    """Request to generate a notebook artifact from sessions/resources."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    artifact_type: str = Field(min_length=1)
+    source_session_ids: List[UUID] = Field(default_factory=list)
+    source_resource_ids: List[UUID] = Field(default_factory=list)
+    options: Optional[Dict[str, Any]] = None
+
+
+class NotebookPlanningStateResponse(BaseModel):
+    """Durable notebook-global planning, learner, and coverage state."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    notebook_id: UUID
+    revision: int = 1
+    knowledge_state: Dict[str, Any] = Field(default_factory=dict)
+    learner_state: Dict[str, Any] = Field(default_factory=dict)
+    planner_state: Dict[str, Any] = Field(default_factory=dict)
+    coverage_snapshot: Dict[str, Any] = Field(default_factory=dict)
+    updated_at: Optional[datetime] = None
+
+
+class NotebookArtifactResponse(BaseModel):
+    """Notebook artifact payload returned by notebook artifact endpoints."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    notebook_id: UUID
+    artifact_type: str
+    payload_json: Dict[str, Any] = Field(default_factory=dict)
+    source_session_ids: List[str] = Field(default_factory=list)
+    source_resource_ids: List[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class AsyncByokEscrowResponse(BaseModel):
+    """Metadata describing an async BYOK escrow record."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    purpose_type: str
+    purpose_id: Optional[UUID] = None
+    scope_type: str
+    scope_key: str
+    provider_name: Optional[str] = None
+    status: str
+    expires_at: Optional[datetime] = None
+    hard_delete_after: Optional[datetime] = None
+    access_count: int = 0
+    last_accessed_at: Optional[datetime] = None
+    revoked_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
+    deletion_reason: Optional[str] = None
 
 
 class NotebookProgressResponse(BaseModel):
@@ -477,122 +562,13 @@ class NotebookProgressResponse(BaseModel):
     weak_concepts_snapshot: List[str] = Field(default_factory=list)
     sessions_count: int = 0
     completed_sessions_count: int = 0
+    coverage_snapshot: Dict[str, Any] = Field(default_factory=dict)
+    notebook_planning_state: Optional["NotebookPlanningStateResponse"] = None
     updated_at: Optional[datetime] = None
 
 
-class NotebookArtifactGenerateRequest(BaseModel):
-    """Request payload for generating a notebook artifact."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    artifact_type: str = Field(min_length=1)
-    source_session_ids: List[UUID] = Field(default_factory=list)
-    source_resource_ids: List[UUID] = Field(default_factory=list)
-    options: Dict[str, Any] = Field(default_factory=dict)
-
-
-class NotebookArtifactResponse(BaseModel):
-    """Notebook artifact response."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: UUID
-    notebook_id: UUID
-    artifact_type: str
-    payload_json: Dict[str, Any]
-    source_session_ids: List[str] = Field(default_factory=list)
-    source_resource_ids: List[str] = Field(default_factory=list)
-    created_at: datetime
-    updated_at: datetime
-
-
-# Session API schemas
-class SessionCreate(BaseModel):
-    """Request to create a session."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    resource_id: UUID
-    topic: Optional[str] = None
-    selected_topics: Optional[List[str]] = None
-    consent_training: Optional[bool] = Field(
-        default=None,
-        description="Explicit opt-in for training data collection. Must be true for session data to be eligible for model improvement.",
-    )
-
-
-class UserSettingsResponse(BaseModel):
-    """Current settings for the authenticated user."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    consent_training_global: bool = False
-    consent_preference_set: bool = False
-    is_admin: bool = False
-    async_byok_escrow_enabled: bool = False
-    async_byok_escrow_backend: Optional[str] = None
-    async_byok_escrow_ttl_minutes: int = 0
-    parse_page_limit: int = 0
-    parse_page_used: int = 0
-    parse_page_reserved: int = 0
-    parse_page_remaining: int = 0
-
-
-class AsyncByokEscrowResponse(BaseModel):
-    """Safe metadata for a user's async BYOK escrow objects."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: UUID
-    purpose_type: str
-    purpose_id: str
-    scope_type: str
-    scope_key: str
-    provider_name: Optional[str] = None
-    status: str
-    expires_at: datetime
-    hard_delete_after: datetime
-    access_count: int = 0
-    last_accessed_at: Optional[datetime] = None
-    revoked_at: Optional[datetime] = None
-    deleted_at: Optional[datetime] = None
-    deletion_reason: Optional[str] = None
-
-
-class UserSettingsUpdateRequest(BaseModel):
-    """Partial update for user settings."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    consent_training_global: Optional[bool] = None
-
-
-class CreditEstimateRequest(BaseModel):
-    """Estimate request for token-based credit charging."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    prompt_tokens: int = Field(ge=0)
-    completion_tokens: int = Field(ge=0)
-    uses_ocr: bool = False
-    uses_web_search: bool = False
-
-
-class CreditEstimateResponse(BaseModel):
-    """Estimated credit charge and breakdown."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    credits_enabled: bool
-    estimated_credits: int
-    input_component: int
-    output_component: int
-    ocr_surcharge: int
-    web_search_surcharge: int
-
-
 class ObjectiveSummary(BaseModel):
-    """Brief summary of a learning objective for the frontend."""
+    """Summary of a curriculum objective exposed in session responses."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -607,7 +583,7 @@ class ObjectiveSummary(BaseModel):
 
 
 class CurriculumOverview(BaseModel):
-    """Overview of the curriculum plan returned at session creation."""
+    """High-level curriculum overview for a session."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -615,6 +591,72 @@ class CurriculumOverview(BaseModel):
     total_objectives: int = 0
     objectives: List[ObjectiveSummary] = Field(default_factory=list)
     session_overview: Optional[str] = None
+
+
+class SessionCreate(BaseModel):
+    """Legacy resource-first session create payload."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    resource_id: UUID
+    topic: Optional[str] = None
+    selected_topics: Optional[List[str]] = None
+    consent_training: Optional[bool] = None
+
+
+class UserSettingsResponse(BaseModel):
+    """User-level settings exposed to the frontend."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    consent_training_global: bool
+    consent_preference_set: bool
+    consent_personalization: bool = True
+    is_admin: bool = False
+    async_byok_escrow_enabled: bool = False
+    async_byok_escrow_backend: Optional[str] = None
+    async_byok_escrow_ttl_minutes: int = 0
+    parse_page_limit: int = 0
+    parse_page_used: int = 0
+    parse_page_reserved: int = 0
+    parse_page_remaining: int = 0
+    byok_api_key_set: Optional[bool] = None
+    byok_api_base_url: Optional[str] = None
+    learning_preferences: Optional[LearnerPreferences | Dict[str, Any]] = None
+
+
+class UserSettingsUpdateRequest(BaseModel):
+    """Patch payload for mutable user-level settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    consent_training_global: Optional[bool] = None
+    consent_personalization: Optional[bool] = None
+    learning_preferences: Optional[LearnerPreferences] = None
+
+
+class CreditEstimateRequest(BaseModel):
+    """Estimate credit cost for a request based on token usage flags."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    prompt_tokens: int = Field(ge=0)
+    completion_tokens: int = Field(ge=0)
+    uses_ocr: bool = False
+    uses_web_search: bool = False
+
+
+class CreditEstimateResponse(BaseModel):
+    """Credit estimate breakdown."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    credits_enabled: bool
+    estimated_credits: int = 0
+    input_component: int = 0
+    output_component: int = 0
+    ocr_surcharge: int = 0
+    web_search_surcharge: int = 0
 
 
 class SessionResponse(BaseModel):
@@ -632,7 +674,27 @@ class SessionResponse(BaseModel):
     current_concept_id: Optional[str] = None
     mastery: Optional[Dict[str, float]] = None
     curriculum_overview: Optional[CurriculumOverview] = None
+    plan_state: Optional[Dict[str, Any]] = None
+    notebook_planning_state: Optional["NotebookPlanningStateResponse"] = None
     created_at: datetime
+
+
+class CitationData(BaseModel):
+    """Evidence citation attached to a tutor turn response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    citation_id: str
+    resource_id: Optional[str] = None
+    chunk_id: str
+    sub_chunk_id: Optional[str] = None
+    page_start: Optional[int] = None
+    page_end: Optional[int] = None
+    section_heading: Optional[str] = None
+    snippet: str
+    relevance_score: float
+    char_start: Optional[int] = None
+    char_end: Optional[int] = None
 
 
 class SessionDetailResponse(SessionResponse):
@@ -642,74 +704,6 @@ class SessionDetailResponse(SessionResponse):
 
     plan_state: Optional[Dict[str, Any]] = None
     turn_count: int = 0
-
-
-# Tutor API schemas
-class TutorTurnRequest(BaseModel):
-    """Request for a tutoring turn."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    session_id: UUID
-    message: str = Field(..., min_length=1)
-
-
-class CitationData(BaseModel):
-    """A structured citation linking tutor response to source material."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    citation_id: str
-    resource_id: Optional[str] = None
-    chunk_id: str
-    sub_chunk_id: Optional[str] = None
-    char_start: Optional[int] = None
-    char_end: Optional[int] = None
-    page_start: Optional[int] = None
-    page_end: Optional[int] = None
-    section_heading: Optional[str] = None
-    snippet: Optional[str] = None
-    relevance_score: Optional[float] = None
-
-
-class TutorTurnResponse(BaseModel):
-    """Response from a tutoring turn."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    turn_id: UUID
-    response: str
-    tutor_question: Optional[str] = None
-    current_step: Optional[str] = None
-    current_step_index: int = 0
-    objective_id: Optional[str] = None
-    objective_title: Optional[str] = None
-    step_transition: Optional[str] = None
-    focus_concepts: List[str] = Field(default_factory=list)
-    mastery_update: Optional[Dict[str, float]] = None
-    evaluation: Optional[Dict[str, Any]] = None
-    session_complete: bool = False
-    awaiting_evaluation: bool = False
-    session_summary: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Session summary data when session_complete=True. Contains summary_text, concepts_strong/developing/to_revisit, objectives, mastery_snapshot.",
-    )
-    progression_contract: Dict[str, Any] = Field(default_factory=dict)
-    retrieval_contract: Dict[str, Any] = Field(default_factory=dict)
-    response_contract: Dict[str, Any] = Field(default_factory=dict)
-    study_map_delta: Optional[Dict[str, Any]] = None
-    study_map_snapshot: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description="Live study map state: objectives with step statuses, current position, ad-hoc count.",
-    )
-    citations: List[CitationData] = Field(
-        default_factory=list,
-        description="Structured citations linking response to source chunks with page/section references.",
-    )
-    # CM-015: Model routing transparency
-    selected_model_id: Optional[str] = None
-    routed_model_id: Optional[str] = None
-    reroute_reason: Optional[str] = None
 
 
 class SessionSummaryResponse(BaseModel):
@@ -727,13 +721,53 @@ class SessionSummaryResponse(BaseModel):
     concepts_to_revisit: List[str] = Field(default_factory=list)
     objectives: List[Dict[str, Any]] = Field(default_factory=list)
     mastery_snapshot: Dict[str, float] = Field(default_factory=dict)
+    notebook_planning_state: Optional["NotebookPlanningStateResponse"] = None
 
 
+class TutorTurnRequest(BaseModel):
+    """Request payload for a tutor turn."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: UUID
+    message: str = Field(min_length=1)
+
+
+class TutorTurnResponse(BaseModel):
+    """Response payload for a tutor turn."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    turn_id: UUID
+    response: str
+    tutor_question: Optional[str] = None
+    current_step: Optional[str] = None
+    current_step_index: int = 0
+    objective_id: Optional[str] = None
+    objective_title: Optional[str] = None
+    step_transition: Optional[str] = None
+    focus_concepts: List[str] = Field(default_factory=list)
+    mastery_update: Optional[Dict[str, float]] = None
+    evaluation: Optional[Dict[str, Any]] = None
+    session_complete: bool = False
+    awaiting_evaluation: bool = False
+    session_summary: Optional[Dict[str, Any]] = None
+    progression_contract: Dict[str, Any] = Field(default_factory=dict)
+    retrieval_contract: Dict[str, Any] = Field(default_factory=dict)
+    response_contract: Dict[str, Any] = Field(default_factory=dict)
+    structured_content: Optional[List[Dict[str, Any]]] = None
+    study_map_delta: Optional[Dict[str, Any]] = None
+    study_map_snapshot: Optional[Dict[str, Any]] = None
+    citations: List[CitationData] = Field(default_factory=list)
+    selected_model_id: Optional[str] = None
+    routed_model_id: Optional[str] = None
+    reroute_reason: Optional[str] = None
+
+
+SessionResponse.model_rebuild()
 NotebookSessionDetailResponse.model_rebuild()
 
-
 # ── Quiz schemas ───────────────────────────────────────────────────────
-
 
 class QuizQuestionResponse(BaseModel):
     """A single quiz question (without the correct answer — sent to frontend)."""

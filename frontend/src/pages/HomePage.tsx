@@ -1,29 +1,18 @@
 import { useNavigate } from 'react-router-dom'
 import { BookOpen, Upload, ArrowRight, Sparkles, Wallet, AlertTriangle } from 'lucide-react'
-import { useBillingBalance, useNotebooks, useResources, useUserSettings, useUpdateUserSettings } from '../api/hooks'
+import { useBillingBalance, useNotebooks, useResources } from '../api/hooks'
 import { formatCredits } from '../lib/credits'
 
 export default function HomePage() {
   const navigate = useNavigate()
   const { data: notebooksData } = useNotebooks()
   const { data: resourcesData } = useResources()
-  const { data: userSettings } = useUserSettings()
   const { data: balance } = useBillingBalance()
-  const updateUserSettings = useUpdateUserSettings()
 
   const notebookCount = notebooksData?.items?.length ?? 0
   const resourceCount = resourcesData?.items?.length ?? 0
-  const showConsentPrompt = userSettings ? !userSettings.consent_preference_set : false
   const creditsEnabled = balance?.credits_enabled ?? false
   const isLowBalance = creditsEnabled && (balance?.balance ?? 0) < Math.round((balance?.default_monthly_grant ?? 0) * 0.2)
-
-  const saveConsentPreference = async (enabled: boolean) => {
-    try {
-      await updateUserSettings.mutateAsync({ consent_training_global: enabled })
-    } catch (err) {
-      console.error('Failed to save consent preference', err)
-    }
-  }
 
   return (
     <div className="h-full flex flex-col overflow-auto px-6 py-8 lg:px-10">
@@ -137,34 +126,6 @@ export default function HomePage() {
                 className="font-ui inline-flex items-center gap-2 rounded-xl border border-gold/20 bg-gold/10 px-3 py-2 text-sm font-medium text-gold"
               >
                 Open billing <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showConsentPrompt && (
-        <div className="max-w-4xl mb-8 animate-fade-up" style={{ animationDelay: '0.35s' }}>
-          <div className="surface-scholarly rounded-[28px] border border-gold/25 bg-gold/[0.05] p-5">
-            <h2 className="font-reading text-3xl font-semibold text-foreground mb-1.5">
-              Research participation preference
-            </h2>
-            <p className="reading-copy text-base text-muted-foreground mb-4 max-w-2xl leading-relaxed">
-                StudyAgent is a research project. You can choose whether anonymized tutoring
-                interactions may be used to improve model quality, and change this anytime.
-            </p>
-            <div className="flex flex-wrap gap-2.5">
-              <button
-                onClick={() => saveConsentPreference(true)}
-                className="font-ui px-4 py-2 rounded-xl bg-gold text-primary-foreground text-sm font-medium hover:bg-gold/90 transition-colors"
-              >
-                Opt in
-              </button>
-              <button
-                onClick={() => saveConsentPreference(false)}
-                className="font-ui px-4 py-2 rounded-xl border border-border text-sm font-medium text-foreground hover:border-gold/20 transition-colors"
-              >
-                Keep opted out
               </button>
             </div>
           </div>

@@ -1,7 +1,7 @@
 # Generated artifacts and local-only dirs
 artifacts/
 env/
-
+deploy.env
 # Python
 __pycache__/
 *.py[cod]

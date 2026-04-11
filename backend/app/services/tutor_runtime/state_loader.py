@@ -28,7 +28,7 @@ async def load_recent_turns(
     return [
         {
             "student_message": t.student_message,
-            "tutor_response": (t.tutor_response or "")[:300],
+            "tutor_response": t.tutor_response or "",
             "pedagogical_action": t.pedagogical_action,
             "current_step": t.current_step,
         }

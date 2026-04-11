@@ -15,6 +15,7 @@ from app.models.session import UserSession, UserProfile, TutorTurn
 from app.models.resource import Resource
 from app.models.knowledge_base import ResourceConceptStats
 from app.agents.curriculum_agent import CurriculumAgent
+from app.services.notebook_planning import NotebookPlanningStateService
 from app.services.student_state import build_student_concept_state
 from app.services.tutor_runtime.step_state import (
     build_step_status,
@@ -310,6 +311,7 @@ class SessionService:
         mode: Optional[str] = None,
         consent_training: bool = False,
         resume_existing: bool = True,
+        personalization_snapshot: Optional[dict] = None,
     ) -> UserSession:
         """
         Create a new tutoring session.
@@ -362,6 +364,19 @@ class SessionService:
         planning_resource_ids = list(
             curriculum_scope.get("resource_ids") or [str(resource_id)]
         )
+
+        notebook_planning_snapshot: dict | None = None
+        notebook_planning_context: dict | None = None
+        if notebook_id:
+            planning_service = NotebookPlanningStateService(self.db)
+            notebook_planning_snapshot = await planning_service.sync_notebook(notebook_id)
+            notebook_planning_context = planning_service.build_planning_context(
+                (notebook_planning_snapshot or {}).get("notebook_planning_state"),
+                mode=session_mode,
+                topic=topic or resource.topic,
+                selected_topics=selected_topics,
+                personalization_snapshot=personalization_snapshot,
+            )
 
         # Check for existing active session
         existing = None
@@ -433,6 +448,7 @@ class SessionService:
                 scope_type=curriculum_scope.get("scope_type"),
                 notebook_id=curriculum_scope.get("notebook_id"),
                 objective_limit=objective_limit,
+                planning_context=notebook_planning_context,
             )
         elif is_provisional:
             # Provisional: use doubt-style fallback until concepts arrive
@@ -532,8 +548,19 @@ class SessionService:
             "curriculum_planner": curriculum_planner,
         }
 
-        # Initialize mastery (all discovered concepts at 0)
-        initial_mastery = {c: 0.0 for c in concepts}
+        # PROD-023: Inject personalization snapshot into plan_state for runtime
+        if personalization_snapshot:
+            plan_state["learner_personalization"] = personalization_snapshot
+
+        notebook_mastery = (
+            ((notebook_planning_snapshot or {}).get("aggregate") or {}).get(
+                "mastery_snapshot"
+            )
+            or {}
+        )
+        initial_mastery = {
+            c: float(notebook_mastery.get(c, 0.0) or 0.0) for c in concepts
+        }
 
         # Ensure all objective concepts are tracked even if not in concept stats yet.
         for obj in objective_queue:
@@ -543,7 +570,18 @@ class SessionService:
                 + scope.get("support", [])
                 + scope.get("prereq", [])
             ):
-                initial_mastery.setdefault(concept_id, 0.0)
+                initial_mastery.setdefault(
+                    concept_id,
+                    float(notebook_mastery.get(concept_id, 0.0) or 0.0),
+                )
+
+        if notebook_planning_snapshot:
+            plan_state["notebook_planning_state"] = notebook_planning_snapshot.get(
+                "notebook_planning_state"
+            )
+            plan_state["coverage_snapshot"] = notebook_planning_snapshot.get(
+                "coverage_snapshot"
+            )
 
         plan_state["student_concept_state"] = build_student_concept_state(
             initial_mastery
@@ -562,6 +600,7 @@ class SessionService:
             consent_training=consent_training,
             mastery=initial_mastery,
             plan_state=plan_state,
+            personalization_snapshot=personalization_snapshot,
         )
 
         self.db.add(session)

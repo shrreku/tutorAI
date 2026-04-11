@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen,
+  PanelLeftOpen, PanelRightOpen,
   ArrowLeft,
 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -28,17 +28,19 @@ import {
   useNotebookProgress,
   useGenerateNotebookArtifact,
   useUpdateNotebook,
+  useModelPreferences,
+  useUpdateModelPreferences,
+  useTaskModels,
 } from '../../api/hooks';
-import type { Turn, NotebookArtifact } from '../../types/api';
+import type { NotebookArtifact, NotebookPersonalization, Turn } from '../../types/api';
 import type { QuizSubmissionSignal } from '../ui/ArtifactViewer';
 import type {
   ObjectiveSnapshot,
   CheckpointRequestedPayload,
   ArtifactEventPayload,
-  SourceCitationPayload,
   StudyMapSnapshot,
 } from '../../types/session-events';
-import { Sparkles, Brain, TimerReset, Target } from 'lucide-react';
+import { Sparkles, Brain, Target } from 'lucide-react';
 import {
   buildNotebookSettingsWithPersonalNotes,
   readNotebookPersonalNotes,
@@ -88,6 +90,11 @@ export default function StudyWorkspace() {
   const { data: progressData } = useNotebookProgress(notebookId || '');
   const generateArtifact = useGenerateNotebookArtifact(notebookId || '');
   const updateNotebook = useUpdateNotebook(notebookId || '');
+  const { data: modelPrefs } = useModelPreferences();
+  const updateModelPreferences = useUpdateModelPreferences();
+  const { data: policyTaskModels } = useTaskModels('tutor_policy');
+  const { data: responseTaskModels } = useTaskModels('tutor_response');
+  const { data: artifactTaskModels } = useTaskModels('artifact_generation');
 
   // Find active/latest notebook session (flat NotebookSession type)
   const activeNbSession = useMemo(() => {
@@ -182,7 +189,6 @@ export default function StudyWorkspace() {
 
   // Live state (will be populated from session events in future)
   const [liveArtifacts] = useState<ArtifactEventPayload[]>([]);
-  const [citations] = useState<SourceCitationPayload[]>([]);
   const [activeCheckpoint] = useState<CheckpointRequestedPayload | null>(null);
   const [notesDraft, setNotesDraft] = useState('');
   const [notesSyncStatus, setNotesSyncStatus] = useState<'saved' | 'saving' | 'error'>('saved');
@@ -278,6 +284,9 @@ export default function StudyWorkspace() {
     return sessionDetail?.session?.status === 'completed';
   }, [sessionDetail]);
 
+  const notebookPersonalization = notebook?.personalization ?? null;
+  const sessionPersonalization = ((sessionDetail?.session as { plan_state?: Record<string, unknown> | null } | undefined)?.plan_state?.learner_personalization as Record<string, unknown> | null | undefined) ?? null;
+
   // Session mode
   const mode = activeNbSession?.mode || null;
 
@@ -300,6 +309,14 @@ export default function StudyWorkspace() {
       });
     },
     [generateArtifact, sessionId],
+  );
+
+  const handleSaveNotebookPersonalization = useCallback(
+    async (personalization: NotebookPersonalization) => {
+      if (!notebookId) return;
+      await updateNotebook.mutateAsync({ personalization });
+    },
+    [notebookId, updateNotebook],
   );
 
   const appendToNotes = useCallback((text: string) => {
@@ -339,9 +356,25 @@ export default function StudyWorkspace() {
     });
     return Array.from(combined);
   }, [quizSignalItems, weakConcepts]);
+  const notebookPlanningState = useMemo(() => {
+    return progressData?.notebook_planning_state
+      || sessionDetail?.notebook_planning_state
+      || sessionDetail?.session?.notebook_planning_state
+      || null;
+  }, [progressData, sessionDetail]);
+  const coverageSnapshot = useMemo(() => {
+    return progressData?.coverage_snapshot
+      || notebookPlanningState?.coverage_snapshot
+      || null;
+  }, [notebookPlanningState, progressData]);
   const masteryAverage = Object.keys(mastery).length > 0
     ? Math.round((Object.values(mastery).reduce((sum, value) => sum + value, 0) / Object.keys(mastery).length) * 100)
     : 0;
+  const coverageMasteredPercent = Math.round(Number(
+    (coverageSnapshot && typeof coverageSnapshot === 'object'
+      ? (coverageSnapshot as Record<string, unknown>).mastered_percent
+      : 0) || 0,
+  ));
 
   const activeObjectiveSnapshot = useMemo(() => {
     if (studyMapSnapshot?.objectives?.length) {
@@ -393,23 +426,19 @@ export default function StudyWorkspace() {
                 {notebook?.title || 'Study Workspace'}
               </h1>
             </div>
-            {mode && (
-              <span className="data-chip hidden sm:inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-[10px] uppercase text-muted-foreground">
-                <TimerReset className="h-2.5 w-2.5 text-gold" />
-                {mode}
-              </span>
-            )}
             {!leftOpen && activeObjectiveSnapshot && (
-              <div className="hidden lg:flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1.5">
-                <Target className="h-3 w-3 text-gold" />
-                <span className="font-reading text-sm text-foreground truncate max-w-[220px]">
-                  {activeObjectiveSnapshot.title}
-                </span>
-                {collapsedObjectiveProgress && (
-                  <span className="data-chip rounded-full border border-gold/15 bg-gold/[0.06] px-2 py-0.5 text-[10px] text-gold">
-                    {collapsedObjectiveProgress}
+              <div className="hidden lg:flex items-center justify-center flex-1 min-w-0">
+                <div className="flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1.5 max-w-md">
+                  <Target className="h-3 w-3 text-gold shrink-0" />
+                  <span className="font-reading text-sm text-foreground truncate">
+                    {activeObjectiveSnapshot.title}
                   </span>
-                )}
+                  {collapsedObjectiveProgress && (
+                    <span className="data-chip rounded-full border border-gold/15 bg-gold/[0.06] px-2 py-0.5 text-[10px] text-gold shrink-0">
+                      {collapsedObjectiveProgress}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
             <div className="hidden xl:flex items-center gap-3 ml-auto text-[11px] text-muted-foreground font-ui uppercase tracking-[0.12em]">
@@ -422,48 +451,18 @@ export default function StudyWorkspace() {
                 <Brain className="h-3 w-3 text-gold" />
                 {masteryAverage}% mastery
               </span>
+              <span className="w-px h-3 bg-border" />
+              <span className="flex items-center gap-1.5">
+                <Target className="h-3 w-3 text-gold" />
+                {coverageMasteredPercent}% coverage
+              </span>
               {profiledWeakConcepts.length > 0 && (
                 <>
                   <span className="w-px h-3 bg-border" />
                   <span className="text-amber-600">{profiledWeakConcepts.length} needs review</span>
                 </>
               )}
-              {generateArtifact.isPending && (
-                <>
-                  <span className="w-px h-3 bg-border" />
-                  <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-gold animate-pulse" />Generating…</span>
-                </>
-              )}
             </div>
-          </div>
-
-          <div className="flex items-center gap-2 md:ml-2">
-            <button
-              onClick={() => setLeftOpen(!leftOpen)}
-              className={cn(
-                'font-ui flex items-center gap-2 rounded-full border px-4 py-2 text-[12px] font-medium uppercase tracking-[0.12em] transition-colors',
-                leftOpen
-                  ? 'border-gold/25 bg-gold/[0.06] text-gold'
-                  : 'border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50',
-              )}
-              title={leftOpen ? 'Hide study map' : 'Show study map'}
-            >
-              {leftOpen ? <PanelLeftClose className="w-3.5 h-3.5" /> : <PanelLeftOpen className="w-3.5 h-3.5" />}
-              <span>Study Map</span>
-            </button>
-            <button
-              onClick={() => setRightOpen(!rightOpen)}
-              className={cn(
-                'font-ui flex items-center gap-2 rounded-full border px-4 py-2 text-[12px] font-medium uppercase tracking-[0.12em] transition-colors',
-                rightOpen
-                  ? 'border-gold/25 bg-gold/[0.06] text-gold'
-                  : 'border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted/50',
-              )}
-              title={rightOpen ? 'Hide artifacts' : 'Show artifacts'}
-            >
-              {rightOpen ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
-              <span>Artifacts</span>
-            </button>
           </div>
         </div>
       </div>
@@ -475,13 +474,14 @@ export default function StudyWorkspace() {
           className="flex h-full min-w-0"
         >
           {/* Left context panel */}
-          {leftOpen && (
+          {leftOpen ? (
             <>
               <div
                 id="context"
                 className="hidden h-full w-[20rem] min-w-[17rem] max-w-[24rem] border-r border-border/40 bg-card/40 lg:block"
               >
                 <ContextPanel
+                  onClose={() => setLeftOpen(false)}
                   resources={resources}
                   resourceTopics={resourceTopics}
                   objectives={objectives}
@@ -489,10 +489,22 @@ export default function StudyWorkspace() {
                   weakConcepts={profiledWeakConcepts}
                   mode={mode}
                   studyMapSnapshot={studyMapSnapshot}
+                  notebookPlanningState={notebookPlanningState}
+                  coverageSnapshot={coverageSnapshot}
                 />
               </div>
               <ResizeHandle />
             </>
+          ) : (
+            <div className="hidden lg:flex h-full items-start pt-3 shrink-0">
+              <button
+                onClick={() => setLeftOpen(true)}
+                className="rounded-r-lg border border-l-0 border-border/60 bg-card/80 px-1 py-3 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                title="Open study map"
+              >
+                <PanelLeftOpen className="w-3.5 h-3.5" />
+              </button>
+            </div>
           )}
 
           {/* Center tutor panel */}
@@ -511,7 +523,7 @@ export default function StudyWorkspace() {
           </div>
 
           {/* Right artifact panel */}
-          {rightOpen && (
+          {rightOpen ? (
             <>
               <ResizeHandle />
               <div
@@ -519,9 +531,9 @@ export default function StudyWorkspace() {
                 className="hidden h-full w-[22rem] min-w-[18rem] max-w-[26rem] border-l border-border/40 bg-card/40 xl:block"
               >
                 <ArtifactPanel
+                  onClose={() => setRightOpen(false)}
                   liveArtifacts={liveArtifacts}
                   savedArtifacts={savedArtifacts}
-                  citations={citations}
                   notesDraft={notesDraft}
                   onNotesChange={handleNotesChange}
                   onAddToNotes={appendToNotes}
@@ -530,9 +542,30 @@ export default function StudyWorkspace() {
                   quizSignals={quizSignalItems}
                   onQuizSubmission={handleQuizSubmission}
                   onGenerateArtifact={handleGenerateArtifact}
+                  isGeneratingArtifact={generateArtifact.isPending}
+                  notebookPersonalization={notebookPersonalization}
+                  onSaveNotebookPersonalization={handleSaveNotebookPersonalization}
+                  modelPreferences={modelPrefs ?? null}
+                  onSaveModelPreferences={async (preferences) => {
+                    await updateModelPreferences.mutateAsync(preferences);
+                  }}
+                  policyTaskModels={policyTaskModels ?? null}
+                  responseTaskModels={responseTaskModels ?? null}
+                  artifactTaskModels={artifactTaskModels ?? null}
+                  sessionPersonalization={sessionPersonalization as Record<string, unknown> | null}
                 />
               </div>
             </>
+          ) : (
+            <div className="hidden xl:flex h-full items-start pt-3 shrink-0">
+              <button
+                onClick={() => setRightOpen(true)}
+                className="rounded-l-lg border border-r-0 border-border/60 bg-card/80 px-1 py-3 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                title="Open artifacts"
+              >
+                <PanelRightOpen className="w-3.5 h-3.5" />
+              </button>
+            </div>
           )}
         </div>
       </div>

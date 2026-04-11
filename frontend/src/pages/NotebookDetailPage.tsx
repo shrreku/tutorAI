@@ -2,8 +2,9 @@ import { useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Loader2, Sparkles, BarChart3, Layers,
-  MessageSquare, Calendar, LayoutDashboard, AlertTriangle,
-  FileText, StickyNote,
+  MessageSquare, LayoutDashboard, AlertTriangle,
+  FileText, StickyNote, Plus,
+  BookOpen, Target,
 } from 'lucide-react';
 import {
   useNotebook, useNotebookResources, useNotebookSessions,
@@ -41,12 +42,15 @@ export default function NotebookDetailPage() {
   const masteryValues = Object.values(mastery);
   const avgMastery = masteryValues.length ? Math.round((masteryValues.reduce((a, b) => a + b, 0) / masteryValues.length) * 100) : 0;
   const weakConcepts = progress?.weak_concepts_snapshot ?? [];
+  const hasResources = resourceItems.length > 0;
+  const activeSession = sessions.find((session) => !session.ended_at) ?? null;
   const personalNotes = useMemo(() => readNotebookPersonalNotes(notebook?.settings_json), [notebook?.settings_json]);
   const hasPersonalNotes = personalNotes.markdown.trim().length > 0;
   const resourceById = useMemo(() => new Map((allResources?.items ?? []).map((r) => [r.id, r])), [allResources?.items]);
 
   if (notebookLoading) return <div className="flex items-center justify-center h-full"><Loader2 className="w-6 h-6 text-gold animate-spin" /></div>;
   if (!notebook) return <div className="p-8 text-sm text-muted-foreground">Notebook not found.</div>;
+
 
   const setTab = (tab: string) => {
     setSearchParams(tab === 'overview' ? {} : { tab }, { replace: true });
@@ -67,6 +71,57 @@ export default function NotebookDetailPage() {
       : avgMastery < 55
         ? `Average mastery is ${avgMastery}%, which suggests retrieval practice is more valuable than more passive review right now.`
         : 'Use doubt mode when you mostly understand the material but want to clear specific uncertainty before moving on.';
+
+  const modeMeta = {
+    learn: { label: 'Learn', icon: BookOpen },
+    doubt: { label: 'Doubt', icon: MessageSquare },
+    practice: { label: 'Practice', icon: Target },
+    revision: { label: 'Revision', icon: Sparkles },
+  } as const;
+
+  const openSessionBuilder = () => {
+    setTab('overview');
+    window.setTimeout(() => {
+      document.getElementById('session-launch-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  };
+
+  const recommendationModeMeta = modeMeta[recommendedMode];
+  const activeModeMeta = activeSession ? modeMeta[activeSession.mode as keyof typeof modeMeta] ?? null : null;
+  const recommendation = !hasResources
+    ? {
+        icon: FileText,
+        kicker: 'Resources needed',
+        title: 'Upload a resource before you start studying.',
+        body: 'Add lecture notes, slides, or a chapter in the Resources tab so this notebook can generate session plans and study context.',
+        actionLabel: 'Upload',
+        action: () => setTab('resources'),
+      }
+    : activeSession
+      ? {
+          icon: activeModeMeta?.icon ?? MessageSquare,
+          kicker: 'Session in progress',
+          title: `Resume your ${activeModeMeta?.label.toLowerCase() ?? activeSession.mode} session.`,
+          body: 'You already have an active study thread. Continue that session, or open the builder below if you want to branch into a different mode or scope.',
+          actionLabel: 'Resume',
+          action: () => navigate(`/notebooks/${notebookId}/study?sessionId=${activeSession.session_id}`),
+        }
+      : {
+          icon: recommendationModeMeta.icon,
+          kicker: 'Recommended next move',
+          title: `${recommendationModeMeta.label} mode is the best next step right now.`,
+          body: recommendedReason,
+          actionLabel:
+            recommendedMode === 'revision'
+              ? 'Plan revision'
+              : recommendedMode === 'practice'
+                ? 'Set up practice'
+                : recommendedMode === 'doubt'
+                  ? 'Set up doubt mode'
+                  : 'Start learning',
+          action: openSessionBuilder,
+        };
+  const RecommendationIcon = recommendation.icon;
 
   const launchResources = resourceItems.map((entry) => {
     const resource = resourceById.get(entry.resource_id) ?? entry.resource ?? undefined;
@@ -103,75 +158,64 @@ export default function NotebookDetailPage() {
           <ArrowLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" /> Notebooks
         </button>
 
-        <div className="surface-scholarly rounded-[30px] border border-border/70 px-5 py-5 md:px-6 md:py-6">
-          <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="section-kicker text-[11px] text-gold mb-2">Course notebook</p>
-            <h1 className="editorial-title text-3xl md:text-5xl text-foreground truncate leading-tight">{notebook.title}</h1>
-            <div className="flex items-center gap-3 mt-2">
-              {notebook.goal && <p className="reading-copy text-base text-muted-foreground truncate max-w-2xl">{notebook.goal}</p>}
-              {notebook.target_date && (
-                <span className="data-chip inline-flex items-center gap-1 text-[10px] uppercase text-muted-foreground shrink-0">
-                  <Calendar className="w-2.5 h-2.5" /> {new Date(notebook.target_date).toLocaleDateString()}
-                </span>
-              )}
+        <div className="surface-scholarly rounded-[30px] border border-border/70 px-5 py-4 md:px-6 md:py-5">
+          <div className="flex items-center gap-4 md:gap-5">
+            {/* Left: notebook identity */}
+            <div className="shrink-0 min-w-0 max-w-[220px] md:max-w-[280px]">
+              <p className="font-ui text-[9px] uppercase tracking-[0.26em] text-gold/80 mb-1">Course Notebook</p>
+              <h1
+                className="font-reading text-xl md:text-2xl font-bold text-foreground leading-tight tracking-tight truncate"
+                title={notebook.title}
+              >
+                {notebook.title}
+              </h1>
             </div>
-          </div>
 
-          {/* Compact inline stats + study button */}
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="hidden md:flex items-center gap-3 text-[11px] text-muted-foreground font-ui uppercase tracking-[0.14em]">
-              {resourceItems.length > 0 && (
+            {/* Divider */}
+            <div className="self-stretch w-px bg-border/50 hidden sm:block shrink-0" />
+
+            {/* Middle: recommendation / status */}
+            <div className="flex-1 min-w-0 flex items-start gap-2.5 py-0.5">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-gold/25 bg-gold/[0.07] mt-0.5">
+                <RecommendationIcon className="w-3.5 h-3.5 text-gold" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.16em] text-gold/90">{recommendation.kicker}:</p>
+                <p className="text-[12px] text-muted-foreground reading-copy leading-snug line-clamp-2 max-w-sm md:max-w-md">{recommendation.body}</p>
+              </div>
+            </div>
+
+            {/* Right: stats + action button */}
+            <div className="shrink-0 flex flex-col items-end gap-2.5 ml-auto">
+              <div className="hidden md:flex items-center gap-4 text-[11px] text-muted-foreground font-ui">
                 <button onClick={() => setTab('resources')} className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
                   <FileText className="w-3 h-3" />
                   <span>{resourceItems.length} resource{resourceItems.length !== 1 ? 's' : ''}</span>
                 </button>
-              )}
-              {masteryValues.length > 0 && (
                 <button onClick={() => setTab('progress')} className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors">
-                  <div className="relative w-4 h-4">
-                    <svg viewBox="0 0 36 36" className="w-4 h-4 -rotate-90">
-                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none" stroke="hsl(var(--border))" strokeWidth="4" />
-                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                        fill="none" stroke="hsl(var(--gold))" strokeWidth="4" strokeLinecap="round"
-                        strokeDasharray={`${avgMastery}, 100`} />
-                    </svg>
-                  </div>
+                  <svg viewBox="0 0 36 36" className="w-3.5 h-3.5 -rotate-90 shrink-0">
+                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      fill="none" stroke="hsl(var(--border))" strokeWidth="5" />
+                    <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                      fill="none" stroke="hsl(var(--gold))" strokeWidth="5" strokeLinecap="round"
+                      strokeDasharray={`${avgMastery}, 100`} />
+                  </svg>
                   <span>{avgMastery}% mastery</span>
                 </button>
-              )}
-              {weakConcepts.length > 0 && (
-                <button onClick={() => setTab('progress')} className="inline-flex items-center gap-1 text-red-400/80 hover:text-red-400 transition-colors">
-                  <AlertTriangle className="w-3 h-3" />
-                  <span>{weakConcepts.length} weak</span>
-                </button>
-              )}
-            </div>
-            <button
-              onClick={() => navigate(`/notebooks/${notebookId}/study`)}
-              className="font-ui inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gold text-primary-foreground text-sm font-medium hover:bg-gold/90 transition-colors"
-            >
-              <Sparkles className="w-3.5 h-3.5" /> Study
-            </button>
-          </div>
-        </div>
-
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            <div className="rounded-[22px] border border-border/70 bg-card/80 px-4 py-4">
-              <p className="section-kicker text-[10px] text-muted-foreground">Resources in scope</p>
-              <p className="mt-2 font-reading text-2xl text-foreground">{resourceItems.length || 0}</p>
-              <p className="mt-1 text-sm text-muted-foreground">Attached files that can contribute to notebook study and cross-resource sessions.</p>
-            </div>
-            <div className="rounded-[22px] border border-border/70 bg-card/80 px-4 py-4">
-              <p className="section-kicker text-[10px] text-muted-foreground">Average mastery</p>
-              <p className="mt-2 font-reading text-2xl text-foreground">{avgMastery}%</p>
-              <p className="mt-1 text-sm text-muted-foreground">Use learn, practice, or revision depending on whether you need structure, recall, or reinforcement.</p>
-            </div>
-            <div className="rounded-[22px] border border-border/70 bg-card/80 px-4 py-4">
-              <p className="section-kicker text-[10px] text-muted-foreground">Recommended mode</p>
-              <p className="mt-2 font-reading text-2xl text-foreground capitalize">{recommendedMode}</p>
-              <p className="mt-1 text-sm text-muted-foreground">{recommendedReason}</p>
+                {weakConcepts.length > 0 && (
+                  <button onClick={() => setTab('progress')} className="inline-flex items-center gap-1 text-red-400/80 hover:text-red-400 transition-colors">
+                    <AlertTriangle className="w-3 h-3" />
+                    <span>{weakConcepts.length} weak</span>
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={recommendation.action}
+                className="font-ui inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-foreground text-background text-sm font-semibold hover:opacity-85 transition-opacity whitespace-nowrap"
+              >
+                <RecommendationIcon className="w-3.5 h-3.5" />
+                {!hasResources ? 'Upload resource' : activeSession ? 'Resume session' : `${recommendationModeMeta.label} session`}
+              </button>
             </div>
           </div>
         </div>
@@ -216,17 +260,111 @@ export default function NotebookDetailPage() {
       {/* Tab content */}
       <div className="flex-1 overflow-auto">
         {activeTab === 'overview' && (
-          <div className="px-6 lg:px-8 py-6 animate-tab-enter">
-            <div className="max-w-5xl">
-              <SessionLaunchPanel
-                resources={launchResources}
-                recommendedMode={recommendedMode}
-                recommendedReason={recommendedReason}
-                pending={createNotebookSession.isPending}
-                onLaunch={handleStartSession}
-                title="Start the right session"
-                subtitle="Study mode, scope, and learner input all shape the session plan. Build the session around what you actually need to understand, practise, or revise."
-              />
+          <div className="px-6 lg:px-8 py-5 animate-tab-enter">
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+
+              {/* Left: Session builder */}
+              <div id="session-launch-panel" className="surface-scholarly rounded-[28px] border border-border/70 p-5">
+                <div className="mb-4">
+                  <h2 className="editorial-title text-2xl text-foreground">Start the right session</h2>
+                  <p className="mt-1 text-sm text-muted-foreground reading-copy">Choose a mode and resources, then launch.</p>
+                </div>
+                <SessionLaunchPanel
+                  resources={launchResources}
+                  recommendedMode={recommendedMode}
+                  pending={createNotebookSession.isPending}
+                  onLaunch={handleStartSession}
+                  onManageResources={() => setTab('resources')}
+                  manageResourcesLabel="Upload resource"
+                />
+              </div>
+
+              {/* Right: Sidebar */}
+              <div className="space-y-4">
+
+                {/* Resources in scope */}
+                <div className="rounded-[24px] border border-border/70 bg-card/80 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-ui text-sm font-semibold text-foreground">Resources in scope</h3>
+                    <button
+                      onClick={() => setTab('resources')}
+                      className="flex h-6 w-6 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:border-gold/30 hover:text-gold"
+                    >
+                      <Plus className="h-3 w-3" />
+                    </button>
+                  </div>
+                  {resourceItems.length > 0 ? (
+                    <div className="space-y-2.5">
+                      {resourceItems.slice(0, 5).map((entry) => {
+                        const resource = resourceById.get(entry.resource_id) ?? entry.resource ?? undefined;
+                        return (
+                          <div key={entry.resource_id} className="flex items-start gap-2.5">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
+                              <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-foreground leading-tight">{resource?.filename ?? 'Resource'}</p>
+                              <p className="truncate text-xs text-muted-foreground">{resource?.topic ?? getResourceDisplayStatus(resource)}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {resourceItems.length > 5 && (
+                        <p className="text-xs text-muted-foreground">+{resourceItems.length - 5} more</p>
+                      )}
+                      <button
+                        onClick={() => setTab('resources')}
+                        className="mt-1 w-full rounded-[14px] border border-border/60 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-gold/20 hover:text-foreground"
+                      >
+                        View all materials
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="py-3 text-center">
+                      <p className="text-xs text-muted-foreground">No resources yet.</p>
+                      <button onClick={() => setTab('resources')} className="mt-2 text-xs font-medium text-gold hover:text-gold/80 transition-colors">
+                        Upload material →
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mastery insight */}
+                {(avgMastery > 0 || weakConcepts.length > 0) && (
+                  <div className="rounded-[24px] border border-border/70 bg-card/80 p-4">
+                    <div className="mb-2 flex items-center gap-2">
+                      <BarChart3 className="h-3.5 w-3.5 text-gold" />
+                      <h3 className="font-ui text-sm font-semibold text-foreground">Mastery Insight</h3>
+                    </div>
+                    <p className="text-sm text-foreground reading-copy">
+                      {weakConcepts.length > 0
+                        ? <><span className="font-medium">{weakConcepts.length} weak concept{weakConcepts.length !== 1 ? 's' : ''}</span> flagged{avgMastery > 0 ? <>. Mastery: <span className="font-medium text-gold">{avgMastery}%</span></> : '.'}</>  
+                        : <>Current mastery: <span className="font-medium text-gold">{avgMastery}%</span>.</>}
+                    </p>
+                    <button
+                      onClick={() => setTab('progress')}
+                      className="mt-2.5 text-[11px] font-medium uppercase tracking-[0.10em] text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      View details →
+                    </button>
+                  </div>
+                )}
+
+                {/* Stats */}
+                {sessions.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="rounded-[18px] border border-border/60 bg-card/70 p-3 text-center">
+                      <p className="section-kicker text-[9px] text-muted-foreground">Sessions</p>
+                      <p className="mt-1 font-reading text-2xl font-semibold text-foreground">{sessions.length}</p>
+                    </div>
+                    <div className="rounded-[18px] border border-border/60 bg-card/70 p-3 text-center">
+                      <p className="section-kicker text-[9px] text-muted-foreground">Mastery</p>
+                      <p className="mt-1 font-reading text-2xl font-semibold text-foreground">{avgMastery}%</p>
+                    </div>
+                  </div>
+                )}
+
+              </div>
             </div>
           </div>
         )}

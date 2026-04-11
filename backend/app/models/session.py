@@ -34,6 +34,11 @@ class UserProfile(Base, UUIDMixin, TimestampMixin):
     global_mastery: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     preferences: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     model_preferences: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    learning_preferences: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    consent_personalization: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, server_default="true",
+        doc="User opt-in for personalization data collection (RL research)",
+    )
     parse_page_limit: Mapped[int] = mapped_column(
         Integer, nullable=False, default=800, server_default="800"
     )
@@ -79,6 +84,10 @@ class UserSession(Base, UUIDMixin, TimestampMixin):
     plan_state: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     mastery: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     token_usage: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    personalization_snapshot: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True,
+        doc="Effective personalization at session start (user+notebook+session merged). Used for RL reward attribution.",
+    )
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

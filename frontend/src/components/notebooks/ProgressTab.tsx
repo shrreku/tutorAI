@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   BarChart3, Loader2, Wand2, CheckCircle2, AlertTriangle,
   BookOpen, Layers, MessageSquare,
@@ -35,6 +35,25 @@ export default function ProgressTab({ notebookId }: { notebookId: string }) {
   const weakConcepts = progress?.weak_concepts_snapshot ?? [];
   const artifactItems = artifacts?.items ?? [];
   const sessions = notebookSessions?.items ?? [];
+
+  const coverage = useMemo(() => {
+    const snapshot = progress?.coverage_snapshot;
+    return snapshot && typeof snapshot === 'object'
+      ? snapshot as Record<string, unknown>
+      : {};
+  }, [progress?.coverage_snapshot]);
+  const topicCoverage = Array.isArray(coverage.topic_coverage)
+    ? coverage.topic_coverage as Array<Record<string, unknown>>
+    : [];
+  const plannerState = progress?.notebook_planning_state?.planner_state;
+  const plannedPercent = Math.round(Number(coverage.planned_percent ?? 0));
+  const taughtPercent = Math.round(Number(coverage.taught_percent ?? 0));
+  const masteredPercent = Math.round(Number(coverage.mastered_percent ?? 0));
+  const plannedObjectives = Number(coverage.planned_objectives ?? 0);
+  const totalObjectives = Number(coverage.total_objectives ?? 0);
+  const activeSessionId = typeof plannerState?.active_session_id === 'string'
+    ? plannerState.active_session_id
+    : null;
 
   const handleToggleSession = (sessionId: string) => {
     setSelectedSessionIds((current) => current.includes(sessionId)
@@ -99,6 +118,54 @@ export default function ProgressTab({ notebookId }: { notebookId: string }) {
           </button>
         )}
       </div>
+
+      {(Number(coverage.total_concepts ?? 0) > 0 || plannedObjectives > 0) && (
+        <section className="grid gap-3 mb-5 md:grid-cols-[repeat(3,minmax(0,1fr))] animate-fade-up">
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-ui">Coverage</div>
+            <div className="mt-2 flex items-end gap-2">
+              <span className="text-2xl font-reading text-foreground">{masteredPercent}%</span>
+              <span className="text-xs text-muted-foreground mb-1">mastered</span>
+            </div>
+            <div className="mt-2 text-[11px] text-muted-foreground space-y-1">
+              <div className="flex items-center justify-between"><span>Planned</span><span className="text-foreground">{plannedPercent}%</span></div>
+              <div className="flex items-center justify-between"><span>Taught</span><span className="text-foreground">{taughtPercent}%</span></div>
+              <div className="flex items-center justify-between"><span>Concepts</span><span className="text-foreground">{Number(coverage.mastered_concepts ?? 0)}/{Number(coverage.total_concepts ?? 0)}</span></div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-ui">Planner</div>
+            <div className="mt-2 flex items-end gap-2">
+              <span className="text-2xl font-reading text-foreground">{plannedObjectives}</span>
+              <span className="text-xs text-muted-foreground mb-1">planned objectives</span>
+            </div>
+            <div className="mt-2 text-[11px] text-muted-foreground space-y-1">
+              <div className="flex items-center justify-between"><span>Objective coverage</span><span className="text-foreground">{totalObjectives > 0 ? Math.round(Number(coverage.objective_planned_percent ?? 0)) : 0}%</span></div>
+              <div className="flex items-center justify-between"><span>Revision</span><span className="text-foreground">r{progress?.notebook_planning_state?.revision ?? 1}</span></div>
+              <div className="flex items-center justify-between"><span>Active session</span><span className="text-foreground">{activeSessionId ? activeSessionId.slice(0, 8) : 'none'}</span></div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-ui">Top topics</div>
+            <div className="mt-2 space-y-2">
+              {topicCoverage.slice(0, 3).map((topic, index) => (
+                <div key={`${String(topic.topic_id ?? topic.topic_name ?? index)}`}>
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
+                    <span className="text-foreground truncate">{String(topic.topic_name ?? topic.topic_id ?? 'Untitled topic')}</span>
+                    <span className="text-muted-foreground">{Math.round(Number(topic.mastered_percent ?? 0))}%</span>
+                  </div>
+                  <div className="mt-1 h-1.5 rounded-full bg-border overflow-hidden">
+                    <div className="h-full rounded-full bg-gold transition-all" style={{ width: `${Math.max(0, Math.min(100, Number(topic.mastered_percent ?? 0)))}%` }} />
+                  </div>
+                </div>
+              ))}
+              {topicCoverage.length === 0 && (
+                <p className="text-[11px] text-muted-foreground">Topic coverage will appear after planning and session activity.</p>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Collapsible mastery breakdown */}
       {showMastery && masteryEntries.length > 0 && (

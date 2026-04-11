@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, Key, Loader2, Save, Settings2, ShieldAlert, Trash2, Cpu, FileText } from 'lucide-react';
+import { CheckCircle2, Key, Loader2, Save, ShieldAlert, Sparkles, Trash2, Cpu, FileText } from 'lucide-react';
+import { cn } from '../lib/utils';
 import { getApiErrorMessage } from '../api/client';
 import { useAsyncByokEscrows, useRevokeAsyncByokEscrow, useUserSettings, useUpdateUserSettings, useModelCatalog, useModelPreferences, useUpdateModelPreferences } from '../api/hooks';
 
@@ -8,7 +9,6 @@ export default function SettingsPage() {
   const { data: asyncByokEscrows, isLoading: asyncByokEscrowsLoading } = useAsyncByokEscrows();
   const revokeAsyncByokEscrow = useRevokeAsyncByokEscrow();
   const updateSettings = useUpdateUserSettings();
-  const [consentTrainingGlobal, setConsentTrainingGlobal] = useState(false);
 
   // BYOK state — stored only in localStorage, never sent to server
   const [byokApiKey, setByokApiKey] = useState('');
@@ -26,9 +26,21 @@ export default function SettingsPage() {
   const [selectedUploadModel, setSelectedUploadModel] = useState('');
   const [modelSaved, setModelSaved] = useState(false);
 
+  // Learning preferences state (PROD-025)
+  const [lpPace, setLpPace] = useState<string | null>(null);
+  const [lpDepth, setLpDepth] = useState<string | null>(null);
+  const [lpStyle, setLpStyle] = useState<string | null>(null);
+  const [lpHintLevel, setLpHintLevel] = useState<string | null>(null);
+  const [lpSaved, setLpSaved] = useState(false);
+
   useEffect(() => {
     if (data) {
-      setConsentTrainingGlobal(Boolean(data.consent_training_global));
+      if (data.learning_preferences) {
+        setLpPace(data.learning_preferences.pace ?? null);
+        setLpDepth(data.learning_preferences.depth ?? null);
+        setLpStyle(data.learning_preferences.tutoring_style ?? null);
+        setLpHintLevel(data.learning_preferences.hint_level ?? null);
+      }
     }
   }, [data]);
 
@@ -48,18 +60,6 @@ export default function SettingsPage() {
       setSelectedUploadModel(modelPrefs.preferences.upload_model_id || '');
     }
   }, [modelPrefs]);
-
-  const isSaving = updateSettings.isPending;
-
-  const handleSave = async () => {
-    try {
-      await updateSettings.mutateAsync({
-        consent_training_global: consentTrainingGlobal,
-      });
-    } catch (err) {
-      console.error('Failed to update settings', err);
-    }
-  };
 
   const handleSaveByok = () => {
     try {
@@ -120,211 +120,290 @@ export default function SettingsPage() {
       <div className="max-w-3xl animate-fade-up">
         <div className="flex items-center gap-2 mb-3">
           <div className="h-px flex-1 max-w-[40px] bg-gold/40" />
-          <span className="text-[11px] uppercase tracking-[0.25em] text-gold font-medium">
-            Settings
-          </span>
+          <span className="text-[11px] uppercase tracking-[0.25em] text-gold font-medium font-ui">Settings</span>
         </div>
-        <h1 className="font-display text-3xl md:text-4xl font-semibold tracking-tight text-foreground leading-tight mb-2">
+        <h1 className="editorial-title text-3xl md:text-4xl text-foreground leading-tight mb-2">
           Account <span className="italic text-gold">preferences</span>
         </h1>
-        <p className="text-muted-foreground max-w-2xl">
-          Manage your global research participation preference. This is a student research project,
-          and you can opt in or out at any time.
+        <p className="text-muted-foreground max-w-2xl text-sm reading-copy">
+          Manage your learning defaults, AI model choices, and account tools.
         </p>
       </div>
 
-      <div className="max-w-3xl mt-8">
-        <div className="rounded-xl border border-border bg-card p-6 animate-fade-up" style={{ animationDelay: '0.03s' }}>
+      <div className="max-w-3xl mt-8 space-y-6">
+        {/* ── 1. Learning Preferences (PROD-025) ─────────────── */}
+        <div className="rounded-2xl border border-border bg-card p-6 animate-fade-up" style={{ animationDelay: '0.03s' }}>
           <div className="flex items-start gap-3 mb-5">
-            <div className="w-10 h-10 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center flex-shrink-0">
-              <FileText className="w-5 h-5 text-gold" />
+            <div className="w-9 h-9 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center shrink-0">
+              <Sparkles className="w-4 h-4 text-gold" />
             </div>
             <div>
-              <h2 className="font-display text-lg font-semibold text-card-foreground">
-                Parse page allowance
-              </h2>
-              <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                Upload parsing is limited by total pages processed across your account. Admins can extend this allowance when needed.
+              <h2 className="text-base font-semibold text-card-foreground">Learning preferences</h2>
+              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                Account-wide defaults. Notebooks and sessions can override these.
               </p>
             </div>
           </div>
 
           {isLoading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading page allowance...
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading…
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-4">
-              <div className="rounded-lg border border-border/70 bg-background/40 p-4">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Remaining</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{data?.parse_page_remaining ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-border/70 bg-background/40 p-4">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Limit</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{data?.parse_page_limit ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-border/70 bg-background/40 p-4">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Used</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{data?.parse_page_used ?? 0}</p>
-              </div>
-              <div className="rounded-lg border border-border/70 bg-background/40 p-4">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Reserved</p>
-                <p className="mt-2 text-2xl font-semibold text-foreground">{data?.parse_page_reserved ?? 0}</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-xl border border-border bg-card p-6 animate-fade-up" style={{ animationDelay: '0.05s' }}>
-          <div className="flex items-start gap-3 mb-5">
-            <div className="w-10 h-10 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center flex-shrink-0">
-              <Settings2 className="w-5 h-5 text-gold" />
-            </div>
-            <div>
-              <h2 className="font-display text-lg font-semibold text-card-foreground">
-                Research consent
-              </h2>
-              <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                Allow anonymized tutoring interactions to be used for model quality improvement and
-                evaluation in this student research project.
-              </p>
-            </div>
-          </div>
-
-          {isLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading your settings...
-            </div>
-          ) : (
-            <>
-              <label className="flex items-start gap-3 p-4 rounded-lg border border-border/80 bg-background/30 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="mt-1 h-4 w-4 rounded border-border accent-[hsl(var(--gold))]"
-                  checked={consentTrainingGlobal}
-                  onChange={(e) => setConsentTrainingGlobal(e.target.checked)}
-                />
-                <div>
-                  <p className="text-sm font-medium text-foreground">Opt in to research data usage</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    This sets your global default for new tutoring sessions.
-                  </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground mb-2">Study pace</label>
+                <div className="flex gap-1.5">
+                  {(['relaxed', 'moderate', 'intensive'] as const).map((opt) => (
+                    <button key={opt} type="button" onClick={() => setLpPace(lpPace === opt ? null : opt)}
+                      className={cn('flex-1 py-2 rounded-lg text-xs font-medium border transition-colors text-center capitalize',
+                        lpPace === opt ? 'border-gold/40 bg-gold/10 text-gold' : 'border-border/60 text-muted-foreground hover:border-gold/20 hover:text-foreground')}>
+                      {opt}
+                    </button>
+                  ))}
                 </div>
-              </label>
+              </div>
 
-              <div className="mt-4 flex items-center gap-3">
+              <div>
+                <label className="block text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground mb-2">Depth</label>
+                <div className="flex gap-1.5">
+                  {(['surface', 'balanced', 'deep'] as const).map((opt) => (
+                    <button key={opt} type="button" onClick={() => setLpDepth(lpDepth === opt ? null : opt)}
+                      className={cn('flex-1 py-2 rounded-lg text-xs font-medium border transition-colors text-center capitalize',
+                        lpDepth === opt ? 'border-gold/40 bg-gold/10 text-gold' : 'border-border/60 text-muted-foreground hover:border-gold/20 hover:text-foreground')}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground mb-2">Tutoring style</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(['explanation-heavy', 'practice-heavy', 'balanced', 'socratic'] as const).map((opt) => (
+                    <button key={opt} type="button" onClick={() => setLpStyle(lpStyle === opt ? null : opt)}
+                      className={cn('px-3 py-1.5 rounded-full text-xs font-medium border transition-colors capitalize',
+                        lpStyle === opt ? 'border-gold/40 bg-gold/10 text-gold' : 'border-border/60 text-muted-foreground hover:border-gold/20 hover:text-foreground')}>
+                      {opt.replace('-', ' ')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground mb-2">Hint level</label>
+                <div className="flex gap-1.5">
+                  {(['none', 'gentle', 'full'] as const).map((opt) => (
+                    <button key={opt} type="button" onClick={() => setLpHintLevel(lpHintLevel === opt ? null : opt)}
+                      className={cn('flex-1 py-2 rounded-lg text-xs font-medium border transition-colors text-center capitalize',
+                        lpHintLevel === opt ? 'border-gold/40 bg-gold/10 text-gold' : 'border-border/60 text-muted-foreground hover:border-gold/20 hover:text-foreground')}>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-1">
                 <button
-                  onClick={handleSave}
-                  disabled={isSaving}
+                  onClick={async () => {
+                    const prefs: Record<string, unknown> = {};
+                    if (lpPace) prefs.pace = lpPace;
+                    if (lpDepth) prefs.depth = lpDepth;
+                    if (lpStyle) prefs.tutoring_style = lpStyle;
+                    if (lpHintLevel) prefs.hint_level = lpHintLevel;
+                    await updateSettings.mutateAsync({
+                      learning_preferences: Object.keys(prefs).length > 0 ? prefs as any : undefined,
+                    });
+                    setLpSaved(true);
+                    setTimeout(() => setLpSaved(false), 2000);
+                  }}
+                  disabled={updateSettings.isPending}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gold text-primary-foreground text-sm font-medium hover:bg-gold/90 transition-colors disabled:opacity-60"
                 >
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save preference
+                  {updateSettings.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Save preferences
                 </button>
-
-                {updateSettings.isSuccess && !isSaving && (
+                <button
+                  onClick={async () => {
+                    setLpPace(null); setLpDepth(null); setLpStyle(null); setLpHintLevel(null);
+                    await updateSettings.mutateAsync({ learning_preferences: {} as any });
+                    setLpSaved(true);
+                    setTimeout(() => setLpSaved(false), 2000);
+                  }}
+                  disabled={updateSettings.isPending}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-destructive/30 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-60"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Clear all
+                </button>
+                {lpSaved && (
                   <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600">
-                    <CheckCircle2 className="w-4 h-4" />
-                    Saved
+                    <CheckCircle2 className="w-4 h-4" /> Saved
                   </span>
                 )}
               </div>
-            </>
+
+              <p className="text-[10px] text-muted-foreground/70 font-ui">
+                Set: {[lpPace && 'pace', lpDepth && 'depth', lpStyle && 'style', lpHintLevel && 'hints'].filter(Boolean).join(', ') || 'none'}
+              </p>
+            </div>
           )}
         </div>
 
-        {/* BYOK Section */}
-        <div className="rounded-xl border border-border bg-card p-6 mt-6 animate-fade-up" style={{ animationDelay: '0.1s' }}>
+        {/* ── 2. Model Preferences (CM-013) ─────────────────── */}
+        {modelCatalog && modelCatalog.length > 0 && (
+          <div className="rounded-2xl border border-border bg-card p-6 animate-fade-up" style={{ animationDelay: '0.06s' }}>
+            <div className="flex items-start gap-3 mb-5">
+              <div className="w-9 h-9 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center shrink-0">
+                <Cpu className="w-4 h-4 text-gold" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-card-foreground">Model preferences</h2>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                  Choose AI models for each task. Economy models use fewer credits.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {[
+                { label: 'Tutoring model', value: selectedTutoringModel, setter: setSelectedTutoringModel },
+                { label: 'Artifact generation', value: selectedArtifactModel, setter: setSelectedArtifactModel },
+                { label: 'Upload processing', value: selectedUploadModel, setter: setSelectedUploadModel },
+              ].map(({ label, value, setter }) => (
+                <div key={label}>
+                  <label className="block text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground mb-1.5">{label}</label>
+                  <select value={value} onChange={(e) => setter(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-background/30 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold/40">
+                    <option value="">System default</option>
+                    {['economy', 'standard', 'premium_small'].map((cls) => {
+                      const models = modelCatalog.filter((m) => m.model_class === cls && m.is_active);
+                      if (!models.length) return null;
+                      return (
+                        <optgroup key={cls} label={cls.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())}>
+                          {models.map((m) => (
+                            <option key={m.model_id} value={m.model_id}>{m.display_name} — {cls.replace('_', ' ')}</option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                </div>
+              ))}
+
+              <div className="flex items-center gap-3 pt-1">
+                <button onClick={handleSaveModelPrefs} disabled={updateModelPrefs.isPending}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gold text-primary-foreground text-sm font-medium hover:bg-gold/90 transition-colors disabled:opacity-60">
+                  {updateModelPrefs.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Save model preferences
+                </button>
+                {modelSaved && (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600">
+                    <CheckCircle2 className="w-4 h-4" /> Saved
+                  </span>
+                )}
+              </div>
+
+              <p className="text-[10px] text-muted-foreground/70 font-ui">
+                Economy models use fewer credits. The system may auto-route to a fallback if your model is unavailable.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── 3. Parse Page Allowance ───────────────────────── */}
+        <div className="rounded-2xl border border-border bg-card p-6 animate-fade-up" style={{ animationDelay: '0.09s' }}>
           <div className="flex items-start gap-3 mb-5">
-            <div className="w-10 h-10 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center flex-shrink-0">
-              <Key className="w-5 h-5 text-gold" />
+            <div className="w-9 h-9 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center shrink-0">
+              <FileText className="w-4 h-4 text-gold" />
             </div>
             <div>
-              <h2 className="font-display text-lg font-semibold text-card-foreground">
-                Bring Your Own Key (BYOK)
-              </h2>
-              <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                BYOK is used for live tutoring, notebook session planning, and notebook artifact generation. Uploads only
-                use it when you opt into async BYOK escrow, and your key stays <strong>only in your browser</strong>
-                unless you explicitly choose that escrow flow.
+              <h2 className="text-base font-semibold text-card-foreground">Parse page allowance</h2>
+              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                Upload parsing is limited by total pages processed. Admins can extend this.
+              </p>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-4">
+              {[
+                { label: 'Remaining', value: data?.parse_page_remaining ?? 0 },
+                { label: 'Limit', value: data?.parse_page_limit ?? 0 },
+                { label: 'Used', value: data?.parse_page_used ?? 0 },
+                { label: 'Reserved', value: data?.parse_page_reserved ?? 0 },
+              ].map(({ label, value }) => (
+                <div key={label} className="rounded-lg border border-border/70 bg-background/40 p-3">
+                  <p className="text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+                  <p className="mt-1.5 text-xl font-semibold text-foreground">{value}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── 4. BYOK ──────────────────────────────────────── */}
+        <div className="rounded-2xl border border-border bg-card p-6 animate-fade-up" style={{ animationDelay: '0.12s' }}>
+          <div className="flex items-start gap-3 mb-5">
+            <div className="w-9 h-9 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center shrink-0">
+              <Key className="w-4 h-4 text-gold" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-card-foreground">Bring Your Own Key</h2>
+              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                Your key stays <strong>only in your browser</strong> unless you use async BYOK escrow.
               </p>
             </div>
           </div>
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">API Key</label>
-              <input
-                type="password"
-                placeholder="sk-..."
-                value={byokApiKey}
-                onChange={(e) => setByokApiKey(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-background/30 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold/40"
-              />
+              <label className="block text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground mb-1.5">API Key</label>
+              <input type="password" placeholder="sk-..." value={byokApiKey} onChange={(e) => setByokApiKey(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-background/30 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold/40" />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">
-                API Base URL <span className="text-muted-foreground font-normal">(optional)</span>
+              <label className="block text-[10px] font-ui uppercase tracking-[0.14em] text-muted-foreground mb-1.5">
+                API Base URL <span className="normal-case tracking-normal text-muted-foreground/60">(optional)</span>
               </label>
-              <input
-                type="text"
-                placeholder="https://api.openai.com/v1"
-                value={byokBaseUrl}
-                onChange={(e) => setByokBaseUrl(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-background/30 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold/40"
-              />
+              <input type="text" placeholder="https://api.openai.com/v1" value={byokBaseUrl} onChange={(e) => setByokBaseUrl(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-background/30 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-gold/40" />
             </div>
 
             <div className="flex items-center gap-3">
-              <button
-                onClick={handleSaveByok}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gold text-primary-foreground text-sm font-medium hover:bg-gold/90 transition-colors"
-              >
-                <Save className="w-4 h-4" />
-                Save BYOK settings
+              <button onClick={handleSaveByok}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gold text-primary-foreground text-sm font-medium hover:bg-gold/90 transition-colors">
+                <Save className="w-4 h-4" /> Save BYOK
               </button>
-
               {byokSaved && (
                 <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600">
-                  <CheckCircle2 className="w-4 h-4" />
-                  Saved locally
+                  <CheckCircle2 className="w-4 h-4" /> Saved locally
                 </span>
               )}
             </div>
 
-            {byokApiKey && (
-              <p className="text-xs text-muted-foreground">
-                Your key is attached only to live request-scoped tutoring calls. Clear the field and save to stop using BYOK.
-              </p>
-            )}
+            {byokError && <p className="text-xs text-red-300">{byokError}</p>}
 
-            <div className="rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
-              Hosted policy: live tutoring can use BYOK. Uploads, ingestion, and other queued preparation flows always use
-              platform infrastructure and may consume platform credits.
-            </div>
-
-            {byokError && (
-              <p className="text-xs text-red-300">{byokError}</p>
-            )}
+            <p className="text-[10px] text-muted-foreground/70 font-ui">
+              Live tutoring can use BYOK. Uploads and queued flows always use platform credits.
+            </p>
           </div>
         </div>
 
+        {/* ── 5. Async BYOK Escrow ─────────────────────────── */}
         {data?.async_byok_escrow_enabled && (
-          <div className="rounded-xl border border-border bg-card p-6 mt-6 animate-fade-up" style={{ animationDelay: '0.15s' }}>
+          <div className="rounded-2xl border border-border bg-card p-6 animate-fade-up" style={{ animationDelay: '0.15s' }}>
             <div className="flex items-start gap-3 mb-5">
-              <div className="w-10 h-10 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center flex-shrink-0">
-                <ShieldAlert className="w-5 h-5 text-gold" />
+              <div className="w-9 h-9 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center shrink-0">
+                <ShieldAlert className="w-4 h-4 text-gold" />
               </div>
               <div>
-                <h2 className="font-display text-lg font-semibold text-card-foreground">
-                  Async BYOK escrow
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                  Background uploads can temporarily escrow your BYOK in encrypted form so queued ingestion workers can use it.
-                  Backend: {data.async_byok_escrow_backend || 'unknown'}. TTL: {data.async_byok_escrow_ttl_minutes} minutes.
+                <h2 className="text-base font-semibold text-card-foreground">Async BYOK escrow</h2>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                  Backend: {data.async_byok_escrow_backend || 'unknown'} · TTL: {data.async_byok_escrow_ttl_minutes}m
                 </p>
               </div>
             </div>
@@ -337,13 +416,10 @@ export default function SettingsPage() {
 
             {asyncByokEscrowsLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Loading active escrow objects...
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading…
               </div>
             ) : !asyncByokEscrows?.length ? (
-              <div className="rounded-lg border border-border/70 bg-background/40 px-3 py-3 text-sm text-muted-foreground">
-                No active async BYOK escrows.
-              </div>
+              <p className="text-sm text-muted-foreground">No active escrows.</p>
             ) : (
               <div className="space-y-3">
                 {asyncByokEscrows.map((escrow) => (
@@ -357,11 +433,8 @@ export default function SettingsPage() {
                           Expires {new Date(escrow.expires_at).toLocaleString()} · Access count {escrow.access_count}
                         </p>
                       </div>
-                      <button
-                        onClick={() => handleRevokeAsyncByokEscrow(escrow.id)}
-                        disabled={revokeAsyncByokEscrow.isPending}
-                        className="inline-flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200 disabled:opacity-60"
-                      >
+                      <button onClick={() => handleRevokeAsyncByokEscrow(escrow.id)} disabled={revokeAsyncByokEscrow.isPending}
+                        className="inline-flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200 disabled:opacity-60">
                         {revokeAsyncByokEscrow.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                         Revoke
                       </button>
@@ -370,80 +443,6 @@ export default function SettingsPage() {
                 ))}
               </div>
             )}
-          </div>
-        )}
-
-        {/* Model Selection Section (CM-013) */}
-        {modelCatalog && modelCatalog.length > 0 && (
-          <div className="rounded-xl border border-border bg-card p-6 mt-6 animate-fade-up" style={{ animationDelay: '0.2s' }}>
-            <div className="flex items-start gap-3 mb-5">
-              <div className="w-10 h-10 rounded-lg bg-gold/10 border border-gold/20 flex items-center justify-center flex-shrink-0">
-                <Cpu className="w-5 h-5 text-gold" />
-              </div>
-              <div>
-                <h2 className="font-display text-lg font-semibold text-card-foreground">
-                  Model preferences
-                </h2>
-                <p className="text-sm text-muted-foreground mt-1 leading-relaxed">
-                  Choose which AI model to use for each task. Economy models use fewer credits; premium models offer higher quality.
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {[
-                { label: 'Tutoring model', value: selectedTutoringModel, setter: setSelectedTutoringModel },
-                { label: 'Artifact generation model', value: selectedArtifactModel, setter: setSelectedArtifactModel },
-                { label: 'Upload processing model', value: selectedUploadModel, setter: setSelectedUploadModel },
-              ].map(({ label, value, setter }) => (
-                <div key={label}>
-                  <label className="block text-sm font-medium text-foreground mb-1.5">{label}</label>
-                  <select
-                    value={value}
-                    onChange={(e) => setter(e.target.value)}
-                    className="w-full px-3 py-2 rounded-lg border border-border bg-background/30 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-gold/40"
-                  >
-                    <option value="">System default</option>
-                    {['economy', 'standard', 'premium_small'].map((cls) => {
-                      const models = modelCatalog.filter((m) => m.model_class === cls && m.is_active);
-                      if (!models.length) return null;
-                      return (
-                        <optgroup key={cls} label={cls.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase())}>
-                          {models.map((m) => (
-                            <option key={m.model_id} value={m.model_id}>
-                              {m.display_name} — {cls.replace('_', ' ')}
-                            </option>
-                          ))}
-                        </optgroup>
-                      );
-                    })}
-                  </select>
-                </div>
-              ))}
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleSaveModelPrefs}
-                  disabled={updateModelPrefs.isPending}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gold text-primary-foreground text-sm font-medium hover:bg-gold/90 transition-colors disabled:opacity-60"
-                >
-                  {updateModelPrefs.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  Save model preferences
-                </button>
-
-                {modelSaved && (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600">
-                    <CheckCircle2 className="w-4 h-4" />
-                    Saved
-                  </span>
-                )}
-              </div>
-
-              <div className="rounded-lg border border-border/70 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
-                Model selection affects credit consumption. Economy models use fewer credits per request.
-                The system may automatically route to a fallback model if your selected model is temporarily unavailable.
-              </div>
-            </div>
           </div>
         )}
       </div>

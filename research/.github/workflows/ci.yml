@@ -1,0 +1,29 @@
+name: Research CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'research/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'research/**'
+
+jobs:
+  python-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: research
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Compile harness scripts
+        run: python -m py_compile scripts/*.py

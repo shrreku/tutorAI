@@ -6,7 +6,7 @@ Generates learning objectives and curriculum plans from resource content.
 
 from collections import defaultdict
 import logging
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from langfuse import observe
@@ -108,6 +108,7 @@ class CurriculumAgent:
         scope_type: Optional[str] = None,
         notebook_id: Optional[UUID | str] = None,
         objective_limit: Optional[int] = None,
+        planning_context: Optional[dict[str, Any]] = None,
     ) -> dict:
         """
         Generate a curriculum plan for a resource.
@@ -197,6 +198,7 @@ class CurriculumAgent:
             planning_scope=planning_scope,
             resource_count=len(planning_resource_ids),
             objective_limit=objective_limit,
+            planning_context=planning_context,
         )
 
         try:
@@ -258,6 +260,7 @@ class CurriculumAgent:
         mode: str = "learn",
         max_new_objectives: int = 2,
         existing_objective_ids: Optional[list[str]] = None,
+        planning_context: Optional[dict[str, Any]] = None,
     ) -> list[dict]:
         """
         Generate additional objectives when horizon reached.
@@ -326,49 +329,27 @@ class CurriculumAgent:
         if not remaining:
             return []
 
+        extension_context = dict(planning_context or {})
+        extension_context["extension_request"] = {
+            "current_objective_ids": existing_objective_ids or [],
+            "completed_concepts": list(completed_concepts or []),
+            "covered_concepts": sorted(covered),
+            "remaining_concepts": remaining[:40],
+        }
+
         messages = self._build_messages(
-            [
-                {
-                    **bundle,
-                    "primary_concepts": [
-                        concept
-                        for concept in bundle.get("primary_concepts", [])
-                        if concept in set(remaining)
-                    ],
-                    "support_concepts": [
-                        concept
-                        for concept in bundle.get("support_concepts", [])
-                        if concept in set(remaining)
-                    ],
-                }
-                for bundle in topic_bundles
-                if set(bundle.get("primary_concepts", []) or []) & set(remaining)
-                or set(bundle.get("support_concepts", []) or []) & set(remaining)
-            ],
-            remaining,
+            topic_bundles,
+            concepts,
             learning_objectives,
-            [
-                edge
-                for edge in concept_graph_edges
-                if edge.get("source") in set(remaining)
-                and edge.get("target") in set(remaining)
-            ],
-            [
-                hint
-                for hint in prereq_hints
-                if hint.get("source") in set(remaining)
-                and hint.get("target") in set(remaining)
-            ],
-            [
-                chain
-                for chain in prereq_chains
-                if chain and all(concept in set(remaining) for concept in chain)
-            ],
+            concept_graph_edges,
+            prereq_hints,
+            prereq_chains,
             topic,
             mode,
             planning_scope=planning_scope,
             resource_count=len(planning_resource_ids),
             objective_limit=max_new_objectives,
+            planning_context=extension_context,
         )
 
         try:
@@ -377,12 +358,16 @@ class CurriculumAgent:
                 trace_name="curriculum_extend_plan",
             )
 
-            valid_concepts = set(remaining)
-            extended = [
-                self._validate_objective(obj, valid_concepts)
-                for obj in output.objective_queue
-                if self._validate_objective(obj, valid_concepts)
-            ]
+            valid_concepts = set(concepts)
+            extended = []
+            for obj in output.objective_queue:
+                validated = self._validate_objective(obj, valid_concepts)
+                if not validated:
+                    continue
+                primary = set((validated.get("concept_scope") or {}).get("primary") or [])
+                if primary and primary.issubset(covered):
+                    continue
+                extended.append(validated)
             extended = self._ensure_unique_objective_ids(
                 extended,
                 existing_ids=existing_objective_ids,
@@ -787,6 +772,7 @@ class CurriculumAgent:
         planning_scope: str,
         resource_count: int,
         objective_limit: Optional[int],
+        planning_context: Optional[dict[str, Any]] = None,
     ) -> list[dict]:
         """Build messages for LLM."""
         bundles_text = (
@@ -837,6 +823,7 @@ class CurriculumAgent:
         max_objective_text = (
             str(max(1, int(objective_limit))) if objective_limit else "4"
         )
+        planning_context_text = self._format_planning_context(planning_context)
 
         user_content = f"""Create a curriculum plan for the following knowledge scope:
 
@@ -865,6 +852,9 @@ Prerequisite Hints:
 Combined Prerequisite Chains:
 {prereq_chains_text}
 
+Notebook-Global Planning Context:
+{planning_context_text}
+
 Generate 1-{max_objective_text} learning objectives that cover the next most important concepts, ordered by prerequisite dependencies.
 """
 
@@ -872,6 +862,51 @@ Generate 1-{max_objective_text} learning objectives that cover the next most imp
             {"role": "system", "content": CURRICULUM_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ]
+
+    def _format_planning_context(
+        self,
+        planning_context: Optional[dict[str, Any]],
+    ) -> str:
+        if not planning_context:
+            return "No notebook-global planning context available yet."
+
+        learner_state = planning_context.get("learner_state") or {}
+        planner_state = planning_context.get("planner_state") or {}
+        coverage_snapshot = planning_context.get("coverage_snapshot") or {}
+        personalization = planning_context.get("personalization") or {}
+        extension_request = planning_context.get("extension_request") or {}
+
+        weak_concepts = ", ".join((learner_state.get("weak_concepts") or [])[:12]) or "None"
+        mastered_concepts = ", ".join((learner_state.get("mastered_concepts") or [])[:12]) or "None"
+        planned_concepts = ", ".join((planner_state.get("planned_concepts") or [])[:18]) or "None"
+        taught_concepts = ", ".join((planner_state.get("taught_concepts") or [])[:18]) or "None"
+        planned_objectives = "\n".join(
+            f"- {item.get('objective_id')}: {item.get('title')} [{item.get('status')}]"
+            for item in (planner_state.get("planned_objectives") or [])[:10]
+            if item.get("objective_id") and item.get("title")
+        ) or "None"
+        personalization_text = ", ".join(
+            f"{key}={value}" for key, value in personalization.items() if value is not None
+        ) or "None"
+        extension_text = ", ".join(
+            f"{key}={value}"
+            for key, value in extension_request.items()
+            if value not in (None, [], {}, "")
+        ) or "None"
+
+        return (
+            f"Coverage: planned={coverage_snapshot.get('planned_percent', 0)}%, "
+            f"taught={coverage_snapshot.get('taught_percent', 0)}%, "
+            f"mastered={coverage_snapshot.get('mastered_percent', 0)}%\n"
+            f"Weak concepts: {weak_concepts}\n"
+            f"Mastered concepts: {mastered_concepts}\n"
+            f"Already planned concepts: {planned_concepts}\n"
+            f"Already taught concepts: {taught_concepts}\n"
+            f"Planned objectives so far:\n{planned_objectives}\n"
+            f"Personalization: {personalization_text}\n"
+            f"Extension request context: {extension_text}\n"
+            "Prefer the next notebook-global slice that advances learning without repeating already-mastered material unless repair/revision is clearly needed."
+        )
 
     def _validate_objective(
         self,

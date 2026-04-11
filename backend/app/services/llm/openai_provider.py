@@ -160,6 +160,8 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         used_model = model or self._model
         safe_messages = self._sanitize_messages(messages)
         safe_metadata = self._sanitize_metadata(trace_metadata)
+        safe_metadata.update({"model_id": used_model, "provider": "openai_compatible"})
+        logger.info("[%s] generating with model=%s", trace_name, used_model)
 
         try:
             response = await self._create_completion_with_resilience(
@@ -220,6 +222,8 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         used_model = model or self._model
         safe_messages = self._sanitize_messages(messages)
         safe_metadata = self._sanitize_metadata(trace_metadata)
+        safe_metadata.update({"model_id": used_model, "provider": "openai_compatible"})
+        logger.info("[%s] generating JSON with model=%s schema=%s", trace_name, used_model, schema.__name__)
 
         # Add JSON instruction to system message
         json_instruction = f"\nIMPORTANT: Respond with a single valid JSON object only. No markdown code fences, no explanation text before or after. The JSON must conform to this schema:\n{json.dumps(schema.model_json_schema(), indent=2)}"

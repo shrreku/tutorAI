@@ -66,6 +66,10 @@ class RegisterRequest(BaseModel):
         default=False,
         description="Opt-in to allow anonymised tutoring data for research",
     )
+    consent_personalization: bool = Field(
+        default=False,
+        description="Opt-in to allow the product to adapt to learning preferences",
+    )
     invite_token: Optional[str] = Field(
         default=None,
         description="One-time invite token received via email (required when alpha access is enabled)",
@@ -271,10 +275,11 @@ async def register(
         email=body.email,
         display_name=body.display_name,
         password_hash=password_hash,
+        consent_personalization=body.consent_personalization,
         preferences={
             "consent_training_global": body.consent_training,
             "consent_preference_set": True,
-            "access_code_grant_eligible": access_code_accepted,
+            "access_code_grant_eligible": access_code_accepted and body.consent_training,
         },
     )
     user = await repo.create(user)
@@ -286,7 +291,11 @@ async def register(
 
     meter = CreditMeter(db)
     await meter.issue_signup_grant_if_missing(user.id)
-    if access_code_accepted and hasattr(meter, "issue_access_code_grant_if_missing"):
+    if (
+        access_code_accepted
+        and body.consent_training
+        and hasattr(meter, "issue_access_code_grant_if_missing")
+    ):
         await meter.issue_access_code_grant_if_missing(user.id)
 
     token = create_access_token(user.external_id or str(user.id))
@@ -326,7 +335,7 @@ async def login(
         )
 
     consent = (user.preferences or {}).get("consent_training_global", False)
-    if (user.preferences or {}).get("access_code_grant_eligible"):
+    if (user.preferences or {}).get("access_code_grant_eligible") and (user.preferences or {}).get("consent_training_global", False):
         meter = CreditMeter(db)
         if hasattr(meter, "issue_access_code_grant_if_missing"):
             await meter.issue_access_code_grant_if_missing(user.id)

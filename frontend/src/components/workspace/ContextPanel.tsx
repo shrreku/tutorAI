@@ -10,10 +10,10 @@ import { useMemo, useState } from 'react';
 import {
   Target, AlertTriangle, FileText,
   Circle, Brain, ChevronDown, Lock, CheckCircle2,
-  Zap, ArrowRight,
+  Zap, ArrowRight, PanelLeftClose,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import type { TopicInfo } from '../../types/api';
+import type { CoverageSnapshot, NotebookPlanningState, TopicInfo } from '../../types/api';
 import type { ObjectiveSnapshot, StudyMapSnapshot, StudyMapObjectiveSnapshot } from '../../types/session-events';
 
 interface ResourceItem {
@@ -50,6 +50,9 @@ interface ContextPanelProps {
   mode: string | null;
   collapsed?: boolean;
   studyMapSnapshot?: StudyMapSnapshot | null;
+  notebookPlanningState?: NotebookPlanningState | null;
+  coverageSnapshot?: CoverageSnapshot | Record<string, unknown> | null;
+  onClose?: () => void;
 }
 
 /* ── Mastery bar (horizontal with percentage) ──────────────────────── */
@@ -423,7 +426,11 @@ export default function ContextPanel({
   mode,
   collapsed = false,
   studyMapSnapshot,
+  notebookPlanningState,
+  coverageSnapshot,
+  onClose,
 }: ContextPanelProps) {
+
   const masteryEntries = useMemo(
     () => Object.entries(mastery).sort((a, b) => a[1] - b[1]).slice(0, 20),
     [mastery],
@@ -587,6 +594,36 @@ export default function ContextPanel({
     return mapping[decision] || { label: decision.toLowerCase().replace(/_/g, ' '), tone: 'bg-muted/40 text-muted-foreground' };
   }, [studyMapSnapshot]);
 
+  const coverageSummary = useMemo(() => {
+    const snapshot = coverageSnapshot && typeof coverageSnapshot === 'object'
+      ? coverageSnapshot as Record<string, unknown>
+      : {};
+    return {
+      totalConcepts: Number(snapshot.total_concepts ?? 0),
+      plannedPercent: Math.round(Number(snapshot.planned_percent ?? 0)),
+      taughtPercent: Math.round(Number(snapshot.taught_percent ?? 0)),
+      masteredPercent: Math.round(Number(snapshot.mastered_percent ?? 0)),
+      plannedObjectives: Number(snapshot.planned_objectives ?? 0),
+      totalObjectives: Number(snapshot.total_objectives ?? 0),
+      topicCoverage: Array.isArray(snapshot.topic_coverage)
+        ? snapshot.topic_coverage as Array<Record<string, unknown>>
+        : [],
+    };
+  }, [coverageSnapshot]);
+
+  const plannerSummary = useMemo(() => {
+    const plannerState = notebookPlanningState?.planner_state;
+    return {
+      revision: notebookPlanningState?.revision ?? 1,
+      activeSessionId: typeof plannerState?.active_session_id === 'string'
+        ? plannerState.active_session_id
+        : null,
+      plannedConceptCount: Array.isArray(plannerState?.planned_concepts)
+        ? plannerState.planned_concepts.length
+        : 0,
+    };
+  }, [notebookPlanningState]);
+
   const hasMasteryGroups = masteryTopicGroups.length > 0 || remainingMastery.length > 0;
 
   if (collapsed) {
@@ -601,6 +638,18 @@ export default function ContextPanel({
 
   return (
     <div className="h-full flex flex-col overflow-hidden surface-scholarly">
+      {onClose && (
+        <div className="flex items-center justify-between px-4 pt-3 pb-0 shrink-0">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground font-ui">Context</span>
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-border/60 p-1 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+            title="Close study map"
+          >
+            <PanelLeftClose className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
 
         {/* ── 1. Study Map (FIRST — vertical timeline) ──────────── */}
@@ -684,6 +733,48 @@ export default function ContextPanel({
             </div>
           )}
         </CollapsibleSection>
+
+        {(coverageSummary.totalConcepts > 0 || plannerSummary.plannedConceptCount > 0) && (
+          <CollapsibleSection
+            icon={Zap}
+            title="Notebook Plan"
+            count={coverageSummary.totalConcepts > 0 ? `${coverageSummary.masteredPercent}%` : plannerSummary.plannedConceptCount}
+            defaultOpen
+          >
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-[16px] border border-border/70 bg-card/70 px-3 py-2.5">
+                  <p className="text-[8px] uppercase tracking-[0.14em] text-muted-foreground font-ui">Planned</p>
+                  <p className="mt-1 font-reading text-lg text-foreground">{coverageSummary.plannedPercent}%</p>
+                </div>
+                <div className="rounded-[16px] border border-border/70 bg-card/70 px-3 py-2.5">
+                  <p className="text-[8px] uppercase tracking-[0.14em] text-muted-foreground font-ui">Taught</p>
+                  <p className="mt-1 font-reading text-lg text-foreground">{coverageSummary.taughtPercent}%</p>
+                </div>
+                <div className="rounded-[16px] border border-border/70 bg-card/70 px-3 py-2.5">
+                  <p className="text-[8px] uppercase tracking-[0.14em] text-muted-foreground font-ui">Mastered</p>
+                  <p className="mt-1 font-reading text-lg text-foreground">{coverageSummary.masteredPercent}%</p>
+                </div>
+              </div>
+              <div className="rounded-[16px] border border-border/70 bg-card/60 px-3 py-2.5 text-[11px] text-muted-foreground space-y-1.5">
+                <div className="flex items-center justify-between gap-3"><span>Objectives</span><span className="text-foreground">{coverageSummary.plannedObjectives}/{coverageSummary.totalObjectives || coverageSummary.plannedObjectives}</span></div>
+                <div className="flex items-center justify-between gap-3"><span>Planner revision</span><span className="text-foreground">r{plannerSummary.revision}</span></div>
+                <div className="flex items-center justify-between gap-3"><span>Active session</span><span className="text-foreground">{plannerSummary.activeSessionId ? plannerSummary.activeSessionId.slice(0, 8) : 'none'}</span></div>
+              </div>
+              {coverageSummary.topicCoverage.slice(0, 3).map((topic, index) => (
+                <div key={`${String(topic.topic_id ?? topic.topic_name ?? index)}`} className="rounded-[16px] border border-border/70 bg-card/60 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
+                    <span className="text-foreground truncate">{String(topic.topic_name ?? topic.topic_id ?? 'Untitled topic')}</span>
+                    <span className="text-muted-foreground">{Math.round(Number(topic.mastered_percent ?? 0))}%</span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 rounded-full bg-border overflow-hidden">
+                    <div className="h-full rounded-full bg-gold transition-all" style={{ width: `${Math.max(0, Math.min(100, Number(topic.mastered_percent ?? 0)))}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CollapsibleSection>
+        )}
 
         {/* ── 3. Mastery (grouped by curriculum topics/objectives) ── */}
         {hasMasteryGroups && (

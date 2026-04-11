@@ -13,6 +13,7 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [consentTraining, setConsentTraining] = useState(false);
+  const [consentPersonalization, setConsentPersonalization] = useState(false);
   const [accessCode, setAccessCode] = useState(searchParams.get('access') ?? searchParams.get('promo') ?? '');
   const inviteToken = searchParams.get('invite') ?? '';
   const [alphaEnabled, setAlphaEnabled] = useState(false);
@@ -54,6 +55,7 @@ export default function RegisterPage() {
         password,
         display_name: displayName,
         consent_training: consentTraining,
+        consent_personalization: consentPersonalization,
         invite_token: inviteToken.trim() || undefined,
         access_code: accessCode.trim() || undefined,
       });
@@ -91,10 +93,10 @@ export default function RegisterPage() {
           <div className="flex items-start gap-3 p-4 rounded-lg border border-border bg-card/30">
             <ShieldCheck className="w-5 h-5 text-gold mt-0.5 shrink-0" />
             <div>
-              <p className="text-sm font-medium text-foreground mb-1">Your data, your choice</p>
+              <p className="text-sm font-medium text-foreground mb-1">Consent is captured here</p>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Research data collection is strictly opt-in. You can change your
-                preference at any time in Settings. No data is ever sold.
+                Research and personalization consent are set during account creation, not later in Settings.
+                Access-code welcome credits are only issued when research consent is enabled.
               </p>
             </div>
           </div>
@@ -215,11 +217,13 @@ export default function RegisterPage() {
                   className="w-full rounded-lg border border-border bg-card/60 px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/50"
                   placeholder="Enter your access code"
                 />
+                <p className="mt-1 text-xs text-muted-foreground/70">
+                  If you use an access code, free welcome credits are granted only when research consent is checked.
+                </p>
               </div>
             )}
 
-            {/* ── Research Consent Opt-in ──────────────────────── */}
-            <div className="rounded-lg border border-border bg-card/40 p-4">
+            <div className="rounded-lg border border-border bg-card/40 p-4 space-y-4">
               <label className="flex items-start gap-3 cursor-pointer group">
                 <div className="relative mt-0.5">
                   <input
@@ -243,7 +247,33 @@ export default function RegisterPage() {
                   <span className="text-xs text-muted-foreground leading-relaxed block">
                     I agree to let my <strong>anonymised</strong> tutoring interactions be used for
                     academic research on AI tutoring quality. No personally identifiable information
-                    is included. You can change this at any time in Settings.
+                    is included.
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <div className="relative mt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={consentPersonalization}
+                    onChange={e => setConsentPersonalization(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-5 h-5 rounded border-2 border-border bg-card peer-checked:border-gold peer-checked:bg-gold/20 transition-all flex items-center justify-center">
+                    {consentPersonalization && (
+                      <svg className="w-3 h-3 text-gold" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-sm font-medium text-foreground block mb-1">
+                    Allow personalization
+                  </span>
+                  <span className="text-xs text-muted-foreground leading-relaxed block">
+                    Let StudyAgent adapt pacing, depth, hints, and examples based on your notebook and session preferences.
                   </span>
                 </div>
               </label>

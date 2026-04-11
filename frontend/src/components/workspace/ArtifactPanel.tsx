@@ -7,10 +7,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  StickyNote, ExternalLink,
-  Files,
-} from 'lucide-react';
+import { Cpu, ExternalLink, Files, Loader2, PanelRightClose, Save, Settings2, Sparkles, StickyNote } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { ARTIFACT_TYPE_COLOR } from '../icons/ArtifactCatalog';
 import {
@@ -19,18 +16,23 @@ import {
   SummaryIcon,
   RevisionPlanIcon,
 } from '../icons/ArtifactIcons';
-import type { ArtifactEventPayload, SourceCitationPayload } from '../../types/session-events';
-import type { NotebookArtifact } from '../../types/api';
+import type { ArtifactEventPayload } from '../../types/session-events';
+import type {
+  NotebookArtifact,
+  NotebookPersonalization,
+  TaskModelsResponse,
+  UserModelPreferences,
+  UserModelPreferencesUpdate,
+} from '../../types/api';
 import { ArtifactViewerCard, type QuizSubmissionSignal } from '../ui/ArtifactViewer';
 import RichTutorContent from '../ui/RichTutorContent';
 
-type ArtifactTab = 'artifacts' | 'notes' | 'sources';
+type ArtifactTab = 'artifacts' | 'notes' | 'settings';
 type NotesMode = 'edit' | 'preview';
 
 interface ArtifactPanelProps {
   liveArtifacts: ArtifactEventPayload[];
   savedArtifacts: NotebookArtifact[];
-  citations: SourceCitationPayload[];
   notesDraft: string;
   onNotesChange: (value: string) => void;
   onAddToNotes?: (text: string) => void;
@@ -39,6 +41,16 @@ interface ArtifactPanelProps {
   quizSignals?: QuizSubmissionSignal[];
   onQuizSubmission?: (signal: QuizSubmissionSignal) => void;
   onGenerateArtifact?: (type: string) => void;
+  isGeneratingArtifact?: boolean;
+  onClose?: () => void;
+  notebookPersonalization?: NotebookPersonalization | null;
+  onSaveNotebookPersonalization?: (personalization: NotebookPersonalization) => Promise<void> | void;
+  modelPreferences?: UserModelPreferences | null;
+  onSaveModelPreferences?: (preferences: UserModelPreferencesUpdate) => Promise<void> | void;
+  policyTaskModels?: TaskModelsResponse | null;
+  responseTaskModels?: TaskModelsResponse | null;
+  artifactTaskModels?: TaskModelsResponse | null;
+  sessionPersonalization?: Record<string, unknown> | null;
   collapsed?: boolean;
 }
 
@@ -47,6 +59,37 @@ function formatArtifactTitle(type: string) {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function formatControlLabel(value: string) {
+  return value.replace(/_/g, ' ');
+}
+
+function formatSessionValue(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'string') return value.trim() || null;
+  if (Array.isArray(value)) {
+    const items: Array<string | null> = value
+      .map((item) => formatSessionValue(item))
+      .filter((item): item is string => Boolean(item));
+    return items.length ? items.join(', ') : null;
+  }
+  if (typeof value === 'object') {
+    const entries: Array<string | null> = Object.entries(value as Record<string, unknown>)
+      .map(([key, nestedValue]) => {
+        const formatted = formatSessionValue(nestedValue);
+        return formatted ? `${formatControlLabel(key)}: ${formatted}` : null;
+      })
+      .filter((item): item is string => Boolean(item));
+    return entries.length ? entries.join(' · ') : null;
+  }
+  return String(value);
+}
+
+function modelDisplayName(modelId: string, fallback?: string) {
+  return fallback || modelId.split('/').pop() || modelId;
 }
 
 /* ── Generate button card ──────────────────────────────────────────── */
@@ -58,35 +101,10 @@ const GENERATE_TYPES = [
 ] as const;
 
 
-/* ── Citation card ──────────────────────────────────────────────────── */
-function CitationCard({ citation }: { citation: SourceCitationPayload }) {
-  return (
-    <div className="flex items-start gap-2 py-2 px-1">
-      <ExternalLink className="w-3.5 h-3.5 text-gold shrink-0 mt-0.5" />
-      <div className="min-w-0 flex-1">
-        <span className="text-sm text-foreground font-reading">
-          {citation.resource_name || citation.resource_id}
-        </span>
-        {citation.page_numbers.length > 0 && (
-          <span className="text-[10px] text-muted-foreground ml-2 font-ui uppercase tracking-[0.06em]">
-            p.{citation.page_numbers.join(', ')}
-          </span>
-        )}
-        {citation.snippet && (
-          <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed line-clamp-3 italic reading-copy">
-            &ldquo;{citation.snippet}&rdquo;
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /* ── Main panel ─────────────────────────────────────────────────────── */
 export default function ArtifactPanel({
   liveArtifacts,
   savedArtifacts,
-  citations,
   notesDraft,
   onNotesChange,
   onAddToNotes,
@@ -95,10 +113,31 @@ export default function ArtifactPanel({
   quizSignals = [],
   onQuizSubmission,
   onGenerateArtifact,
+  isGeneratingArtifact = false,
+  onClose,
+  notebookPersonalization,
+  onSaveNotebookPersonalization,
+  modelPreferences,
+  onSaveModelPreferences,
+  policyTaskModels,
+  responseTaskModels,
+  artifactTaskModels,
+  sessionPersonalization,
   collapsed = false,
 }: ArtifactPanelProps) {
   const [activeTab, setActiveTab] = useState<ArtifactTab>('notes');
   const [notesMode, setNotesMode] = useState<NotesMode>('edit');
+  const [selectedPolicyModel, setSelectedPolicyModel] = useState('');
+  const [selectedResponseModel, setSelectedResponseModel] = useState('');
+  const [selectedArtifactModel, setSelectedArtifactModel] = useState('');
+  const [selectedPurpose, setSelectedPurpose] = useState<string | null>(null);
+  const [selectedPace, setSelectedPace] = useState<string | null>(null);
+  const [selectedDepth, setSelectedDepth] = useState<string | null>(null);
+  const [selectedIntensity, setSelectedIntensity] = useState<string | null>(null);
+  const [selectedExamContext, setSelectedExamContext] = useState('');
+  const [urgent, setUrgent] = useState(false);
+  const [savingModels, setSavingModels] = useState(false);
+  const [savingNotebookPrefs, setSavingNotebookPrefs] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const totalCount = liveArtifacts.length + savedArtifacts.length;
@@ -117,6 +156,33 @@ export default function ArtifactPanel({
     });
   }, [focusNotesSignal, notesDraft.length]);
 
+  useEffect(() => {
+    setSelectedPolicyModel(
+      modelPreferences?.preferences?.policy_model_id ??
+        modelPreferences?.preferences?.tutoring_model_id ??
+        policyTaskModels?.default_model_id ??
+        '',
+    );
+    setSelectedResponseModel(
+      modelPreferences?.preferences?.response_model_id ??
+        modelPreferences?.preferences?.tutoring_model_id ??
+        responseTaskModels?.default_model_id ??
+        '',
+    );
+    setSelectedArtifactModel(
+      modelPreferences?.preferences?.artifact_model_id ?? artifactTaskModels?.default_model_id ?? '',
+    );
+  }, [artifactTaskModels?.default_model_id, modelPreferences, policyTaskModels?.default_model_id, responseTaskModels?.default_model_id]);
+
+  useEffect(() => {
+    setSelectedPurpose(notebookPersonalization?.purpose ?? null);
+    setSelectedPace(notebookPersonalization?.study_pace ?? null);
+    setSelectedDepth(notebookPersonalization?.study_depth ?? null);
+    setSelectedIntensity(notebookPersonalization?.practice_intensity ?? null);
+    setSelectedExamContext(notebookPersonalization?.exam_context ?? '');
+    setUrgent(Boolean(notebookPersonalization?.urgency));
+  }, [notebookPersonalization]);
+
   if (collapsed) {
     return (
       <div className="flex flex-col items-center py-4 gap-4">
@@ -130,13 +196,76 @@ export default function ArtifactPanel({
   const tabs: { key: ArtifactTab; label: string; count: number }[] = [
     { key: 'notes', label: 'Notes', count: 0 },
     { key: 'artifacts', label: 'Artifacts', count: totalCount },
-    { key: 'sources', label: 'Sources', count: citations.length },
+    { key: 'settings', label: 'Settings', count: 0 },
   ];
+
+  const selectedPolicyModelLabel = useMemo(() => {
+    if (!selectedPolicyModel) return 'System default';
+    return (
+      policyTaskModels?.allowed_models.find((model) => model.model_id === selectedPolicyModel)?.display_name ||
+      modelDisplayName(selectedPolicyModel)
+    );
+  }, [selectedPolicyModel, policyTaskModels]);
+
+  const sessionPersonalizationEntries = useMemo(() => {
+    if (!sessionPersonalization) return [];
+    return Object.entries(sessionPersonalization)
+      .map(([key, value]) => {
+        const formattedValue = formatSessionValue(value);
+        if (!formattedValue) return null;
+        return {
+          key,
+          label: formatControlLabel(key),
+          value: formattedValue,
+        };
+      })
+      .filter((item): item is { key: string; label: string; value: string } => Boolean(item));
+  }, [sessionPersonalization]);
+
+  const handleSaveModelPreferences = async () => {
+    if (!onSaveModelPreferences) return;
+    setSavingModels(true);
+    try {
+      await onSaveModelPreferences({
+        policy_model_id: selectedPolicyModel || policyTaskModels?.default_model_id || undefined,
+        response_model_id: selectedResponseModel || responseTaskModels?.default_model_id || undefined,
+        artifact_model_id: selectedArtifactModel || artifactTaskModels?.default_model_id || undefined,
+      });
+    } finally {
+      setSavingModels(false);
+    }
+  };
+
+  const handleSaveNotebookPersonalization = async () => {
+    if (!onSaveNotebookPersonalization) return;
+    setSavingNotebookPrefs(true);
+    try {
+      await onSaveNotebookPersonalization({
+        purpose: selectedPurpose as NotebookPersonalization['purpose'],
+        urgency: urgent,
+        study_pace: selectedPace as NotebookPersonalization['study_pace'],
+        study_depth: selectedDepth as NotebookPersonalization['study_depth'],
+        practice_intensity: selectedIntensity as NotebookPersonalization['practice_intensity'],
+        exam_context: selectedExamContext.trim() || undefined,
+      });
+    } finally {
+      setSavingNotebookPrefs(false);
+    }
+  };
 
   return (
     <div className="h-full flex flex-col overflow-hidden surface-scholarly">
       {/* Tab bar */}
-      <div className="flex border-b border-border/40 px-2 shrink-0">
+      <div className="flex items-center border-b border-border/40 px-2 shrink-0">
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-border/60 p-1 mr-1 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground shrink-0"
+            title="Close artifacts"
+          >
+            <PanelRightClose className="w-3.5 h-3.5" />
+          </button>
+        )}
         {tabs.map((tab) => (
           <button
             key={tab.key}
@@ -195,6 +324,22 @@ export default function ArtifactPanel({
               </div>
             )}
 
+            {/* Generating artifact placeholder */}
+            {isGeneratingArtifact && (
+              <div className="rounded-xl border border-gold/25 bg-gold/[0.04] p-3 animate-pulse">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-xl border border-gold/20 bg-gold/10 p-2.5 shrink-0">
+                    <Sparkles className="h-4 w-4 text-gold animate-pulse" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-gold">Generating artifact…</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">This may take a moment</p>
+                  </div>
+                  <Loader2 className="h-4 w-4 text-gold animate-spin shrink-0" />
+                </div>
+              </div>
+            )}
+
             {/* Artifact cards */}
             {liveArtifacts.length > 0 && (
               <div>
@@ -208,7 +353,6 @@ export default function ArtifactPanel({
                       artifactKey={a.artifact_id}
                       type={a.artifact_type}
                       title={formatArtifactTitle(a.artifact_type)}
-                      badge={a.status === 'ready' ? 'ready' : undefined}
                       isGenerating={a.status === 'generating'}
                       payload={a.payload_json}
                       onAddToNotes={onAddToNotes}
@@ -349,19 +493,230 @@ export default function ArtifactPanel({
           </div>
         )}
 
-        {/* ── Sources tab ───────────────────────────────────────── */}
-        {activeTab === 'sources' && (
-          <div>
-            {citations.length === 0 ? (
-              <div className="flex flex-col items-center justify-center border border-dashed border-border py-8 rounded-lg text-center">
-                <ExternalLink className="mb-2 w-8 h-8 text-muted-foreground/20" />
-                <p className="text-xs text-muted-foreground/60">
-                  Source citations will appear here
+        {/* ── Settings tab ─────────────────────────────────────── */}
+        {activeTab === 'settings' && (
+          <div className="space-y-4">
+            {/* Quick summary chips */}
+            <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+              <span className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5">
+                {selectedPolicyModelLabel}
+              </span>
+              <span className="rounded-full border border-border/60 bg-background/60 px-2 py-0.5">
+                {selectedPurpose ? formatControlLabel(selectedPurpose) : 'No purpose'}
+              </span>
+            </div>
+
+            {/* ── Model settings ── */}
+            <div className="space-y-3 rounded-2xl border border-border/60 bg-background/55 p-3.5">
+              <div className="flex items-center gap-2">
+                <Cpu className="h-3.5 w-3.5 text-gold" />
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground font-ui">
+                  Model settings
                 </p>
               </div>
-            ) : (
-              <div className="divide-y divide-border/40">
-                {citations.map((c) => <CitationCard key={c.citation_id} citation={c} />)}
+
+              <div className="space-y-3 border-t border-border/40 pt-3">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-ui">
+                    Policy model
+                  </label>
+                  <select
+                    value={selectedPolicyModel}
+                    onChange={(e) => setSelectedPolicyModel(e.target.value)}
+                    className="w-full rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-sm text-foreground outline-none focus:border-gold/30 transition-colors"
+                  >
+                    <option value="">Default ({policyTaskModels?.default_model_id?.split('/').pop() ?? 'system'})</option>
+                    {(policyTaskModels?.allowed_models ?? []).map((model) => (
+                      <option key={model.model_id} value={model.model_id}>
+                        {model.display_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-ui">
+                    Response model
+                  </label>
+                  <select
+                    value={selectedResponseModel}
+                    onChange={(e) => setSelectedResponseModel(e.target.value)}
+                    className="w-full rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-sm text-foreground outline-none focus:border-gold/30 transition-colors"
+                  >
+                    <option value="">Default ({responseTaskModels?.default_model_id?.split('/').pop() ?? 'system'})</option>
+                    {(responseTaskModels?.allowed_models ?? []).map((model) => (
+                      <option key={model.model_id} value={model.model_id}>
+                        {model.display_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-ui">
+                    Artifact model
+                  </label>
+                  <select
+                    value={selectedArtifactModel}
+                    onChange={(e) => setSelectedArtifactModel(e.target.value)}
+                    className="w-full rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-sm text-foreground outline-none focus:border-gold/30 transition-colors"
+                  >
+                    <option value="">Default ({artifactTaskModels?.default_model_id?.split('/').pop() ?? 'system'})</option>
+                    {(artifactTaskModels?.allowed_models ?? []).map((model) => (
+                      <option key={model.model_id} value={model.model_id}>
+                        {model.display_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleSaveModelPreferences()}
+                  disabled={!onSaveModelPreferences || savingModels}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/30 bg-gold/[0.08] px-3 py-2 text-xs font-semibold text-gold transition-colors hover:bg-gold/[0.14] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingModels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  Save model preferences
+                </button>
+              </div>
+            </div>
+
+            {/* ── Notebook personalization ── */}
+            <div className="space-y-3 rounded-2xl border border-border/60 bg-background/55 p-3.5">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-3.5 w-3.5 text-gold" />
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground font-ui">
+                  Notebook personalization
+                </p>
+              </div>
+
+              <div className="space-y-3 border-t border-border/40 pt-3">
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-ui">
+                    Purpose
+                  </label>
+                  <select
+                    value={selectedPurpose ?? ''}
+                    onChange={(e) => setSelectedPurpose(e.target.value || null)}
+                    className="w-full rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-sm text-foreground outline-none focus:border-gold/30 transition-colors"
+                  >
+                    <option value="">No purpose set</option>
+                    <option value="exam_prep">Exam prep</option>
+                    <option value="assignment">Assignment</option>
+                    <option value="concept_mastery">Concept mastery</option>
+                    <option value="doubt_clearing">Doubt clearing</option>
+                    <option value="general">General</option>
+                  </select>
+                </div>
+
+                <div className="grid gap-2 grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-ui">
+                      Pace
+                    </label>
+                    <select
+                      value={selectedPace ?? ''}
+                      onChange={(e) => setSelectedPace(e.target.value || null)}
+                      className="w-full rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-sm text-foreground outline-none focus:border-gold/30 transition-colors"
+                    >
+                      <option value="">Not set</option>
+                      <option value="relaxed">Relaxed</option>
+                      <option value="moderate">Moderate</option>
+                      <option value="intensive">Intensive</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-ui">
+                      Depth
+                    </label>
+                    <select
+                      value={selectedDepth ?? ''}
+                      onChange={(e) => setSelectedDepth(e.target.value || null)}
+                      className="w-full rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-sm text-foreground outline-none focus:border-gold/30 transition-colors"
+                    >
+                      <option value="">Not set</option>
+                      <option value="surface">Surface</option>
+                      <option value="balanced">Balanced</option>
+                      <option value="deep">Deep</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid gap-2 grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-ui">
+                      Practice intensity
+                    </label>
+                    <select
+                      value={selectedIntensity ?? ''}
+                      onChange={(e) => setSelectedIntensity(e.target.value || null)}
+                      className="w-full rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-sm text-foreground outline-none focus:border-gold/30 transition-colors"
+                    >
+                      <option value="">Not set</option>
+                      <option value="light">Light</option>
+                      <option value="moderate">Moderate</option>
+                      <option value="heavy">Heavy</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-ui">
+                      Urgent deadline
+                    </label>
+                    <select
+                      value={urgent ? 'yes' : 'no'}
+                      onChange={(e) => setUrgent(e.target.value === 'yes')}
+                      className="w-full rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-sm text-foreground outline-none focus:border-gold/30 transition-colors"
+                    >
+                      <option value="no">No urgency</option>
+                      <option value="yes">Urgent</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-ui">
+                    Exam context
+                  </label>
+                  <input
+                    value={selectedExamContext}
+                    onChange={(e) => setSelectedExamContext(e.target.value)}
+                    placeholder="Midterm in 2 weeks, chapter 4 revision…"
+                    className="w-full rounded-xl border border-border/60 bg-background/70 px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-gold/30 transition-colors"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleSaveNotebookPersonalization()}
+                  disabled={!onSaveNotebookPersonalization || savingNotebookPrefs}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gold/30 bg-gold/[0.08] px-3 py-2 text-xs font-semibold text-gold transition-colors hover:bg-gold/[0.14] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingNotebookPrefs ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  Save personalization
+                </button>
+              </div>
+            </div>
+
+            {/* ── Session snapshot ── */}
+            {sessionPersonalizationEntries.length > 0 && (
+              <div className="space-y-2 rounded-2xl border border-dashed border-border/50 bg-background/35 px-3.5 py-3">
+                <div className="flex items-center gap-1.5">
+                  <Settings2 className="h-3 w-3 text-muted-foreground/60" />
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground font-ui">
+                    Session snapshot
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  {sessionPersonalizationEntries.map((entry) => (
+                    <div key={entry.key} className="flex items-baseline justify-between gap-2 px-1 py-0.5">
+                      <span className="text-[10px] uppercase tracking-[0.10em] text-muted-foreground/70 font-ui shrink-0">{entry.label}</span>
+                      <span className="text-[11px] text-foreground text-right truncate">{entry.value}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

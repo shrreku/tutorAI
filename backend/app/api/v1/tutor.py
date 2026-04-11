@@ -36,7 +36,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tutor", tags=["tutor"])
 
-_DEFAULT_TUTORING_LLM = None
+_DEFAULT_POLICY_LLM = None
+_DEFAULT_RESPONSE_LLM = None
 _DEFAULT_EVALUATION_LLM = None
 _DEFAULT_CURRICULUM_LLM = None
 _DEFAULT_EMBEDDING_PROVIDER = None
@@ -149,13 +150,15 @@ def _uses_platform_credits(byok: dict) -> bool:
 def get_turn_pipeline(
     db: AsyncSession,
     *,
-    tutoring_model_override: str | None = None,
+    policy_model_override: str | None = None,
+    response_model_override: str | None = None,
     evaluation_model_override: str | None = None,
     byok_api_key: str | None = None,
     byok_api_base_url: str | None = None,
 ) -> TurnPipeline:
     """Create turn pipeline with all dependencies.  Supports BYOK."""
-    global _DEFAULT_TUTORING_LLM
+    global _DEFAULT_POLICY_LLM
+    global _DEFAULT_RESPONSE_LLM
     global _DEFAULT_EVALUATION_LLM
     global _DEFAULT_CURRICULUM_LLM
     global _DEFAULT_EMBEDDING_PROVIDER
@@ -164,18 +167,31 @@ def get_turn_pipeline(
     # to avoid leaking one user's key to another.
     use_byok = bool(byok_api_key)
 
-    if tutoring_model_override or use_byok:
-        tutoring_llm = create_llm_provider(
+    if policy_model_override or use_byok:
+        policy_llm = create_llm_provider(
             settings,
             task="tutoring",
-            model_override=tutoring_model_override,
+            model_override=policy_model_override,
             byok_api_key=byok_api_key,
             byok_api_base_url=byok_api_base_url,
         )
     else:
-        if _DEFAULT_TUTORING_LLM is None:
-            _DEFAULT_TUTORING_LLM = create_llm_provider(settings, task="tutoring")
-        tutoring_llm = _DEFAULT_TUTORING_LLM
+        if _DEFAULT_POLICY_LLM is None:
+            _DEFAULT_POLICY_LLM = create_llm_provider(settings, task="tutoring")
+        policy_llm = _DEFAULT_POLICY_LLM
+
+    if response_model_override or use_byok:
+        response_llm = create_llm_provider(
+            settings,
+            task="tutoring",
+            model_override=response_model_override,
+            byok_api_key=byok_api_key,
+            byok_api_base_url=byok_api_base_url,
+        )
+    else:
+        if _DEFAULT_RESPONSE_LLM is None:
+            _DEFAULT_RESPONSE_LLM = create_llm_provider(settings, task="tutoring")
+        response_llm = _DEFAULT_RESPONSE_LLM
 
     if evaluation_model_override or use_byok:
         eval_llm = create_llm_provider(
@@ -208,8 +224,8 @@ def get_turn_pipeline(
 
     return TurnPipeline(
         db_session=db,
-        policy_agent=PolicyAgent(tutoring_llm),
-        tutor_agent=TutorAgent(tutoring_llm),
+        policy_agent=PolicyAgent(policy_llm),
+        tutor_agent=TutorAgent(response_llm),
         evaluator_agent=EvaluatorAgent(eval_llm),
         safety_critic=SafetyCritic(eval_llm),
         retrieval_service=RetrievalService(db, embedding),
@@ -289,17 +305,21 @@ async def execute_notebook_turn(
     meter = CreditMeter(db)
     uses_platform_credits = _uses_platform_credits(byok)
     supports_operation_metering = _supports_operation_metering(db, meter)
+    model_prefs = user.model_preferences or {}
+    policy_model_override = model_prefs.get("policy_model_id") or model_prefs.get("tutoring_model_id")
+    response_model_override = model_prefs.get("response_model_id") or model_prefs.get("tutoring_model_id")
 
     if uses_platform_credits:
+        billing_model_id = response_model_override or settings.LLM_MODEL_TUTORING or settings.LLM_MODEL
         estimated = await meter.estimate_turn_credits(
-            settings.LLM_MODEL_TUTORING or settings.LLM_MODEL,
+            billing_model_id,
         )
         if supports_operation_metering:
             op = await meter.create_operation(
                 user.id,
                 "tutor_turn",
                 session_id=str(request.session_id),
-                selected_model_id=settings.LLM_MODEL_TUTORING or settings.LLM_MODEL,
+                selected_model_id=billing_model_id,
             )
             operation_id = op.id
         reserved = await meter.reserve_for_turn(user.id, turn_id, estimated)
@@ -325,17 +345,23 @@ async def execute_notebook_turn(
 
         pipeline = get_turn_pipeline(
             db,
-            tutoring_model_override=tutoring_override,
+            policy_model_override=tutoring_override or policy_model_override,
+            response_model_override=tutoring_override or response_model_override,
             evaluation_model_override=evaluation_override,
             byok_api_key=byok.get("api_key"),
             byok_api_base_url=byok.get("api_base_url"),
         )
 
         # CM-005: Snapshot LLM token counters before turn execution
-        tutoring_llm = pipeline.tutor.llm
+        policy_llm = pipeline.policy.llm
+        response_llm = pipeline.tutor.llm
         eval_llm = pipeline.evaluator.llm
         tutor_tokens_before = dict(
-            getattr(tutoring_llm, "total_tokens_used", None)
+            getattr(response_llm, "total_tokens_used", None)
+            or {"prompt_tokens": 0, "completion_tokens": 0}
+        )
+        policy_tokens_before = dict(
+            getattr(policy_llm, "total_tokens_used", None)
             or {"prompt_tokens": 0, "completion_tokens": 0}
         )
         eval_tokens_before = dict(
@@ -355,11 +381,16 @@ async def execute_notebook_turn(
         )
 
         if uses_platform_credits:
-            model_id = settings.LLM_MODEL_TUTORING or settings.LLM_MODEL
+            response_model_id = response_model_override or settings.LLM_MODEL_TUTORING or settings.LLM_MODEL
+            policy_model_id = policy_model_override or settings.LLM_MODEL_TUTORING or settings.LLM_MODEL
 
             # CM-005: Compute actual token deltas from LLM providers
             tutor_tokens_after = dict(
-                getattr(tutoring_llm, "total_tokens_used", None)
+                getattr(response_llm, "total_tokens_used", None)
+                or {"prompt_tokens": 0, "completion_tokens": 0}
+            )
+            policy_tokens_after = dict(
+                getattr(policy_llm, "total_tokens_used", None)
                 or {"prompt_tokens": 0, "completion_tokens": 0}
             )
             eval_tokens_after = dict(
@@ -372,6 +403,12 @@ async def execute_notebook_turn(
             tutor_completion_delta = tutor_tokens_after.get(
                 "completion_tokens", 0
             ) - tutor_tokens_before.get("completion_tokens", 0)
+            policy_prompt_delta = policy_tokens_after.get(
+                "prompt_tokens", 0
+            ) - policy_tokens_before.get("prompt_tokens", 0)
+            policy_completion_delta = policy_tokens_after.get(
+                "completion_tokens", 0
+            ) - policy_tokens_before.get("completion_tokens", 0)
             eval_prompt_delta = eval_tokens_after.get(
                 "prompt_tokens", 0
             ) - eval_tokens_before.get("prompt_tokens", 0)
@@ -389,12 +426,12 @@ async def execute_notebook_turn(
 
             # CM-005: Record usage lines for the turn subcalls using measured token deltas
             if operation_id and supports_operation_metering:
-                eval_model = settings.LLM_MODEL_EVALUATION or model_id
+                eval_model = settings.LLM_MODEL_EVALUATION or settings.LLM_MODEL
                 # Policy + tutor response usage (tutoring LLM)
                 await meter.append_usage_line(
                     operation_id,
                     "tutor_response",
-                    model_id,
+                    response_model_id,
                     input_tokens=max(0, int(tutor_prompt_delta * 0.85)),
                     output_tokens=max(0, int(tutor_completion_delta * 0.85)),
                 )
@@ -402,9 +439,9 @@ async def execute_notebook_turn(
                 await meter.append_usage_line(
                     operation_id,
                     "tutor_policy",
-                    model_id,
-                    input_tokens=max(0, int(tutor_prompt_delta * 0.15)),
-                    output_tokens=max(0, int(tutor_completion_delta * 0.15)),
+                    policy_model_id,
+                    input_tokens=max(0, int(policy_prompt_delta)),
+                    output_tokens=max(0, int(policy_completion_delta)),
                 )
                 # Evaluator usage line (evaluation LLM)
                 await meter.append_usage_line(
@@ -435,7 +472,7 @@ async def execute_notebook_turn(
                 await meter.finalize_turn(
                     user.id,
                     turn_id,
-                    model_id,
+                    billing_model_id,
                     prompt_tokens,
                     completion_tokens,
                     reserved_credits,
@@ -472,7 +509,7 @@ async def execute_notebook_turn(
             citations=[
                 CitationData(**c) for c in (getattr(result, "citations", None) or [])
             ],
-            selected_model_id=settings.LLM_MODEL_TUTORING or settings.LLM_MODEL,
+            selected_model_id=billing_model_id if uses_platform_credits else (response_model_override or settings.LLM_MODEL_TUTORING or settings.LLM_MODEL),
         )
     except Exception as e:
         if operation_id and supports_operation_metering:

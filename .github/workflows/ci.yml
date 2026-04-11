@@ -3,8 +3,18 @@ name: CI
 on:
   push:
     branches: [main, develop]
+    paths-ignore:
+      - 'research/**'
+      - 'docs/research/**'
+      - 'tickets/research/**'
+      - 'evals/research/**'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'research/**'
+      - 'docs/research/**'
+      - 'tickets/research/**'
+      - 'evals/research/**'
 
 jobs:
   # ── Secret scanning & lint ──────────────────────────────────────

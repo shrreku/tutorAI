@@ -66,6 +66,7 @@ from app.services.batched_curriculum_preparation import (
 from app.services.ingestion.enricher import ChunkEnricher
 from app.services.ingestion.ontology_extractor import OntologyExtractor
 from app.services.notebook_artifacts import NotebookArtifactService
+from app.services.notebook_planning import NotebookPlanningStateService
 from app.services.notebook_preparation import NotebookPreparationService
 from app.services.resource_readiness import normalized_resource_capabilities
 from app.services.telemetry.notebook_events import emit_notebook_event
@@ -134,6 +135,18 @@ def _estimate_curriculum_prepare_for_resource(
 
 
 def _to_notebook_response(notebook: Notebook) -> NotebookResponse:
+    from app.schemas.api import NotebookPersonalization
+
+    # Extract personalization from settings_json if present
+    settings = notebook.settings_json or {}
+    personalization_raw = settings.get("personalization")
+    personalization = None
+    if isinstance(personalization_raw, dict) and personalization_raw:
+        try:
+            personalization = NotebookPersonalization(**personalization_raw)
+        except Exception:
+            personalization = None
+
     return NotebookResponse(
         id=notebook.id,
         student_id=notebook.student_id,
@@ -142,6 +155,7 @@ def _to_notebook_response(notebook: Notebook) -> NotebookResponse:
         target_date=notebook.target_date,
         status=notebook.status,
         settings_json=notebook.settings_json,
+        personalization=personalization,
         created_at=notebook.created_at,
         updated_at=notebook.updated_at,
     )
@@ -206,8 +220,20 @@ def _to_session_response(session: UserSession) -> SessionResponse:
         current_concept_id=(plan_state.get("focus_concepts") or [None])[0],
         mastery=session.mastery,
         curriculum_overview=_build_curriculum_overview(plan_state),
+        plan_state=session.plan_state,
+        notebook_planning_state=_planning_state_response(
+            plan_state.get("notebook_planning_state")
+        ),
         created_at=session.created_at,
     )
+
+
+def _planning_state_response(payload: dict | None):
+    from app.schemas.api import NotebookPlanningStateResponse
+
+    if not payload:
+        return None
+    return NotebookPlanningStateResponse(**payload)
 
 
 def _to_notebook_artifact_response(
@@ -229,97 +255,23 @@ async def _compute_and_persist_notebook_progress(
     notebook_id: UUID,
     db: AsyncSession,
 ) -> NotebookProgressResponse:
-    notebook_session_repo = NotebookSessionRepository(db)
-    session_repo = SessionRepository(db)
-    progress_repo = NotebookProgressRepository(db)
-
-    links = await notebook_session_repo.get_by_notebook(
-        notebook_id, limit=1000, offset=0
-    )
-
-    sessions_count = len(links)
-    completed_sessions_count = 0
-    mastery_accumulator: dict[str, float] = {}
-    mastery_counts: dict[str, int] = {}
-    objective_progress: dict[str, dict] = {}
-
-    for link in links:
-        session = await session_repo.get_by_id(link.session_id)
-        if not session:
-            continue
-
-        if session.status == "completed":
-            completed_sessions_count += 1
-
-        for concept, score in (session.mastery or {}).items():
-            try:
-                numeric_score = float(score)
-            except (TypeError, ValueError):
-                continue
-            mastery_accumulator[concept] = (
-                mastery_accumulator.get(concept, 0.0) + numeric_score
-            )
-            mastery_counts[concept] = mastery_counts.get(concept, 0) + 1
-
-        session_objective_progress = (session.plan_state or {}).get(
-            "objective_progress", {}
-        )
-        for objective_id, progress in session_objective_progress.items():
-            if objective_id not in objective_progress:
-                objective_progress[objective_id] = {
-                    "attempts": 0,
-                    "correct": 0,
-                    "steps_completed": 0,
-                    "steps_skipped": 0,
-                }
-            objective_progress[objective_id]["attempts"] += int(
-                progress.get("attempts", 0) or 0
-            )
-            objective_progress[objective_id]["correct"] += int(
-                progress.get("correct", 0) or 0
-            )
-            objective_progress[objective_id]["steps_completed"] += int(
-                progress.get("steps_completed", 0) or 0
-            )
-            objective_progress[objective_id]["steps_skipped"] += int(
-                progress.get("steps_skipped", 0) or 0
-            )
-
-    mastery_snapshot = {
-        concept: (mastery_accumulator[concept] / mastery_counts[concept])
-        for concept in mastery_accumulator
-        if mastery_counts.get(concept, 0) > 0
-    }
-    weak_concepts_snapshot = [
-        concept for concept, score in mastery_snapshot.items() if score < 0.4
-    ]
-
-    progress = await progress_repo.get_by_notebook(notebook_id)
-    if not progress:
-        progress = NotebookProgress(
-            notebook_id=notebook_id,
-            mastery_snapshot=mastery_snapshot,
-            objective_progress_snapshot=objective_progress,
-            weak_concepts_snapshot=weak_concepts_snapshot,
-        )
-        progress = await progress_repo.create(progress)
-    else:
-        progress.mastery_snapshot = mastery_snapshot
-        progress.objective_progress_snapshot = objective_progress
-        progress.weak_concepts_snapshot = weak_concepts_snapshot
-        db.add(progress)
-
+    planner = NotebookPlanningStateService(db)
+    snapshot = await planner.sync_notebook(notebook_id)
     await db.commit()
-    await db.refresh(progress)
-
+    planning_state = snapshot.get("notebook_planning_state") or {}
+    aggregate = snapshot.get("aggregate") or {}
     return NotebookProgressResponse(
         notebook_id=notebook_id,
-        mastery_snapshot=progress.mastery_snapshot or {},
-        objective_progress_snapshot=progress.objective_progress_snapshot or {},
-        weak_concepts_snapshot=progress.weak_concepts_snapshot or [],
-        sessions_count=sessions_count,
-        completed_sessions_count=completed_sessions_count,
-        updated_at=progress.updated_at,
+        mastery_snapshot=aggregate.get("mastery_snapshot") or {},
+        objective_progress_snapshot=aggregate.get("objective_progress_snapshot") or {},
+        weak_concepts_snapshot=aggregate.get("weak_concepts_snapshot") or [],
+        sessions_count=int(aggregate.get("sessions_count") or 0),
+        completed_sessions_count=int(
+            aggregate.get("completed_sessions_count") or 0
+        ),
+        coverage_snapshot=snapshot.get("coverage_snapshot") or {},
+        notebook_planning_state=_planning_state_response(planning_state),
+        updated_at=planning_state.get("updated_at"),
     )
 
 
@@ -330,13 +282,21 @@ async def create_notebook(
     user: UserProfile = Depends(require_auth),
 ):
     notebook_repo = NotebookRepository(db)
+
+    # Merge personalization into settings_json
+    merged_settings = dict(request.settings_json or {})
+    if request.personalization is not None:
+        merged_settings["personalization"] = request.personalization.model_dump(
+            exclude_none=True
+        )
+
     notebook = Notebook(
         student_id=user.id,
         title=request.title.strip(),
         goal=request.goal,
         target_date=request.target_date,
         status="active",
-        settings_json=request.settings_json,
+        settings_json=merged_settings or None,
     )
     notebook = await notebook_repo.create(notebook)
     await db.commit()
@@ -345,6 +305,7 @@ async def create_notebook(
         "notebook.created",
         user_id=str(user.id),
         notebook_id=str(notebook.id),
+        metadata={"has_personalization": request.personalization is not None},
     )
     return _to_notebook_response(notebook)
 
@@ -390,6 +351,19 @@ async def update_notebook(
     notebook = await verify_notebook_owner(notebook_id, user, db)
 
     updates = request.model_dump(exclude_unset=True)
+
+    # Handle personalization merge into settings_json
+    if "personalization" in updates and updates["personalization"] is not None:
+        existing_settings = dict(notebook.settings_json or {})
+        existing_personalization = existing_settings.get("personalization", {})
+        if isinstance(existing_personalization, dict):
+            existing_personalization.update(updates["personalization"])
+        else:
+            existing_personalization = updates["personalization"]
+        existing_settings["personalization"] = existing_personalization
+        updates["settings_json"] = existing_settings
+    updates.pop("personalization", None)
+
     if "title" in updates and updates["title"] is not None:
         updates["title"] = updates["title"].strip()
 
@@ -631,28 +605,33 @@ async def create_notebook_session(
                 curriculum_prepare_reserved_credits = reserved
 
             embedding_provider = create_embedding_provider(settings)
+            curriculum_model_override = request.curriculum_model_id or None
             ontology_llm = create_llm_provider(
                 settings,
                 task="ontology",
+                model_override=curriculum_model_override,
                 byok_api_key=byok.get("api_key"),
                 byok_api_base_url=byok.get("api_base_url"),
             )
             enrichment_llm = create_llm_provider(
                 settings,
                 task="enrichment",
+                model_override=curriculum_model_override,
                 byok_api_key=byok.get("api_key"),
                 byok_api_base_url=byok.get("api_base_url"),
             )
+            resolved_ontology_model = curriculum_model_override or settings.LLM_MODEL_ONTOLOGY
+            resolved_enrichment_model = curriculum_model_override or settings.LLM_MODEL_ENRICHMENT
             curriculum_preparation = BatchedCurriculumPreparationService(
                 db,
                 ontology_extractor=OntologyExtractor(
                     ontology_llm,
-                    ontology_model=settings.LLM_MODEL_ONTOLOGY,
+                    ontology_model=resolved_ontology_model,
                     embed_fn=embedding_provider.embed,
                 ),
                 enricher=ChunkEnricher(
                     enrichment_llm,
-                    enrichment_model=settings.LLM_MODEL_ENRICHMENT,
+                    enrichment_model=resolved_enrichment_model,
                 ),
             )
             ontology_before = dict(
@@ -791,6 +770,45 @@ async def create_notebook_session(
         else global_consent
     )
 
+    # PROD-023: Build effective personalization snapshot (user → notebook → session)
+    notebook = await verify_notebook_owner(notebook_id, user, db)
+    effective_personalization = {}
+
+    # Layer 1: User-level defaults
+    user_prefs = user.learning_preferences
+    if isinstance(user_prefs, dict) and user_prefs:
+        effective_personalization.update(user_prefs)
+
+    # Layer 2: Notebook-level overrides
+    notebook_settings = notebook.settings_json or {}
+    notebook_perso = notebook_settings.get("personalization")
+    if isinstance(notebook_perso, dict) and notebook_perso:
+        effective_personalization.update(notebook_perso)
+
+    # Layer 3: Session-level overrides
+    if request.personalization is not None:
+        session_perso = request.personalization.model_dump(exclude_none=True)
+        effective_personalization.update(session_perso)
+
+    personalization_snapshot = effective_personalization or None
+
+    # Emit telemetry for RL/analytics research
+    if personalization_snapshot:
+        emit_notebook_event(
+            "preference.captured",
+            user_id=str(user.id),
+            notebook_id=str(notebook_id),
+            metadata={
+                "source": "session_launch",
+                "layers_present": {
+                    "user": bool(user_prefs),
+                    "notebook": bool(notebook_perso),
+                    "session": request.personalization is not None,
+                },
+                "keys": list(personalization_snapshot.keys()),
+            },
+        )
+
     try:
         curriculum_llm = create_llm_provider(
             settings,
@@ -811,6 +829,7 @@ async def create_notebook_session(
             mode=request.mode,
             consent_training=effective_consent,
             resume_existing=request.resume_existing,
+            personalization_snapshot=personalization_snapshot,
         )
     except ValueError as exc:
         msg = str(exc)
@@ -854,12 +873,25 @@ async def create_notebook_session(
     response.status_code = (
         status.HTTP_200_OK if reused_existing else status.HTTP_201_CREATED
     )
+    planning_service = NotebookPlanningStateService(db)
     if existing_link:
+        planning_snapshot = await planning_service.sync_notebook(notebook_id)
+        session.plan_state = {
+            **(session.plan_state or {}),
+            "notebook_planning_state": planning_snapshot.get(
+                "notebook_planning_state"
+            ),
+            "coverage_snapshot": planning_snapshot.get("coverage_snapshot") or {},
+        }
+        await db.commit()
         return NotebookSessionDetailResponse(
             notebook_session=_to_notebook_session_response(existing_link),
             session=_to_session_response(session),
             reused_existing=reused_existing,
             preparation_summary=preparation_summary,
+            notebook_planning_state=_planning_state_response(
+                planning_snapshot.get("notebook_planning_state")
+            ),
         )
 
     notebook_session = NotebookSession(
@@ -868,6 +900,12 @@ async def create_notebook_session(
         mode=request.mode,
     )
     notebook_session = await notebook_session_repo.create(notebook_session)
+    planning_snapshot = await planning_service.sync_notebook(notebook_id)
+    session.plan_state = {
+        **(session.plan_state or {}),
+        "notebook_planning_state": planning_snapshot.get("notebook_planning_state"),
+        "coverage_snapshot": planning_snapshot.get("coverage_snapshot") or {},
+    }
     await db.commit()
     await db.refresh(notebook_session)
 
@@ -890,6 +928,9 @@ async def create_notebook_session(
         session=_to_session_response(session),
         reused_existing=reused_existing,
         preparation_summary=preparation_summary,
+        notebook_planning_state=_planning_state_response(
+            planning_snapshot.get("notebook_planning_state")
+        ),
     )
 
 
@@ -904,13 +945,36 @@ async def list_notebook_sessions(
     user: UserProfile = Depends(require_auth),
 ):
     notebook_session_repo = NotebookSessionRepository(db)
+    session_repo = SessionRepository(db)
 
     await verify_notebook_owner(notebook_id, user, db)
     links = await notebook_session_repo.get_by_notebook(
         notebook_id, limit=limit, offset=offset
     )
+
+    # Batch-fetch session mastery data
+    session_mastery_map: dict[UUID, tuple[float | None, int, str | None]] = {}
+    for link in links:
+        session = await session_repo.get_by_id(link.session_id)
+        if session:
+            mastery = session.mastery or {}
+            avg = round(sum(mastery.values()) / len(mastery), 2) if mastery else None
+            plan_state = session.plan_state or {}
+            topic = plan_state.get("active_topic")
+            session_mastery_map[link.session_id] = (avg, len(mastery), topic)
+
+    items = []
+    for link in links:
+        resp = _to_notebook_session_response(link)
+        mastery_info = session_mastery_map.get(link.session_id)
+        if mastery_info:
+            resp.mastery_avg = mastery_info[0]
+            resp.concepts_count = mastery_info[1]
+            resp.topic = mastery_info[2]
+        items.append(resp)
+
     return PaginatedResponse(
-        items=[_to_notebook_session_response(link) for link in links],
+        items=items,
         total=len(links),
         limit=limit,
         offset=offset,
@@ -947,9 +1011,19 @@ async def get_notebook_session(
             status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
         )
 
+    planning_snapshot = await NotebookPlanningStateService(db).sync_notebook(notebook_id)
+    session.plan_state = {
+        **(session.plan_state or {}),
+        "notebook_planning_state": planning_snapshot.get("notebook_planning_state"),
+        "coverage_snapshot": planning_snapshot.get("coverage_snapshot") or {},
+    }
+    await db.commit()
     return NotebookSessionDetailResponse(
         notebook_session=_to_notebook_session_response(link),
         session=_to_session_response(session),
+        notebook_planning_state=_planning_state_response(
+            planning_snapshot.get("notebook_planning_state")
+        ),
     )
 
 
@@ -1073,6 +1147,8 @@ async def end_notebook_session(
         },
     )
 
+    planning_snapshot = await NotebookPlanningStateService(db).sync_notebook(notebook_id)
+    await db.commit()
     return SessionSummaryResponse(
         session_id=session.id,
         status=session.status,
@@ -1084,6 +1160,9 @@ async def end_notebook_session(
         concepts_to_revisit=summary_data.get("concepts_to_revisit", []),
         objectives=summary_data.get("objectives", []),
         mastery_snapshot=summary_data.get("mastery_snapshot", {}),
+        notebook_planning_state=_planning_state_response(
+            planning_snapshot.get("notebook_planning_state")
+        ),
     )
 
 
@@ -1227,7 +1306,13 @@ async def generate_notebook_artifact(
             )
         )
     )
-    artifact_model_id = settings.LLM_MODEL_TUTORING or settings.LLM_MODEL
+    model_prefs = user.model_preferences or {}
+    artifact_model_id = (
+        model_prefs.get("artifact_model_id")
+        or model_prefs.get("tutoring_model_id")
+        or settings.LLM_MODEL_TUTORING
+        or settings.LLM_MODEL
+    )
     operation_id = None
     if supports_operation_metering:
         op = await meter.create_operation(
@@ -1246,7 +1331,8 @@ async def generate_notebook_artifact(
     try:
         artifact_llm = create_llm_provider(
             settings,
-            task="tutoring",
+            task="artifact_generation",
+            model_override=artifact_model_id,
             byok_api_key=byok.get("api_key"),
             byok_api_base_url=byok.get("api_base_url"),
         )

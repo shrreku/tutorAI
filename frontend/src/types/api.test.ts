@@ -81,9 +81,9 @@ describe('CM types', () => {
 
   it('UserModelPreferencesUpdate is valid', () => {
     const update: UserModelPreferencesUpdate = {
-      tutoring_model_id: 'google/gemini-3-flash-preview',
+      policy_model_id: 'google/gemini-3-flash-preview',
     };
-    expect(update.tutoring_model_id).toBeTruthy();
+    expect(update.policy_model_id).toBeTruthy();
   });
 
   it('HealthActionRequest has required fields', () => {

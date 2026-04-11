@@ -56,6 +56,12 @@ class Notebook(Base, UUIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    planning_state: Mapped[Optional["NotebookPlanningState"]] = relationship(
+        "NotebookPlanningState",
+        back_populates="notebook",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
     artifacts: Mapped[List["NotebookArtifact"]] = relationship(
         "NotebookArtifact",
         back_populates="notebook",
@@ -154,6 +160,31 @@ class NotebookProgress(Base, UUIDMixin, TimestampMixin):
     weak_concepts_snapshot: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
 
     notebook: Mapped["Notebook"] = relationship("Notebook", back_populates="progress")
+
+
+class NotebookPlanningState(Base, UUIDMixin, TimestampMixin):
+    """Durable notebook-global planning, learner, and coverage state."""
+
+    __tablename__ = "notebook_planning_state"
+
+    notebook_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("notebook.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    revision: Mapped[int] = mapped_column(nullable=False, default=1)
+    knowledge_state: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    learner_state: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    planner_state: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    coverage_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    planning_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    notebook: Mapped["Notebook"] = relationship(
+        "Notebook",
+        back_populates="planning_state",
+    )
 
 
 class NotebookArtifact(Base, UUIDMixin, TimestampMixin):

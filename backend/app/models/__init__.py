@@ -35,6 +35,7 @@ from app.models.notebook import (
     NotebookResource,
     NotebookSession,
     NotebookProgress,
+    NotebookPlanningState,
     NotebookArtifact,
 )
 from app.models.processing_batch import ProcessingBatch
@@ -77,6 +78,7 @@ __all__ = [
     "NotebookResource",
     "NotebookSession",
     "NotebookProgress",
+    "NotebookPlanningState",
     "NotebookArtifact",
     "ProcessingBatch",
 ]

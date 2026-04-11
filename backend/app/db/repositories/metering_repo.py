@@ -31,20 +31,35 @@ class MeteringRepository:
     # Model pricing
     # ------------------------------------------------------------------
 
-    async def get_model_pricing(self, model_id: str) -> Optional[ModelPricing]:
+    async def get_model_pricing_record(self, model_id: str) -> Optional[ModelPricing]:
         result = await self.db.execute(
-            select(ModelPricing).where(
-                ModelPricing.model_id == model_id,
-                ModelPricing.is_active,
-            )
+            select(ModelPricing).where(ModelPricing.model_id == model_id)
         )
         return result.scalar_one_or_none()
+
+    async def get_model_pricing(self, model_id: str) -> Optional[ModelPricing]:
+        pricing = await self.get_model_pricing_record(model_id)
+        if pricing and pricing.is_active:
+            return pricing
+        return None
+
+    async def create_model_pricing(self, **kwargs) -> ModelPricing:
+        pricing = ModelPricing(**kwargs)
+        self.db.add(pricing)
+        await self.db.flush()
+        return pricing
 
     async def list_active_models(self) -> list[ModelPricing]:
         result = await self.db.execute(
             select(ModelPricing)
             .where(ModelPricing.is_active)
             .order_by(ModelPricing.model_class, ModelPricing.display_name)
+        )
+        return list(result.scalars().all())
+
+    async def list_model_pricing(self) -> list[ModelPricing]:
+        result = await self.db.execute(
+            select(ModelPricing).order_by(ModelPricing.is_active.desc(), ModelPricing.model_class, ModelPricing.display_name)
         )
         return list(result.scalars().all())
 
@@ -62,12 +77,26 @@ class MeteringRepository:
     async def update_model_pricing(
         self, model_id: str, **kwargs
     ) -> Optional[ModelPricing]:
-        pricing = await self.get_model_pricing(model_id)
+        pricing = await self.get_model_pricing_record(model_id)
         if not pricing:
             return None
         for key, value in kwargs.items():
             if hasattr(pricing, key):
                 setattr(pricing, key, value)
+        self.db.add(pricing)
+        await self.db.flush()
+        return pricing
+
+    async def deactivate_model_pricing(self, model_id: str) -> Optional[ModelPricing]:
+        pricing = await self.get_model_pricing_record(model_id)
+        if not pricing:
+            return None
+        pricing.is_active = False
+        pricing.is_user_selectable = False
+        if hasattr(pricing, 'deprecated_at'):
+            from datetime import datetime, timezone
+
+            pricing.deprecated_at = datetime.now(timezone.utc)
         self.db.add(pricing)
         await self.db.flush()
         return pricing

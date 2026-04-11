@@ -21,6 +21,10 @@ from app.services.credits.health import ModelHealthService
 router = APIRouter(prefix="/models", tags=["models"])
 logger = logging.getLogger(__name__)
 
+TASK_TYPE_ALIASES: dict[str, str] = {
+    "curriculum": "session_curriculum",
+}
+
 
 # ---- Schemas ----
 
@@ -49,6 +53,23 @@ class ModelPricingUpdateRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class ModelPricingCreateRequest(BaseModel):
+    model_id: str
+    provider_name: str
+    display_name: str
+    model_class: str
+    input_usd_per_million: float
+    output_usd_per_million: float
+    cache_write_usd_per_million: Optional[float] = None
+    cache_read_usd_per_million: Optional[float] = None
+    is_active: bool = True
+    is_user_selectable: bool = True
+    supports_structured_output: bool = False
+    supports_long_context: bool = False
+    supports_byok: bool = False
+    notes: Optional[str] = None
+
+
 class TaskAssignmentResponse(BaseModel):
     task_type: str
     default_model_id: str
@@ -65,6 +86,16 @@ class TaskAssignmentUpdateRequest(BaseModel):
     allowed_model_ids: Optional[list[str]] = None
     user_override_allowed: Optional[bool] = None
     rollout_state: Optional[str] = None
+
+
+class TaskAssignmentCreateRequest(BaseModel):
+    task_type: str
+    default_model_id: str
+    fallback_model_ids: list[str] = []
+    allowed_model_ids: list[str] = []
+    user_override_allowed: bool = False
+    rollout_state: str = "active"
+    beta_only: bool = False
 
 
 class ModelTaskHealthResponse(BaseModel):
@@ -93,9 +124,11 @@ class UserModelPreferencesResponse(BaseModel):
 
 
 class UserModelPreferencesUpdateRequest(BaseModel):
-    tutoring_model_id: Optional[str] = None
+    policy_model_id: Optional[str] = None
+    response_model_id: Optional[str] = None
     artifact_model_id: Optional[str] = None
     upload_model_id: Optional[str] = None
+    tutoring_model_id: Optional[str] = None
 
 
 class TaskModelsResponse(BaseModel):
@@ -103,6 +136,36 @@ class TaskModelsResponse(BaseModel):
     allowed_models: list[ModelPricingResponse]
     default_model_id: str
     user_override_allowed: bool
+
+
+def _pricing_to_response(pricing) -> ModelPricingResponse:
+    return ModelPricingResponse(
+        model_id=pricing.model_id,
+        provider_name=pricing.provider_name,
+        display_name=pricing.display_name,
+        model_class=pricing.model_class,
+        input_usd_per_million=pricing.input_usd_per_million,
+        output_usd_per_million=pricing.output_usd_per_million,
+        cache_write_usd_per_million=pricing.cache_write_usd_per_million,
+        cache_read_usd_per_million=pricing.cache_read_usd_per_million,
+        is_active=pricing.is_active,
+        is_user_selectable=pricing.is_user_selectable,
+        supports_structured_output=pricing.supports_structured_output,
+        supports_long_context=pricing.supports_long_context,
+        notes=pricing.notes,
+    )
+
+
+def _assignment_to_response(assignment) -> TaskAssignmentResponse:
+    return TaskAssignmentResponse(
+        task_type=assignment.task_type,
+        default_model_id=assignment.default_model_id,
+        fallback_model_ids=assignment.fallback_model_ids or [],
+        allowed_model_ids=assignment.allowed_model_ids or [],
+        user_override_allowed=assignment.user_override_allowed,
+        rollout_state=assignment.rollout_state,
+        beta_only=assignment.beta_only,
+    )
 
 
 class OperationResponse(BaseModel):
@@ -164,31 +227,27 @@ async def get_task_models(
     """Get allowed models for a specific task."""
     repo = MeteringRepository(db)
     assignment = await repo.get_assignment(task_type)
+    if assignment is None:
+        alias = TASK_TYPE_ALIASES.get(task_type)
+        if alias:
+            alias_assignment = await repo.get_assignment(alias)
+            if alias_assignment is not None:
+                logger.warning(
+                    "Using task model alias %s -> %s because the primary assignment is missing",
+                    task_type,
+                    alias,
+                )
+                assignment = alias_assignment
+
     if not assignment:
         raise HTTPException(status_code=404, detail=f"Task {task_type} not found")
 
     allowed_ids = assignment.allowed_model_ids or []
-    models = []
-    for mid in allowed_ids:
-        pricing = await repo.get_model_pricing(mid)
+    models: list[ModelPricingResponse] = []
+    for model_id in allowed_ids:
+        pricing = await repo.get_model_pricing(model_id)
         if pricing and pricing.is_active:
-            models.append(
-                ModelPricingResponse(
-                    model_id=pricing.model_id,
-                    provider_name=pricing.provider_name,
-                    display_name=pricing.display_name,
-                    model_class=pricing.model_class,
-                    input_usd_per_million=pricing.input_usd_per_million,
-                    output_usd_per_million=pricing.output_usd_per_million,
-                    cache_write_usd_per_million=pricing.cache_write_usd_per_million,
-                    cache_read_usd_per_million=pricing.cache_read_usd_per_million,
-                    is_active=pricing.is_active,
-                    is_user_selectable=pricing.is_user_selectable,
-                    supports_structured_output=pricing.supports_structured_output,
-                    supports_long_context=pricing.supports_long_context,
-                    notes=pricing.notes,
-                )
-            )
+            models.append(_pricing_to_response(pricing))
 
     return TaskModelsResponse(
         task_type=task_type,
@@ -223,11 +282,22 @@ async def update_user_preferences(
     repo = MeteringRepository(db)
 
     # Validate model IDs
-    for field_name, model_id in [
-        ("tutoring_model_id", request.tutoring_model_id),
-        ("artifact_model_id", request.artifact_model_id),
-        ("upload_model_id", request.upload_model_id),
-    ]:
+    updates: list[tuple[str, str]] = []
+    if request.policy_model_id is not None:
+        updates.append(("policy_model_id", request.policy_model_id))
+    if request.response_model_id is not None:
+        updates.append(("response_model_id", request.response_model_id))
+    if request.artifact_model_id is not None:
+        updates.append(("artifact_model_id", request.artifact_model_id))
+    if request.upload_model_id is not None:
+        updates.append(("upload_model_id", request.upload_model_id))
+
+    if request.tutoring_model_id is not None and request.policy_model_id is None and request.response_model_id is None:
+        updates.append(("policy_model_id", request.tutoring_model_id))
+        updates.append(("response_model_id", request.tutoring_model_id))
+        updates.append(("tutoring_model_id", request.tutoring_model_id))
+
+    for field_name, model_id in updates:
         if model_id is not None:
             pricing = await repo.get_model_pricing(model_id)
             if not pricing or not pricing.is_active or not pricing.is_user_selectable:
@@ -290,7 +360,7 @@ async def admin_list_pricing(
 ):
     """Admin: list all model pricing entries."""
     repo = MeteringRepository(db)
-    models = await repo.list_active_models()
+    models = await repo.list_model_pricing()
     return [
         ModelPricingResponse(
             model_id=m.model_id,
@@ -309,6 +379,24 @@ async def admin_list_pricing(
         )
         for m in models
     ]
+
+
+@router.post("/admin/pricing", response_model=ModelPricingResponse)
+async def admin_create_pricing(
+    request: ModelPricingCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(require_admin),
+):
+    """Admin: create a model pricing entry."""
+    repo = MeteringRepository(db)
+    existing = await repo.get_model_pricing_record(request.model_id)
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Model {request.model_id} already exists")
+
+    pricing = await repo.create_model_pricing(**request.model_dump())
+    await db.commit()
+    logger.warning("Admin %s created pricing for %s", user.external_id, request.model_id)
+    return _pricing_to_response(pricing)
 
 
 @router.patch("/admin/pricing/{model_id:path}", response_model=ModelPricingResponse)
@@ -330,21 +418,24 @@ async def admin_update_pricing(
         "Admin %s updated pricing for %s: %s", user.external_id, model_id, updates
     )
 
-    return ModelPricingResponse(
-        model_id=pricing.model_id,
-        provider_name=pricing.provider_name,
-        display_name=pricing.display_name,
-        model_class=pricing.model_class,
-        input_usd_per_million=pricing.input_usd_per_million,
-        output_usd_per_million=pricing.output_usd_per_million,
-        cache_write_usd_per_million=pricing.cache_write_usd_per_million,
-        cache_read_usd_per_million=pricing.cache_read_usd_per_million,
-        is_active=pricing.is_active,
-        is_user_selectable=pricing.is_user_selectable,
-        supports_structured_output=pricing.supports_structured_output,
-        supports_long_context=pricing.supports_long_context,
-        notes=pricing.notes,
-    )
+    return _pricing_to_response(pricing)
+
+
+@router.delete("/admin/pricing/{model_id:path}", response_model=ModelPricingResponse)
+async def admin_deactivate_pricing(
+    model_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(require_admin),
+):
+    """Admin: deactivate a model pricing entry."""
+    repo = MeteringRepository(db)
+    pricing = await repo.deactivate_model_pricing(model_id)
+    if not pricing:
+        raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
+
+    await db.commit()
+    logger.warning("Admin %s deactivated pricing for %s", user.external_id, model_id)
+    return _pricing_to_response(pricing)
 
 
 @router.get("/admin/assignments", response_model=list[TaskAssignmentResponse])
@@ -356,17 +447,55 @@ async def admin_list_assignments(
     repo = MeteringRepository(db)
     assignments = await repo.list_assignments()
     return [
-        TaskAssignmentResponse(
-            task_type=a.task_type,
-            default_model_id=a.default_model_id,
-            fallback_model_ids=a.fallback_model_ids or [],
-            allowed_model_ids=a.allowed_model_ids or [],
-            user_override_allowed=a.user_override_allowed,
-            rollout_state=a.rollout_state,
-            beta_only=a.beta_only,
-        )
+        _assignment_to_response(a)
         for a in assignments
     ]
+
+
+@router.post("/admin/assignments", response_model=TaskAssignmentResponse)
+async def admin_create_assignment(
+    request: TaskAssignmentCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: UserProfile = Depends(require_admin),
+):
+    """Admin: create a task-model assignment."""
+    repo = MeteringRepository(db)
+    existing = await repo.get_assignment(request.task_type)
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Task {request.task_type} already exists")
+
+    if request.default_model_id:
+        pricing = await repo.get_model_pricing(request.default_model_id)
+        if not pricing:
+            raise HTTPException(status_code=400, detail=f"Default model '{request.default_model_id}' is not available")
+
+    assignment = await repo.update_assignment(
+        request.task_type,
+        default_model_id=request.default_model_id,
+        fallback_model_ids=request.fallback_model_ids,
+        allowed_model_ids=request.allowed_model_ids,
+        user_override_allowed=request.user_override_allowed,
+        rollout_state=request.rollout_state,
+        beta_only=request.beta_only,
+    )
+    if assignment is None:
+        from app.models.credits import TaskModelAssignment
+
+        assignment = TaskModelAssignment(
+            task_type=request.task_type,
+            default_model_id=request.default_model_id,
+            fallback_model_ids=request.fallback_model_ids,
+            allowed_model_ids=request.allowed_model_ids,
+            user_override_allowed=request.user_override_allowed,
+            rollout_state=request.rollout_state,
+            beta_only=request.beta_only,
+        )
+        db.add(assignment)
+        await db.flush()
+
+    await db.commit()
+    logger.warning("Admin %s created assignment for %s", user.external_id, request.task_type)
+    return _assignment_to_response(assignment)
 
 
 @router.patch("/admin/assignments/{task_type}", response_model=TaskAssignmentResponse)
@@ -379,6 +508,16 @@ async def admin_update_assignment(
     """Admin: update a task-model assignment."""
     repo = MeteringRepository(db)
     updates = {k: v for k, v in request.model_dump().items() if v is not None}
+
+    default_model_id = updates.get("default_model_id")
+    if default_model_id is not None:
+        pricing = await repo.get_model_pricing(default_model_id)
+        if not pricing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Default model '{default_model_id}' is not available",
+            )
+
     assignment = await repo.update_assignment(task_type, **updates)
     if not assignment:
         raise HTTPException(status_code=404, detail=f"Task {task_type} not found")
@@ -388,15 +527,7 @@ async def admin_update_assignment(
         "Admin %s updated assignment for %s: %s", user.external_id, task_type, updates
     )
 
-    return TaskAssignmentResponse(
-        task_type=assignment.task_type,
-        default_model_id=assignment.default_model_id,
-        fallback_model_ids=assignment.fallback_model_ids or [],
-        allowed_model_ids=assignment.allowed_model_ids or [],
-        user_override_allowed=assignment.user_override_allowed,
-        rollout_state=assignment.rollout_state,
-        beta_only=assignment.beta_only,
-    )
+    return _assignment_to_response(assignment)
 
 
 @router.get("/admin/health", response_model=list[ModelTaskHealthResponse])

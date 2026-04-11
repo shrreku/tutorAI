@@ -1,8 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
-  Brain,
   CheckCircle2,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
@@ -16,7 +14,6 @@ import {
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import {
-  ARTIFACT_TYPE_BADGE,
   ARTIFACT_TYPE_COLOR,
   ARTIFACT_TYPE_ICON,
 } from '../icons/ArtifactCatalog';
@@ -77,22 +74,11 @@ type ArtifactViewerCardProps = {
   payload?: ArtifactPayload;
   subtitle?: string;
   createdAt?: string;
-  badge?: string;
   isGenerating?: boolean;
   className?: string;
   downloadFileName?: string;
   onAddToNotes?: (text: string) => void;
   onQuizSubmission?: (signal: QuizSubmissionSignal) => void;
-};
-
-type PreviewInfo = {
-  description: string | null;
-  chips: string[];
-};
-
-type ArtifactDetailRow = {
-  label: string;
-  value: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -122,11 +108,6 @@ function formatDateLabel(value?: string) {
 
 function normalizeAnswer(value: string) {
   return value.toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function truncateText(value: string | null, limit = 132) {
-  if (!value) return null;
-  return value.length > limit ? `${value.slice(0, limit - 1).trimEnd()}…` : value;
 }
 
 function extractQuizQuestions(payload: ArtifactPayload): QuizQuestion[] {
@@ -214,125 +195,6 @@ function extractRevisionDays(payload: ArtifactPayload): RevisionDay[] {
     .filter((item): item is RevisionDay => Boolean(item));
 }
 
-function getPreviewInfo(
-  type: string,
-  payload: ArtifactPayload,
-  quizStats?: { answered: number; correct: number; total: number },
-): PreviewInfo {
-  const record = asRecord(payload);
-  const notesSections = Array.isArray(record?.sections) ? record.sections.length : 0;
-  const notesNextActions = asStringArray(record?.next_actions);
-  const flashcards = extractFlashcards(payload);
-  const quizQuestions = extractQuizQuestions(payload);
-  const revisionDays = extractRevisionDays(payload);
-
-  if (type === 'notes') {
-    return {
-      description: asString(record?.summary) || asString(record?.content) || asString(record?.text),
-      chips: [
-        notesSections > 0 ? `${notesSections} sections` : null,
-        notesNextActions.length > 0 ? `${notesNextActions.length} next actions` : null,
-      ].filter((item): item is string => Boolean(item)),
-    };
-  }
-
-  if (type === 'flashcards') {
-    return {
-      description: asString(record?.deck_strategy) || 'Practice key concepts as a guided flashcard deck.',
-      chips: [`${flashcards.length} cards`],
-    };
-  }
-
-  if (type === 'quiz') {
-    return {
-      description: asString(record?.quiz_focus) || 'Check your understanding with a guided quiz.',
-      chips: [
-        quizStats && quizStats.answered > 0 ? `${quizStats.correct}/${quizStats.total} correct` : null,
-        quizStats && quizStats.answered > 0 ? `${quizStats.answered}/${quizStats.total} answered` : null,
-        quizQuestions.length > 0 ? `${quizQuestions.length} questions` : null,
-      ].filter((item): item is string => Boolean(item)),
-    };
-  }
-
-  if (type === 'revision_plan') {
-    return {
-      description: asString(record?.summary) || 'Review plan generated from your notebook sessions.',
-      chips: [
-        revisionDays.length > 0 ? `${revisionDays.length} days` : null,
-        typeof record?.horizon_days === 'number' ? `${record.horizon_days} day horizon` : null,
-      ].filter((item): item is string => Boolean(item)),
-    };
-  }
-
-  if (type === 'concept_card') {
-    return {
-      description: asString(record?.summary) || asString(record?.content) || 'Concept artifact',
-      chips: [asString(record?.concept)].filter((item): item is string => Boolean(item)),
-    };
-  }
-
-  return {
-    description: asString(record?.summary) || asString(record?.content) || 'Structured artifact',
-    chips: [],
-  };
-}
-
-function getArtifactDetailRows(
-  type: string,
-  payload: ArtifactPayload,
-  quizStats: { answered: number; correct: number; total: number },
-): ArtifactDetailRow[] {
-  const record = asRecord(payload);
-  if (!record) return [];
-
-  if (type === 'notes') {
-    const summary = truncateText(asString(record.summary), 160);
-    const coverage = asStringArray(record.coverage_concepts).slice(0, 4).join(', ');
-    return [
-      summary ? { label: 'Summary', value: summary } : null,
-      coverage ? { label: 'Coverage', value: coverage } : null,
-    ].filter((item): item is ArtifactDetailRow => Boolean(item));
-  }
-
-  if (type === 'flashcards') {
-    const strategy = truncateText(asString(record.deck_strategy), 140);
-    const focus = extractFlashcards(payload)
-      .map((card) => card.concept)
-      .filter(Boolean)
-      .slice(0, 4)
-      .join(', ');
-    return [
-      strategy ? { label: 'Deck strategy', value: strategy } : null,
-      focus ? { label: 'Focus concepts', value: focus } : null,
-    ].filter((item): item is ArtifactDetailRow => Boolean(item));
-  }
-
-  if (type === 'quiz') {
-    const focus = truncateText(asString(record.quiz_focus), 160);
-    const followUp = truncateText(asString(record.recommended_follow_up), 160);
-    return [
-      focus ? { label: 'Quiz focus', value: focus } : null,
-      quizStats.answered > 0 ? { label: 'Current result', value: `${quizStats.correct}/${quizStats.total} correct, ${quizStats.answered}/${quizStats.total} answered` } : null,
-      followUp ? { label: 'Follow-up', value: followUp } : null,
-    ].filter((item): item is ArtifactDetailRow => Boolean(item));
-  }
-
-  if (type === 'revision_plan') {
-    const summary = truncateText(asString(record.summary), 160);
-    const firstFocus = extractRevisionDays(payload)
-      .flatMap((day) => day.focusConcepts)
-      .slice(0, 4)
-      .join(', ');
-    return [
-      summary ? { label: 'Plan summary', value: summary } : null,
-      firstFocus ? { label: 'Focus concepts', value: firstFocus } : null,
-    ].filter((item): item is ArtifactDetailRow => Boolean(item));
-  }
-
-  const fallbackSummary = truncateText(asString(record.summary) || asString(record.content), 160);
-  return fallbackSummary ? [{ label: 'Details', value: fallbackSummary }] : [];
-}
-
 function downloadPayload(payload: ArtifactPayload, fileName: string) {
   const blob = new Blob([JSON.stringify(payload ?? {}, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -349,7 +211,6 @@ function ArtifactModal({
   children,
   title,
   type,
-  badge,
   createdAt,
   onDownload,
 }: {
@@ -358,13 +219,11 @@ function ArtifactModal({
   children: ReactNode;
   title: string;
   type: string;
-  badge?: string;
   createdAt?: string;
   onDownload?: () => void;
 }) {
   const Icon = ARTIFACT_TYPE_ICON[type] || FileJson;
   const colorClass = ARTIFACT_TYPE_COLOR[type] || 'text-muted-foreground bg-muted border-border';
-  const badgeClass = ARTIFACT_TYPE_BADGE[type] || 'bg-muted text-muted-foreground border-border';
 
   useEffect(() => {
     if (!open) return undefined;
@@ -389,50 +248,37 @@ function ArtifactModal({
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-border bg-card shadow-2xl"
+        className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4 border-b border-border/50 px-6 py-5">
-          <div className="flex min-w-0 items-start gap-4">
-            <div className={cn('rounded-2xl border p-3', colorClass)}>
-              <Icon className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-xl font-semibold text-foreground">{title}</h2>
-                {badge ? (
-                  <span className={cn('rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.14em]', badgeClass)}>
-                    {badge}
-                  </span>
-                ) : null}
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-                <span>{type.replace(/_/g, ' ')}</span>
-                {createdAt ? <span>{formatDateLabel(createdAt)}</span> : null}
-              </div>
-            </div>
+        <div className="flex items-center justify-between gap-4 border-b border-border/40 px-5 py-3.5">
+          <div className="flex min-w-0 items-center gap-3">
+            <Icon className={cn('h-4 w-4 shrink-0', colorClass.split(' ')[0])} />
+            <h2 className="truncate text-base font-semibold text-foreground">{title}</h2>
+            <span className="text-xs text-muted-foreground shrink-0">{type.replace(/_/g, ' ')}</span>
+            {createdAt ? <span className="text-xs text-muted-foreground/60 shrink-0">{formatDateLabel(createdAt)}</span> : null}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             {onDownload ? (
               <button
                 type="button"
                 onClick={onDownload}
-                className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-foreground transition-colors hover:border-gold/30 hover:bg-gold/5"
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                title="Download JSON"
               >
                 <Download className="h-4 w-4" />
-                Download
               </button>
             ) : null}
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-border p-2 text-muted-foreground transition-colors hover:border-gold/30 hover:bg-gold/5 hover:text-foreground"
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-6">{children}</div>
+        <div className="flex-1 overflow-y-auto px-5 py-5">{children}</div>
       </div>
     </div>
   );
@@ -446,60 +292,44 @@ function NotesArtifactBody({ payload }: { payload: ArtifactPayload }) {
   const summary = asString(record?.summary) || asString(record?.content) || asString(record?.text);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {summary ? (
-        <div className="rounded-3xl border border-gold/15 bg-gold/[0.05] px-5 py-4">
+        <div className="text-sm text-foreground leading-relaxed">
           <RichTutorContent content={summary} />
         </div>
       ) : null}
 
       {sections.length > 0 ? (
-        <div className="space-y-4">
+        <div className="space-y-5">
           {sections.map((section, index) => {
             const bullets = asStringArray(section.bullets);
             const heading = asString(section.heading) || `Section ${index + 1}`;
             const takeaway = asString(section.key_takeaway);
-            const sessionIds = asStringArray(section.source_session_ids);
             const concepts = asStringArray(section.concepts);
 
             return (
-              <div key={`${heading}-${index}`} className="rounded-3xl border border-border/60 bg-background/60 p-5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-base font-semibold text-foreground">{heading}</h3>
-                  {sessionIds.length > 0 ? (
-                    <span className="rounded-full border border-border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                      {sessionIds.length} session sources
-                    </span>
-                  ) : null}
-                </div>
+              <div key={`${heading}-${index}`}>
+                <h3 className="text-sm font-semibold text-foreground mb-2">{heading}</h3>
 
                 {bullets.length > 0 ? (
-                  <div className="mt-4 space-y-3">
+                  <ul className="space-y-1.5 ml-0.5">
                     {bullets.map((bullet) => (
-                      <div key={bullet} className="flex gap-3">
-                        <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
-                        <div className="min-w-0 flex-1 text-sm text-foreground">
+                      <li key={bullet} className="flex gap-2.5">
+                        <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-gold/70" />
+                        <div className="min-w-0 flex-1 text-sm text-foreground/90">
                           <RichTutorContent content={bullet} />
                         </div>
-                      </div>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 ) : null}
 
                 {takeaway ? (
-                  <div className="mt-4 rounded-2xl border border-gold/15 bg-gold/10 px-4 py-3 text-sm text-foreground">
-                    <span className="font-semibold">Key takeaway:</span> {takeaway}
-                  </div>
+                  <p className="mt-2.5 text-sm text-foreground/80 border-l-2 border-gold/30 pl-3 italic">{takeaway}</p>
                 ) : null}
 
                 {concepts.length > 0 ? (
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {concepts.map((concept) => (
-                      <span key={concept} className="rounded-full border border-border px-3 py-1 text-xs text-foreground">
-                        {concept}
-                      </span>
-                    ))}
-                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">Concepts: {concepts.join(', ')}</p>
                 ) : null}
               </div>
             );
@@ -509,28 +339,20 @@ function NotesArtifactBody({ payload }: { payload: ArtifactPayload }) {
 
       {nextActions.length > 0 ? (
         <div>
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Next actions</p>
-          <div className="flex flex-wrap gap-2">
+          <p className="text-xs font-semibold text-muted-foreground mb-1.5">Next actions</p>
+          <ul className="space-y-1">
             {nextActions.map((action) => (
-              <span key={action} className="rounded-full border border-border px-3 py-1.5 text-sm text-foreground">
-                {action}
-              </span>
+              <li key={action} className="flex gap-2.5 text-sm text-foreground/90">
+                <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-gold/70" />
+                <span>{action}</span>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       ) : null}
 
       {coverageConcepts.length > 0 ? (
-        <div>
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Coverage concepts</p>
-          <div className="flex flex-wrap gap-2">
-            {coverageConcepts.map((concept) => (
-              <span key={concept} className="rounded-full border border-border bg-background/70 px-3 py-1.5 text-sm text-foreground">
-                {concept}
-              </span>
-            ))}
-          </div>
-        </div>
+        <p className="text-xs text-muted-foreground">Coverage: {coverageConcepts.join(', ')}</p>
       ) : null}
     </div>
   );
@@ -553,100 +375,67 @@ function FlashcardsArtifactBody({
   onFlip: () => void;
   onReset: () => void;
 }) {
-  const record = asRecord(payload);
   const cards = extractFlashcards(payload);
   const currentCard = cards[currentIndex];
-  const title = asString(record?.title);
-  const deckStrategy = asString(record?.deck_strategy);
 
   if (!currentCard) {
     return <ArtifactFallbackBody payload={payload} />;
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-2">
-        {title ? <span className="rounded-full border border-border px-3 py-1 text-xs text-foreground">{title}</span> : null}
-        {deckStrategy ? <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{deckStrategy}</span> : null}
-        <span className="rounded-full border border-border px-3 py-1 text-xs text-foreground">Card {currentIndex + 1} of {cards.length}</span>
-      </div>
-
-      <div className="rounded-[28px] border border-border bg-background/60 p-5">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            {currentCard.concept ? <span className="rounded-full border border-border px-3 py-1 text-xs text-foreground">{currentCard.concept}</span> : null}
-            {currentCard.difficulty ? <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{currentCard.difficulty}</span> : null}
-          </div>
-          <button
-            type="button"
-            onClick={onFlip}
-            className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-foreground transition-colors hover:border-gold/30 hover:bg-gold/5"
-          >
-            {flipped ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            {flipped ? 'Hide answer' : 'Reveal answer'}
-          </button>
-        </div>
-
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="rounded-3xl border border-border bg-card/70 p-5">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Prompt</p>
-            <div className="text-base text-foreground">
-              <RichTutorContent content={currentCard.front} />
-            </div>
-          </div>
-          <div className={cn(
-            'rounded-3xl border p-5 transition-all',
-            flipped ? 'border-gold/25 bg-gold/[0.05]' : 'border-border bg-card/40',
-          )}>
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Answer</p>
-            {flipped ? (
-              <div className="text-base text-foreground">
-                <RichTutorContent content={currentCard.back} />
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">Reveal the back of the card when you want to check yourself.</p>
-            )}
-          </div>
-        </div>
-
-        {currentCard.studyHint ? (
-          <div className="mt-4 rounded-2xl border border-border bg-card/60 px-4 py-3">
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Study hint</p>
-            <p className="text-sm text-foreground">{currentCard.studyHint}</p>
-          </div>
-        ) : null}
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-4">
+      {/* Navigation bar */}
+      <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onPrevious}
-            disabled={currentIndex === 0}
-            className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-foreground transition-colors hover:border-gold/30 hover:bg-gold/5 disabled:opacity-40"
-          >
+          <button type="button" onClick={onPrevious} disabled={currentIndex === 0}
+            className="rounded-lg border border-border p-1.5 text-foreground transition-colors hover:bg-muted/60 disabled:opacity-30">
             <ChevronLeft className="h-4 w-4" />
-            Previous
           </button>
-          <button
-            type="button"
-            onClick={onNext}
-            disabled={currentIndex >= cards.length - 1}
-            className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-foreground transition-colors hover:border-gold/30 hover:bg-gold/5 disabled:opacity-40"
-          >
-            Next
+          <span className="text-sm text-muted-foreground tabular-nums">{currentIndex + 1} / {cards.length}</span>
+          <button type="button" onClick={onNext} disabled={currentIndex >= cards.length - 1}
+            className="rounded-lg border border-border p-1.5 text-foreground transition-colors hover:bg-muted/60 disabled:opacity-30">
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
-        <button
-          type="button"
-          onClick={onReset}
-          className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-gold/30 hover:bg-gold/5 hover:text-foreground"
-        >
-          <RotateCcw className="h-4 w-4" />
-          Restart deck
-        </button>
+        <div className="flex items-center gap-2">
+          {currentCard.concept ? <span className="text-xs text-muted-foreground">{currentCard.concept}</span> : null}
+          <button type="button" onClick={onReset}
+            className="rounded-lg border border-border p-1.5 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground" title="Restart deck">
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
+
+      {/* Prompt */}
+      <div>
+        <p className="text-xs font-medium text-muted-foreground mb-1.5">Prompt</p>
+        <div className="text-sm text-foreground leading-relaxed">
+          <RichTutorContent content={currentCard.front} />
+        </div>
+      </div>
+
+      {/* Answer */}
+      <div className={cn('rounded-xl border px-4 py-3 transition-all', flipped ? 'border-gold/25 bg-gold/[0.04]' : 'border-border bg-muted/30')}>
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-xs font-medium text-muted-foreground">Answer</p>
+          <button type="button" onClick={onFlip}
+            className="inline-flex items-center gap-1.5 text-xs text-gold hover:text-gold/80 transition-colors">
+            {flipped ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+            {flipped ? 'Hide' : 'Reveal'}
+          </button>
+        </div>
+        {flipped ? (
+          <div className="text-sm text-foreground leading-relaxed">
+            <RichTutorContent content={currentCard.back} />
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground/60 italic">Click reveal to see the answer</p>
+        )}
+      </div>
+
+      {currentCard.studyHint ? (
+        <p className="text-xs text-muted-foreground border-l-2 border-gold/30 pl-3">{currentCard.studyHint}</p>
+      ) : null}
     </div>
   );
 }
@@ -690,193 +479,150 @@ function QuizArtifactBody({
     : false;
   const canSubmit = Boolean(currentState.answer.trim()) && !currentState.submitted;
   const hasOptions = currentQuestion.options.length > 0;
-  const quizFocus = asString(record?.quiz_focus);
   const followUp = asString(record?.recommended_follow_up);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full border border-gold/20 bg-gold/10 px-3 py-1 text-xs text-gold">{correctCount}/{questions.length} correct</span>
-          <span className="rounded-full border border-border px-3 py-1 text-xs text-foreground">{answeredCount}/{questions.length} answered</span>
-          {quizFocus ? <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{quizFocus}</span> : null}
+    <div className="space-y-4">
+      {/* Score + nav bar */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-gold font-medium tabular-nums">{correctCount}/{questions.length} correct</span>
+          <span className="text-muted-foreground tabular-nums">{answeredCount} answered</span>
         </div>
-        <button
-          type="button"
-          onClick={onReset}
-          className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-gold/30 hover:bg-gold/5 hover:text-foreground"
-        >
-          <RotateCcw className="h-4 w-4" />
-          Reset quiz
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button type="button" onClick={() => onCurrentIndexChange(Math.max(0, currentIndex - 1))} disabled={currentIndex === 0}
+            className="rounded-lg border border-border p-1.5 text-foreground transition-colors hover:bg-muted/60 disabled:opacity-30">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="text-sm text-muted-foreground tabular-nums min-w-[3rem] text-center">{currentIndex + 1} / {questions.length}</span>
+          <button type="button" onClick={() => onCurrentIndexChange(Math.min(questions.length - 1, currentIndex + 1))} disabled={currentIndex >= questions.length - 1}
+            className="rounded-lg border border-border p-1.5 text-foreground transition-colors hover:bg-muted/60 disabled:opacity-30">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={onReset}
+            className="rounded-lg border border-border p-1.5 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground ml-1" title="Reset quiz">
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      {/* Question dots */}
+      <div className="flex flex-wrap gap-1.5">
         {questions.map((question, index) => {
           const response = answers[index];
           const answered = Boolean(response?.submitted);
           const correct = answered && normalizeAnswer(response?.answer || '') === normalizeAnswer(question.correctAnswer);
           return (
-            <button
-              key={question.questionId}
-              type="button"
-              onClick={() => onCurrentIndexChange(index)}
+            <button key={question.questionId} type="button" onClick={() => onCurrentIndexChange(index)}
               className={cn(
-                'flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold transition-colors',
-                index === currentIndex
-                  ? 'border-gold bg-gold/10 text-gold'
-                  : correct
-                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500'
-                    : answered
-                      ? 'border-red-500/30 bg-red-500/10 text-red-500'
-                      : 'border-border text-muted-foreground hover:border-gold/20 hover:text-foreground',
-              )}
-            >
+                'flex h-7 w-7 items-center justify-center rounded-md text-[10px] font-semibold transition-colors',
+                index === currentIndex ? 'bg-gold/15 text-gold ring-1 ring-gold/40'
+                  : correct ? 'bg-emerald-500/10 text-emerald-500'
+                  : answered ? 'bg-red-500/10 text-red-500'
+                  : 'bg-muted/40 text-muted-foreground hover:bg-muted/70',
+              )}>
               {index + 1}
             </button>
           );
         })}
       </div>
 
-      <div className="rounded-[28px] border border-border bg-background/60 p-5">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <span className="rounded-full border border-border px-3 py-1 text-xs text-foreground">Question {currentIndex + 1}</span>
-          {currentQuestion.concept ? <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{currentQuestion.concept}</span> : null}
-          {currentQuestion.difficulty ? <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{currentQuestion.difficulty}</span> : null}
+      {/* Question */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xs font-medium text-muted-foreground">Q{currentIndex + 1}</span>
+          {currentQuestion.concept ? <span className="text-xs text-muted-foreground/70">{currentQuestion.concept}</span> : null}
         </div>
-
-        <div className="rounded-3xl border border-border bg-card/70 p-5">
+        <div className="text-sm text-foreground leading-relaxed">
           <RichTutorContent content={currentQuestion.question} />
         </div>
-
-        <div className="mt-4 space-y-3">
-          {hasOptions ? (
-            currentQuestion.options.map((option, optionIndex) => {
-              const isSelected = currentState.answer === option;
-              const isCorrectOption = currentState.submitted && normalizeAnswer(option) === normalizeAnswer(currentQuestion.correctAnswer);
-              const isWrongSelection = currentState.submitted && isSelected && !isCorrect;
-              return (
-                <button
-                  key={`${option}-${optionIndex}`}
-                  type="button"
-                  onClick={() => !currentState.submitted && onAnswerChange(currentIndex, option)}
-                  disabled={currentState.submitted}
-                  className={cn(
-                    'flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors',
-                    !currentState.submitted && isSelected
-                      ? 'border-gold/30 bg-gold/10 text-foreground'
-                      : !currentState.submitted
-                        ? 'border-border bg-card/50 text-foreground hover:border-gold/20'
-                        : isCorrectOption
-                          ? 'border-emerald-500/30 bg-emerald-500/10 text-foreground'
-                          : isWrongSelection
-                            ? 'border-red-500/30 bg-red-500/10 text-foreground'
-                            : 'border-border/60 bg-card/30 text-muted-foreground',
-                  )}
-                >
-                  <span className={cn(
-                    'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold',
-                    !currentState.submitted && isSelected
-                      ? 'border-gold bg-gold/20 text-gold'
-                      : isCorrectOption
-                        ? 'border-emerald-500 bg-emerald-500/20 text-emerald-500'
-                        : isWrongSelection
-                          ? 'border-red-500 bg-red-500/20 text-red-500'
-                          : 'border-border text-muted-foreground',
-                  )}>
-                    {String.fromCharCode(65 + optionIndex)}
-                  </span>
-                  <span className="min-w-0 flex-1 text-sm">{option}</span>
-                  {isCorrectOption ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" /> : null}
-                </button>
-              );
-            })
-          ) : (
-            <textarea
-              value={currentState.answer}
-              onChange={(event) => !currentState.submitted && onAnswerChange(currentIndex, event.target.value)}
-              disabled={currentState.submitted}
-              placeholder="Type your answer..."
-              className="min-h-[120px] w-full resize-none rounded-2xl border border-border bg-card/60 px-4 py-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-gold/30 disabled:opacity-70"
-            />
-          )}
-        </div>
-
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onCurrentIndexChange(Math.max(0, currentIndex - 1))}
-              disabled={currentIndex === 0}
-              className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-foreground transition-colors hover:border-gold/30 hover:bg-gold/5 disabled:opacity-40"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Previous
-            </button>
-            <button
-              type="button"
-              onClick={() => onCurrentIndexChange(Math.min(questions.length - 1, currentIndex + 1))}
-              disabled={currentIndex >= questions.length - 1}
-              className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-foreground transition-colors hover:border-gold/30 hover:bg-gold/5 disabled:opacity-40"
-            >
-              Next
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            {currentState.submitted && currentQuestion.explanation ? (
-              <button
-                type="button"
-                onClick={() => onToggleExplanation(currentIndex)}
-                className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm text-foreground transition-colors hover:border-gold/30 hover:bg-gold/5"
-              >
-                <HelpCircle className="h-4 w-4" />
-                {currentState.showExplanation ? 'Hide explanation' : 'Show explanation'}
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => onSubmit(currentIndex)}
-              disabled={!canSubmit}
-              className="inline-flex items-center gap-2 rounded-xl bg-gold px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-gold/90 disabled:opacity-40"
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              Check answer
-            </button>
-          </div>
-        </div>
-
-        {currentState.submitted ? (
-          <div className={cn(
-            'mt-4 rounded-2xl border px-4 py-3 text-sm',
-            isCorrect ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400',
-          )}>
-            <p className="font-medium">{isCorrect ? 'Correct answer.' : 'Not quite.'}</p>
-            {!isCorrect && currentQuestion.correctAnswer ? (
-              <p className="mt-1">Correct answer: <span className="font-semibold">{currentQuestion.correctAnswer}</span></p>
-            ) : null}
-          </div>
-        ) : null}
-
-        {currentState.submitted && currentState.showExplanation && currentQuestion.explanation ? (
-          <div className="mt-4 rounded-2xl border border-border bg-card/60 px-4 py-4">
-            <div className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              <Sparkles className="h-4 w-4" />
-              Explanation
-            </div>
-            <RichTutorContent content={currentQuestion.explanation} />
-          </div>
-        ) : null}
       </div>
 
-      {followUp ? (
-        <div className="rounded-2xl border border-border bg-card/50 px-4 py-3">
-          <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            <Brain className="h-4 w-4" />
-            Recommended follow-up
-          </div>
-          <RichTutorContent content={followUp} />
+      {/* Options / Answer input */}
+      <div className="space-y-2">
+        {hasOptions ? (
+          currentQuestion.options.map((option, optionIndex) => {
+            const isSelected = currentState.answer === option;
+            const isCorrectOption = currentState.submitted && normalizeAnswer(option) === normalizeAnswer(currentQuestion.correctAnswer);
+            const isWrongSelection = currentState.submitted && isSelected && !isCorrect;
+            return (
+              <button key={`${option}-${optionIndex}`} type="button"
+                onClick={() => !currentState.submitted && onAnswerChange(currentIndex, option)}
+                disabled={currentState.submitted}
+                className={cn(
+                  'flex w-full items-start gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-colors',
+                  !currentState.submitted && isSelected ? 'border-gold/40 bg-gold/[0.06]'
+                    : !currentState.submitted ? 'border-border hover:border-gold/20'
+                    : isCorrectOption ? 'border-emerald-500/30 bg-emerald-500/[0.06]'
+                    : isWrongSelection ? 'border-red-500/30 bg-red-500/[0.06]'
+                    : 'border-border/40 text-muted-foreground',
+                )}>
+                <span className={cn(
+                  'flex h-5 w-5 shrink-0 items-center justify-center rounded text-[10px] font-semibold mt-0.5',
+                  !currentState.submitted && isSelected ? 'bg-gold/20 text-gold'
+                    : isCorrectOption ? 'bg-emerald-500/20 text-emerald-500'
+                    : isWrongSelection ? 'bg-red-500/20 text-red-500'
+                    : 'bg-muted/60 text-muted-foreground',
+                )}>
+                  {String.fromCharCode(65 + optionIndex)}
+                </span>
+                <span className="min-w-0 flex-1 text-sm">{option}</span>
+                {isCorrectOption ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" /> : null}
+              </button>
+            );
+          })
+        ) : (
+          <textarea
+            value={currentState.answer}
+            onChange={(event) => !currentState.submitted && onAnswerChange(currentIndex, event.target.value)}
+            disabled={currentState.submitted}
+            placeholder="Type your answer..."
+            className="min-h-[100px] w-full resize-none rounded-xl border border-border bg-card/60 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-gold/30 disabled:opacity-70"
+          />
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          {currentState.submitted && currentQuestion.explanation ? (
+            <button type="button" onClick={() => onToggleExplanation(currentIndex)}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+              <HelpCircle className="h-3.5 w-3.5" />
+              {currentState.showExplanation ? 'Hide explanation' : 'Explain'}
+            </button>
+          ) : null}
         </div>
+        <button type="button" onClick={() => onSubmit(currentIndex)} disabled={!canSubmit}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-gold px-3.5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-gold/90 disabled:opacity-40">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          Check
+        </button>
+      </div>
+
+      {/* Feedback */}
+      {currentState.submitted ? (
+        <div className={cn(
+          'rounded-xl border px-3.5 py-2.5 text-sm',
+          isCorrect ? 'border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-600 dark:text-emerald-400' : 'border-red-500/20 bg-red-500/[0.06] text-red-600 dark:text-red-400',
+        )}>
+          <p className="font-medium">{isCorrect ? 'Correct!' : 'Not quite.'}</p>
+          {!isCorrect && currentQuestion.correctAnswer ? (
+            <p className="mt-0.5">Answer: <span className="font-semibold">{currentQuestion.correctAnswer}</span></p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {currentState.submitted && currentState.showExplanation && currentQuestion.explanation ? (
+        <div className="text-sm text-foreground/80 border-l-2 border-gold/30 pl-3">
+          <RichTutorContent content={currentQuestion.explanation} />
+        </div>
+      ) : null}
+
+      {followUp ? (
+        <p className="text-xs text-muted-foreground border-l-2 border-border pl-3">
+          <span className="font-medium">Follow-up:</span> {followUp}
+        </p>
       ) : null}
     </div>
   );
@@ -893,48 +639,43 @@ function RevisionPlanArtifactBody({ payload }: { payload: ArtifactPayload }) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-2">
-        {horizonDays ? <span className="rounded-full border border-border px-3 py-1 text-xs text-foreground">{horizonDays} day horizon</span> : null}
-        {days.length > 0 ? <span className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">{days.length} planned sessions</span> : null}
-      </div>
+    <div className="space-y-5">
+      {(horizonDays || days.length > 0) ? (
+        <p className="text-xs text-muted-foreground">
+          {horizonDays ? `${horizonDays}-day horizon` : ''}{horizonDays && days.length > 0 ? ' · ' : ''}{days.length > 0 ? `${days.length} planned sessions` : ''}
+        </p>
+      ) : null}
 
       {summary ? (
-        <div className="rounded-3xl border border-gold/15 bg-gold/[0.05] px-5 py-4">
+        <div className="text-sm text-foreground leading-relaxed">
           <RichTutorContent content={summary} />
         </div>
       ) : null}
 
       <div className="space-y-4">
         {days.map((day, index) => (
-          <div key={`${day.dayLabel}-${index}`} className="flex gap-4 rounded-3xl border border-border bg-background/60 p-5">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-gold/20 bg-gold/10 text-sm font-semibold text-gold">
+          <div key={`${day.dayLabel}-${index}`} className="flex gap-3">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-xs font-semibold text-gold bg-gold/10 mt-0.5">
               {index + 1}
-            </div>
+            </span>
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-base font-semibold text-foreground">{day.dayLabel}</h3>
-                {day.scheduledFor ? <span className="rounded-full border border-border px-2.5 py-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{formatDateLabel(day.scheduledFor)}</span> : null}
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-foreground">{day.dayLabel}</h3>
+                {day.scheduledFor ? <span className="text-xs text-muted-foreground">{formatDateLabel(day.scheduledFor)}</span> : null}
               </div>
-              {day.rationale ? <div className="mt-2 text-sm text-foreground"><RichTutorContent content={day.rationale} /></div> : null}
+              {day.rationale ? <div className="mt-1 text-sm text-foreground/80"><RichTutorContent content={day.rationale} /></div> : null}
               {day.activities.length > 0 ? (
-                <div className="mt-3 space-y-2">
+                <ul className="mt-2 space-y-1">
                   {day.activities.map((activity) => (
-                    <div key={activity} className="flex gap-3 text-sm text-foreground">
-                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
+                    <li key={activity} className="flex gap-2.5 text-sm text-foreground/90">
+                      <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-gold/70" />
                       <span>{activity}</span>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ul>
               ) : null}
               {day.focusConcepts.length > 0 ? (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {day.focusConcepts.map((concept) => (
-                    <span key={concept} className="rounded-full border border-border px-3 py-1 text-xs text-foreground">
-                      {concept}
-                    </span>
-                  ))}
-                </div>
+                <p className="mt-1.5 text-xs text-muted-foreground">Focus: {day.focusConcepts.join(', ')}</p>
               ) : null}
             </div>
           </div>
@@ -950,18 +691,18 @@ function GenericArtifactBody({ payload }: { payload: ArtifactPayload }) {
   const primitiveEntries = Object.entries(record || {}).filter(([, value]) => ['string', 'number', 'boolean'].includes(typeof value));
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {content ? (
-        <div className="rounded-3xl border border-border bg-background/60 p-5">
+        <div className="text-sm text-foreground leading-relaxed">
           <RichTutorContent content={content} />
         </div>
       ) : null}
       {primitiveEntries.length > 0 ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-2">
           {primitiveEntries.map(([key, value]) => (
-            <div key={key} className="rounded-2xl border border-border bg-card/60 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{key.replace(/_/g, ' ')}</p>
-              <p className="mt-2 text-sm text-foreground">{String(value)}</p>
+            <div key={key}>
+              <span className="text-xs font-medium text-muted-foreground">{key.replace(/_/g, ' ')}: </span>
+              <span className="text-sm text-foreground">{String(value)}</span>
             </div>
           ))}
         </div>
@@ -992,7 +733,6 @@ export function ArtifactViewerCard({
   payload,
   subtitle,
   createdAt,
-  badge,
   isGenerating = false,
   className,
   downloadFileName,
@@ -1000,15 +740,11 @@ export function ArtifactViewerCard({
   onQuizSubmission,
 }: ArtifactViewerCardProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [currentFlashcardIndex, setCurrentFlashcardIndex] = useState(0);
   const [flashcardFlipped, setFlashcardFlipped] = useState(false);
   const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
   const [quizAnswers, setQuizAnswers] = useState<Record<number, QuizAnswerState>>({});
 
-  const record = asRecord(payload);
-  const generation = asRecord(record?.generation);
-  const sourceCounts = asRecord(record?.source_counts);
   const flashcards = useMemo(() => extractFlashcards(payload), [payload]);
   const quizQuestions = useMemo(() => extractQuizQuestions(payload), [payload]);
   const quizStats = useMemo(() => {
@@ -1020,11 +756,7 @@ export function ArtifactViewerCard({
     }, 0);
     return { answered, correct, total: quizQuestions.length };
   }, [quizAnswers, quizQuestions]);
-  const previewInfo = useMemo(() => getPreviewInfo(type, payload, quizStats), [payload, quizStats, type]);
-  const detailRows = useMemo(() => getArtifactDetailRows(type, payload, quizStats), [payload, quizStats, type]);
-
   useEffect(() => {
-    setDetailsOpen(false);
     setCurrentFlashcardIndex(0);
     setFlashcardFlipped(false);
     setCurrentQuizIndex(0);
@@ -1033,12 +765,6 @@ export function ArtifactViewerCard({
 
   const Icon = ARTIFACT_TYPE_ICON[type] || FileJson;
   const colorClass = ARTIFACT_TYPE_COLOR[type] || 'text-muted-foreground bg-muted border-border';
-  const badgeClass = ARTIFACT_TYPE_BADGE[type] || 'bg-muted text-muted-foreground border-border';
-  const metadata = [
-    formatDateLabel(createdAt),
-    asString(generation?.strategy),
-    sourceCounts?.sessions != null ? `${String(sourceCounts.sessions)} sessions` : null,
-  ].filter((item): item is string => Boolean(item));
   const canOpen = Boolean(payload) && !isGenerating;
   const resolvedDownloadFileName = downloadFileName || `${type}-${title.toLowerCase().replace(/\s+/g, '-')}.json`;
   const resolvedArtifactKey = artifactKey || resolvedDownloadFileName;
@@ -1139,81 +865,22 @@ export function ArtifactViewerCard({
 
   return (
     <>
-      <div className={cn('rounded-xl border border-border bg-card/95 px-3 py-3 transition-colors hover:border-gold/20', className)}>
-        <div className="flex items-start gap-3">
-          <div className={cn('rounded-xl border p-2.5 shrink-0', colorClass)}>
-            <Icon className="h-4 w-4" />
-          </div>
+      <div className={cn('rounded-xl border border-border bg-card/95 px-3 py-2.5 transition-colors hover:border-gold/20', className)}>
+        <div className="flex items-center gap-2.5">
+          <Icon className={cn('h-4 w-4 shrink-0', colorClass.split(' ')[0])} />
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="truncate text-sm font-semibold text-foreground">{title}</h3>
-              {badge ? (
-                <span className={cn('rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em]', badgeClass)}>
-                  {badge}
-                </span>
-              ) : null}
-              {isGenerating ? <Sparkles className="h-3.5 w-3.5 text-gold animate-pulse" /> : null}
-              <button
-                type="button"
-                onClick={() => setDetailsOpen((value) => !value)}
-                className="ml-auto inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:border-gold/20 hover:text-foreground"
-              >
-                Details
-                <ChevronDown className={cn('h-3 w-3 transition-transform', detailsOpen && 'rotate-180')} />
-              </button>
-            </div>
-            {subtitle ? <p className="mt-1 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{subtitle}</p> : null}
-            {metadata.length > 0 ? (
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                {metadata.map((item) => (
-                  <span key={item} className="rounded-full border border-border px-2 py-0.5">{item}</span>
-                ))}
-              </div>
-            ) : null}
-            {previewInfo.chips.length > 0 ? (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {previewInfo.chips.slice(0, 4).map((chip) => (
-                  <span key={chip} className="rounded-full border border-border bg-background/60 px-2 py-0.5 text-[10px] text-foreground">
-                    {chip}
-                  </span>
-                ))}
-              </div>
-            ) : null}
+            <h3 className="truncate text-sm font-semibold text-foreground">{title}</h3>
+            {subtitle ? <p className="text-[11px] text-muted-foreground truncate">{subtitle}</p> : null}
           </div>
-        </div>
-
-        {detailsOpen && detailRows.length > 0 ? (
-          <div className="mt-3 space-y-2 border-t border-border/60 pt-3">
-            {detailRows.map((row) => (
-              <div key={row.label} className="grid gap-1 sm:grid-cols-[88px_minmax(0,1fr)]">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{row.label}</span>
-                <p className="text-sm leading-relaxed text-foreground/90">{row.value}</p>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
+          {isGenerating ? <Sparkles className="h-3.5 w-3.5 text-gold animate-pulse shrink-0" /> : null}
           <button
             type="button"
             onClick={() => canOpen && setIsOpen(true)}
             disabled={!canOpen}
-            className="inline-flex items-center gap-2 rounded-lg border border-gold/20 bg-gold/10 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.12em] text-gold transition-colors hover:bg-gold/15 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gold/20 bg-gold/10 px-2.5 py-1 text-[11px] font-medium text-gold transition-colors hover:bg-gold/15 disabled:cursor-not-allowed disabled:opacity-40 shrink-0"
           >
-            {type === 'quiz' ? <Brain className="h-3.5 w-3.5" /> : type === 'flashcards' ? <Eye className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
             {isGenerating ? 'Generating…' : openLabel}
           </button>
-
-          {payload ? (
-            <button
-              type="button"
-              onClick={() => downloadPayload(payload, resolvedDownloadFileName)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:border-gold/30 hover:bg-gold/5 hover:text-foreground"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download JSON
-            </button>
-          ) : null}
         </div>
       </div>
 
@@ -1222,7 +889,6 @@ export function ArtifactViewerCard({
         onClose={() => setIsOpen(false)}
         title={title}
         type={type}
-        badge={badge}
         createdAt={createdAt}
         onDownload={payload ? () => downloadPayload(payload, resolvedDownloadFileName) : undefined}
       >

@@ -117,4 +117,8 @@ Before deployment:
 
 ## License
 
-MIT
+This repository is currently MIT-licensed as the production/platform repo.
+
+The open-source harness and agentic pipelines repo should be published separately under Apache 2.0.
+
+If the production repo later becomes source-available or closed, keep its license separate from the harness repo rather than inheriting the Apache license.
